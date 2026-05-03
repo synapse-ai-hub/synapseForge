@@ -1,0 +1,32 @@
+{
+    "commands": [
+               
+        {
+            "alias": "cmds",
+            "command": "python .commands/commands/list_cmds.py",
+            "description": "Lista comandos disponibles."
+        },
+        
+        {
+            "alias": "sync",
+            "command": "python .commands/commands/quick_sync.py",
+            "description": "Sincroniza con fetch + rebase (-b rama, default: main)."
+        },
+        {
+            "alias": "push",
+            "command": "python .commands/commands/quick_push.py",
+            "description": "Commit + push con rebase (-m mensaje -b rama)."
+        },
+        {
+            "alias": "sync_system_prompts",
+            "command": "python .commands/commands/prompts_manager.py",
+            "description": "Sincroniza los prompts del sistema."
+        },
+        {
+            "alias": "query",
+            "command": "python .commands/commands/query.py",
+            "description": "Ejecuta queries a DB desde terminal."
+        }
+        
+    ]
+}

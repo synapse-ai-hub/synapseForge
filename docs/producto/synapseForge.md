@@ -309,4 +309,4 @@ synapseForge es el framework que junta la potencia de construir desde cero con l
 - LangChain no itera → synapseForge itera hasta que queda perfecto.
 - LangChain no tiene validación exhaustiva → synapseForge valida todo.
 
-**synapseForge: el framework que构建ye agentes, no el que los programa.**
+**synapseForge: el framework que construye agentes, no el que los programa.**

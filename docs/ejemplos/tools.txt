@@ -1,0 +1,597 @@
+"""
+Tools class - Centralizes access to all system tools.
+
+Loads tool names and required parameters from vector_store (collection prompt, id tool_registry)
+via agent.prompt('tool_registry'). Implementations are methods on this class.
+"""
+import json
+from re import search
+from typing import Any, Callable, Optional, List
+import os 
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+
+def _parse_registry_content(content: str) -> dict:
+    """Parse registry string (double-brace JSON from vector_store) to dict."""
+    if not content or not content.strip():
+        return {"tools": []}
+    unescaped = content.replace("}}", "}").replace("{{", "{")
+    try:
+        return json.loads(unescaped)
+    except json.JSONDecodeError as e:
+        print(f"Error parseando registry: {e}")
+        return {"tools": []}
+
+
+class Tools:
+    """
+    Centralized tools interface for the Agent system.
+
+    This class provides access to all system tools through methods and
+    dynamic tool resolution. It wraps the actual tool implementations
+    and provides a unified API.
+
+    ## Attributes:
+        - available_tools (list): List of available tool names
+        - _agent: Reference to the parent Agent instance
+        - _db: Reference to the database instance
+
+    ## Example:
+        >>> tools = Tools(agent_instance=agent, db_instance=db)
+        >>> tools.search_profile(url="https://linkedin.com/in/john-doe", user_id="...", role="...", _debug_id="...")
+        >>> tools.parser_json(input_data=data, json_schema=schema, system_template=template)
+    """
+
+    def __init__(self, agent_instance=None, db_instance=None):
+        """
+        Initialize the Tools instance.
+
+        ## Args:
+            - agent_instance: The parent Agent instance for agent methods
+            - db_instance: The database instance for DB operations
+        """
+        self._agent = agent_instance
+        self._db = db_instance
+
+    def _get_registry_data(self) -> dict:
+        """Registry from DB (vector_store collection prompt, id tool_registry) via agent.prompt."""
+        if not self._agent:
+            return {"tools": []}
+        content = self._agent.prompt("tool_registry")
+        return _parse_registry_content(content)
+
+    @property
+    def available_tools(self) -> List[str]:
+        """Return the list of available tool names (from tool_registry in DB)."""
+        data = self._get_registry_data()
+        tools = data.get("tools") or []
+        return [t["name"] for t in tools if isinstance(t, dict) and t.get("name")]
+
+    def get_required_params(self, tool_name: str) -> List[str]:
+        """Return the list of required parameters for a tool (from registry arguments)."""
+        data = self._get_registry_data()
+        tools = data.get("tools") or []
+        for t in tools:
+            if isinstance(t, dict) and t.get("name") == tool_name:
+                args = t.get("arguments") or []
+                return [a["name"] for a in args if isinstance(a, dict) and a.get("name")]
+        return []
+
+    def has_tool(self, tool_name: str) -> bool:
+        """Check if a tool exists in the registry."""
+        return tool_name in self.available_tools
+
+    def get_tool(self, tool_name: str) -> Optional[Callable]:
+        """Get a tool by name. Registry defines which names exist; implementation is self.<name>."""
+        if tool_name not in self.available_tools:
+            return None
+        impl = getattr(self, tool_name, None)
+        if callable(impl):
+            return impl
+        return None
+
+    async def parser_json(self, input_data: str, keys: list, custom_prompt: str = None, stream_cancel_event=None, cancel_event=None, **kwargs) -> dict:
+        """
+        Parse and extract structured JSON data from text using an LLM.
+
+        ## Args:
+            - input_data (str): The text to parse
+            - keys (list): List of keys to extract from the input
+            - custom_prompt (str): Custom system prompt for the LLM
+            - stream_cancel_event: Event to check for cancellation
+            - cancel_event: Event to check for cancellation
+            - **kwargs: Additional arguments (temperature, max_tokens, etc.)
+
+        ## Returns:
+            dict: Response with status, message, data, and usage info
+        """
+        from datetime import datetime
+
+        if (stream_cancel_event and stream_cancel_event.is_set()) or (cancel_event and cancel_event.is_set()):
+            return {
+                'status': 'canceled',
+                'message': 'Ejecución cancelada',
+                'data': None,
+                'usage': {'prompt_tokens':0, 'completion_tokens':0, 'total_tokens':0, 'total_time':0}
+            }
+
+        temperature = kwargs.get('temperature', 0.1)
+        max_tokens = kwargs.get('max_tokens', 8000)
+
+        schema = {key: f"Extracted value for {key}" for key in keys}
+        system_template = custom_prompt if custom_prompt else "Extract the specified fields from the input and return valid JSON."
+
+        prompt = f"""SYSTEM: {system_template}
+
+INPUT DATA TO PARSE:
+{input_data}
+
+KEYS TO EXTRACT:
+{keys}
+
+SCHEMA:
+{schema}
+
+INSTRUCTIONS:
+- Extract ONLY the specified keys from the input data
+- Return ONLY valid JSON, no markdown, no comments
+- Use null for missing fields
+- Follow the schema structure exactly"""
+
+        start_time = datetime.now()
+        result = self._agent.llm_process(
+            model=self._agent.model_openai,
+            prompt=prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            cleaned_output=True
+        )
+        end_time = datetime.now()
+        total_time = (end_time - start_time).total_seconds()
+
+        if result['status'] == 'success':
+            import json
+            try:
+                parsed_data = json.loads(result['data'])
+                return {
+                    'status': 'success',
+                    'message': 'JSON parsed successfully',
+                    'data': parsed_data,
+                    'usage': result.get('usage', {})
+                }
+            except json.JSONDecodeError as e:
+                print(f"Error al parsear JSON (parser_json): {e}")
+                return {
+                    'status': 'error',
+                    'message': f'Failed to parse JSON: {str(e)}',
+                    'data': result['data'],
+                    'usage': result.get('usage', {})
+                }
+        return result
+
+    def web_search(self, query: str, **kwargs) -> dict:
+        """
+        Perform a web search using the agent's web_search method.
+        Firma original agent.web_search: (query, temperature, top_p, max_tokens, cleaned_output, **kwargs).
+        """
+        allowed = {k: v for k, v in kwargs.items() if k in ('temperature', 'top_p', 'max_tokens', 'cleaned_output')}
+        return self._agent.web_search(query=query, **allowed)
+
+    def rag(self, query: str, user_id: str, user_message: str, **kwargs) -> dict:
+        """
+        Perform RAG query. Firma original db.rag: (query, user_id, user_message).
+        """
+        return self._db.rag(query=query, user_id=user_id, user_message=user_message)
+
+    def query_context(self, user_id: str, **kwargs) -> dict:
+        """
+        Query context from the database. Firma original db.query_context: (user_id).
+        """
+        return self._db.query_context(user_id=user_id)
+
+    async def scraping_linkedin(self, user_id: str, role: str, title: str, pipeline_mode: str, _debug_id: str, vacante: str, progress_queue=None, cancel_event=None, stream_cancel_event=None, **kwargs) -> dict:
+        """
+        Wrapper. Firma original scraping_linkedin.scraping_linkedin.
+        """
+        from backend.routes.scraping_linkedin import scraping_linkedin
+        return await scraping_linkedin(
+            user_id=user_id,
+            role=role,
+            title=title,
+            pipeline_mode=pipeline_mode,
+            _debug_id=_debug_id,
+            vacante=vacante,
+            progress_queue=progress_queue,
+            cancel_event=cancel_event,
+            stream_cancel_event=stream_cancel_event,
+            **kwargs
+        )
+
+    async def combination_linkedin(self, user_id: str, role: str, title: str, pipeline_mode: str, _debug_id: str,
+                                   vacante: str, progress_queue=None, cancel_event=None, stream_cancel_event=None, **kwargs) -> dict:
+        """
+        Wrapper. Ejecuta primero un raspado de empresas, recupera los primeros 5 nombres y luego raspa personas usandolos en su campo 'companies'.
+        """
+        from backend.routes.combination_linkedin import combination_linkedin
+        return await combination_linkedin(
+            user_id=user_id,
+            role=role,
+            title=title,
+            pipeline_mode=pipeline_mode,
+            _debug_id=_debug_id,
+            vacante=vacante,
+            progress_queue=progress_queue,
+            cancel_event=cancel_event,
+            stream_cancel_event=stream_cancel_event,
+            **kwargs
+        )
+
+    async def search_profile(self, url: str = None, user_id: str = None, role: str = None, _debug_id: str = None, **kwargs) -> dict:
+        """
+        Wrapper. Firma original linkedin_helpers.search_profile: (url, user_id, role, _debug_id, cancel_event, stream_cancel_event).
+
+        ## Args:
+            - url (str): LinkedIn profile URL (ej: https://linkedin.com/in/nombre)
+            - user_id, role, _debug_id: inyectados por streaming
+            - **kwargs: cancel_event, stream_cancel_event, etc.
+
+        ## Returns:
+            dict: {status, message, data, usage}
+        """
+        from backend.routes.linkedin_helpers import search_profile
+        return await search_profile(
+            url=url,
+            user_id=user_id,
+            role=role,
+            _debug_id=_debug_id,
+            **kwargs
+        )
+
+    async def special_message(self, user_id: str, channel: str = '', tone: str = '', profile: str = '', pipeline_mode: str = 'prospecting', vacante: str = '', role: str = '', _debug_id: str = '', stream_cancel_event=None, cancel_event=None, **kwargs) -> dict:
+        '''
+        Genera un mensaje personalizado. Maneja internamente búsqueda de perfil y contexto.
+
+        ## Args:
+            - channel (str): Canal. Ejemplos: email, linkedin, whatsapp.
+            - tone (str): Tono. Ejemplos: formal, casual, persuasivo.
+            - profile (str): URL de LinkedIn o nombre del perfil. Vacío si no hay perfil específico.
+            - pipeline_mode (str): 'prospecting' o 'recruiting'. Inyectado por código.
+            - vacante (str): Descripción de la vacante (solo recruiting). Inyectado por código.
+            - role, _debug_id: Inyectados por código.
+        '''
+        import re
+
+        _canceled = {'status': 'canceled', 'message': 'Ejecución cancelada', 'data': None, 'usage': {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0, 'total_time': 0}}
+        _zero_usage = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0, 'total_time': 0}
+
+        if (stream_cancel_event and stream_cancel_event.is_set()) or (cancel_event and cancel_event.is_set()):
+            return _canceled
+
+        try:
+            # Datos internos del usuario
+            template_result = self._db.get_vector('user_template', where={'user_id': user_id}, include=['documents'])
+            template = '\n\n---\n\n'.join(template_result.get('documents', [])) if template_result and template_result.get('documents') else ''
+            settings_result = self._db.query_sql('user_settings', columns='context', user_id=user_id)
+            context_config = settings_result[0].get('context', {}) if settings_result and settings_result[0].get('context') else {}
+            signature = context_config.get('signature', '')
+            company_name = context_config.get('company_name', '')
+
+            # Búsqueda de perfil interna (si se proporcionó url o nombre)
+            profile_data = ''
+            if profile and profile.strip():
+                if (stream_cancel_event and stream_cancel_event.is_set()) or (cancel_event and cancel_event.is_set()):
+                    return _canceled
+                is_url = bool(re.search(r'linkedin\.com', profile.strip(), re.IGNORECASE))
+                if is_url:
+                    url_result = self._db.get_vector(
+                        collection_name='prospect',
+                        where={'user_id': user_id},
+                        where_documents={'$contains': profile.strip().rstrip('/')},
+                        include=['documents'],
+                        limit=1
+                    )
+                    url_docs = url_result.get('documents') or []
+                    if url_docs and url_docs[0]:
+                        profile_data = url_docs[0]
+                    else:
+                        profile_result = await self.search_profile(
+                            url=profile.strip(), user_id=user_id, role=role, _debug_id=_debug_id,
+                            stream_cancel_event=stream_cancel_event, cancel_event=cancel_event
+                        )
+                        if profile_result.get('status') == 'canceled':
+                            return profile_result
+                        if profile_result.get('status') == 'success' and profile_result.get('data'):
+                            profile_data = str(profile_result['data'])
+                else:
+                    qr = self._db.query_vector(
+                        collection_name='prospect',
+                        query=profile.strip(),
+                        user_id=user_id,
+                        n_results=1,
+                        include=['documents']
+                    )
+                    docs = ((qr.get('data') or {}).get('documents') or [[]])
+                    profile_data = docs[0][0] if docs and docs[0] else ''
+
+            # Contexto: vacante (recruiting) o query_context (prospecting)
+            context_data = ''
+            if pipeline_mode == 'recruiting':
+                context_data = vacante or ''
+            else:
+                if (stream_cancel_event and stream_cancel_event.is_set()) or (cancel_event and cancel_event.is_set()):
+                    return _canceled
+                ctx_result = self.query_context(user_id=user_id)
+                if ctx_result and ctx_result.get('status') == 'success' and ctx_result.get('data'):
+                    context_data = str(ctx_result['data'])
+
+            if (stream_cancel_event and stream_cancel_event.is_set()) or (cancel_event and cancel_event.is_set()):
+                return _canceled
+
+            prompt_base = self._agent.prompt('p_special_message')
+            prompt = prompt_base.format(
+                channel=channel,
+                tone=tone,
+                profile_data=profile_data or 'No hay datos de perfil.',
+                context_data=context_data or 'No hay contexto disponible.',
+                signature=signature,
+                company_name=company_name,
+                template=template,
+            )
+
+            if (stream_cancel_event and stream_cancel_event.is_set()) or (cancel_event and cancel_event.is_set()):
+                return _canceled
+
+            mensaje = self._agent.llm_process(
+                model=self._agent.model_openai,
+                prompt=prompt,
+                reasoning_format='hidden'
+            )
+
+            return {
+                'status': 'success',
+                'message': 'Mensaje creado correctamente.',
+                'data': mensaje['data'],
+                'usage': mensaje['usage']
+            }
+
+        except Exception as e:
+            print(f"Error al crear mensaje (special_message): {e}")
+            return {
+                'status': 'error',
+                'message': f'Error al crear mensaje:\n{str(e)}',
+                'data': None,
+                'usage': _zero_usage
+            }
+
+    async def search_profile_by_name(self, name: str, user_id: str, context: str = None, **kwargs) -> dict:
+        """
+        Busca un perfil de LinkedIn por nombre usando get_vector (where_documents ILIKE).
+        Trae hasta 3 candidatos; si hay más de uno, un LLM pequeño elige el mejor.
+        """
+        from time import time
+        start_time = time()
+        _zero = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0, 'total_time': 0}
+
+        try:
+            result = self._db.get_vector(
+                collection_name='prospect',
+                where={'user_id': user_id},
+                where_documents={'$contains': name},
+                include=['documents', 'metadatas'],
+                limit=3
+            )
+
+            ids = result.get('ids') or []
+            documents = result.get('documents') or []
+            metadatas = result.get('metadatas') or []
+
+            if not ids:
+                return {
+                    'status': 'error',
+                    'message': f'❌ No se encontró ningún perfil con el nombre "{name}" en la base de datos. Por favor, proporcioná una URL de LinkedIn completa (ej: linkedin.com/in/nombre-apellido).',
+                    'data': None,
+                    'usage': {**_zero, 'total_time': round(time() - start_time, 2)}
+                }
+
+            if len(ids) == 1:
+                return {
+                    'status': 'success',
+                    'message': f'Perfil encontrado: {(metadatas[0] or {}).get("nombre", "")}',
+                    'data': documents[0],
+                    'usage': {**_zero, 'total_time': round(time() - start_time, 2)}
+                }
+
+            names_list = '\n'.join([f"{i+1}. {(metadatas[i] or {}).get('nombre', ids[i])}" for i in range(len(ids))])
+            pick_result = self._agent.llm_process(
+                model=self._agent.model_openai_small,
+                prompt=f'El usuario busca: "{name}"\nNombres encontrados:\n{names_list}\n\nRespondé SOLO con el número (1, 2 o 3) que mejor coincide. Sin texto adicional.',
+                max_tokens=10,
+                reasoning_effort='low'
+            )
+            llm_usage = pick_result.get('usage') or _zero
+            try:
+                idx = int(pick_result['data'].strip()) - 1
+                idx = max(0, min(idx, len(ids) - 1))
+            except Exception as e:
+                print(f"Error parseando elección del LLM (search_profile_by_name): {e}")
+                idx = 0
+
+            return {
+                'status': 'success',
+                'message': f'Perfil encontrado: {(metadatas[idx] or {}).get("nombre", "")}',
+                'data': documents[idx],
+                'usage': {**llm_usage, 'total_time': round(time() - start_time, 2)}
+            }
+
+        except Exception as e:
+            print(f"Error al buscar perfil por nombre: {e}")
+            return {
+                'status': 'error',
+                'message': f'❌ Error al buscar perfil por nombre: {str(e)}',
+                'data': None,
+                'usage': {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0, 'total_time': round(time() - start_time, 2)}
+            }
+
+    async def query_database(self, query: str, user_id: str, _debug_id: str = None, role: str = None, **kwargs) -> dict:
+        """
+        Busca en las tablas SQL (prospect, company_search) usando lenguaje natural.
+
+        Internamente llama a un LLM que traduce la consulta del usuario a parámetros SQL
+        estructurados, luego ejecuta la consulta vía query_sql y devuelve los resultados
+        formateados en Markdown.
+
+        ## Args
+            - query (str): Consulta en lenguaje natural del usuario.
+            - user_id (str): ID del usuario para scoping automático de la tabla.
+
+        ## Returns
+            dict: {status, message, data, usage}
+        """
+        import json as _json
+        from time import time
+
+        _start = time()
+        _zero_usage = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0, 'total_time': 0}
+        _allowed_tables = {'prospect', 'company_search'}
+
+        try:
+            prompt_template = self._agent.prompt('p_query_database')
+            if not prompt_template:
+                return {
+                    'status': 'error',
+                    'message': 'No se pudo cargar el prompt p_query_database.',
+                    'data': None,
+                    'usage': {**_zero_usage, 'total_time': round(time() - _start, 2)}
+                }
+
+            prompt = prompt_template.format(query=query)
+
+            llm_result = self._agent.llm_process(
+                model=self._agent.model_openai_small,
+                prompt=prompt,
+                temperature=0,
+                max_tokens=50000,
+                reasoning_effort='high',
+                cleaned_output=True
+            )
+            llm_usage = llm_result.get('usage') or _zero_usage
+
+            if llm_result.get('status') != 'success' or not llm_result.get('data'):
+                return {
+                    'status': 'error',
+                    'message': 'Error al interpretar la consulta.',
+                    'data': None,
+                    'usage': {**llm_usage, 'total_time': round(time() - _start, 2)}
+                }
+
+            try:
+                parsed = _json.loads(llm_result['data'])
+            except _json.JSONDecodeError as e:
+                print(f"Error al parsear JSON (query_database): {e}")
+                return {
+                    'status': 'error',
+                    'message': f'Respuesta del LLM no es JSON válido: {str(e)}',
+                    'data': None,
+                    'usage': {**llm_usage, 'total_time': round(time() - _start, 2)}
+                }
+
+            query_data = parsed.get('data') or {}
+            
+            if _debug_id and role:
+                try:
+                    import os
+                    if os.getenv("EXECUTION_MODE", "PRODUCTION") == 'DEBUG':
+                        from backend.routes.streaming_helpers_v2 import update_debug
+                        json_str = _json.dumps(query_data, indent=2, ensure_ascii=False)
+                        msg_to_send = f"## LLM query generation:\n\n```json\n{json_str}\n```"
+                        await update_debug(_debug_id, user_id=user_id, role=role, response=msg_to_send)
+                except Exception as e:
+                    print(f"Error al actualizar debug (query_database): {e}")
+
+            queries = query_data.get('queries') or []
+            
+            # Fallback en caso de que el modelo devuelva el formato anterior
+            if not isinstance(queries, list) or len(queries) == 0:
+                if 'table' in query_data:
+                    queries = [query_data]
+                else:
+                    return {
+                        'status': 'error',
+                        'message': 'El formato devuelto por el LLM no es válido (falta queries).',
+                        'data': None,
+                        'usage': {**llm_usage, 'total_time': round(time() - _start, 2)}
+                    }
+
+            all_results = []
+            
+            for q in queries:
+                table = q.get('table', 'prospect')
+                columns = q.get('columns') or '*'
+                where_clause = q.get('where') or None
+                params = q.get('params') or []
+                limit = q.get('limit')
+
+                if table not in _allowed_tables:
+                    table = 'prospect'
+
+                if not isinstance(columns, str):
+                    columns = '*'
+
+                params_tuple = tuple(params) if params else None
+
+                rows = self._db.query_sql(
+                    table=table,
+                    columns=columns,
+                    where=where_clause,
+                    params=params_tuple,
+                    limit=limit,
+                    user_id=user_id
+                )
+
+                limit_str = f" | limit: {limit}" if limit else ""
+                q_summary = f"> `SELECT {columns} FROM {table} WHERE {where_clause}` | params: {params_tuple}{limit_str}\n\n"
+
+                if not rows:
+                    all_results.append(q_summary + f'No se encontraron registros en `{table}` para los parámetros dados.')
+                else:
+                    headers = list(rows[0].keys())
+                    header_row = '| ' + ' | '.join(headers) + ' |'
+                    separator = '|' + '|'.join(['---'] * len(headers)) + '|'
+                    
+                    def sanitize_cell(val):
+                        if val is None:
+                            return "-"
+                        s = str(val).replace('\n', ' ').replace('\r', '').replace('|', '\\|').strip()
+                        return s if s else "-"
+                        
+                    data_rows = [
+                        '| ' + ' | '.join(sanitize_cell(row.get(h)) for h in headers) + ' |'
+                        for row in rows
+                    ]
+                    q_res = '\n'.join([header_row, separator] + data_rows)
+                    all_results.append(q_summary + f'**{len(rows)} resultado(s) encontrado(s) en `{table}`:**\n\n{q_res}')
+
+            final_data = '\n\n---\n\n'.join(all_results)
+            
+            # Opcionalmente, adjuntamos el reasoning del paso intermedio si el modelo lo generó
+            reasoning = query_data.get('reasoning')
+            if reasoning:
+                final_data = f'> _Análisis: {reasoning}_\n\n{final_data}'
+
+            return {
+                'status': 'success',
+                'message': f'Se ejecutaron {len(queries)} consultas exploratorias.',
+                'data': final_data,
+                'usage': {**llm_usage, 'total_time': round(time() - _start, 2)}
+            }
+
+        except Exception as e:
+            print(f"Error al ejecutar query_database: {e}")
+            return {
+                'status': 'error',
+                'message': f'Error al ejecutar query_database: {str(e)}',
+                'data': None,
+                'usage': {**_zero_usage, 'total_time': round(time() - _start, 2)}
+            }

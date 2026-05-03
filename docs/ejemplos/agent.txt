@@ -1,0 +1,669 @@
+import groq
+import sys
+import os
+import json
+import time
+import functools
+from datetime import datetime
+from dotenv import load_dotenv
+from typing import Generator
+import asyncio
+
+# Configuración de paths 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+sys.path.insert(0, project_root)
+
+from backend.utils.tools import Tools
+
+# Marcadores de comentarios usados en este proyecto:
+# TODO   : trabajo pendiente, todavía no implementado.
+# FIXME  : hay un bug conocido; este código falla o es incorrecto.
+# REVIEW : parte del código que debe ser revisada o validada por otra persona.
+# NOTE   : aclaración importante sobre decisiones o comportamiento no obvio.
+# HACK   : solución provisoria / poco elegante / hardcodeada, usada para salir del paso.
+# DEBUG  : código o mensajes usados solo para depuración temporal.
+# OK     : bloque probado y estable en las condiciones actuales.
+# PROD   : código / config específica de producción; tocar con extremo cuidado.
+
+
+
+
+load_dotenv()  
+
+class Agent():
+    '''
+    Core class for interacting with Groq's LLMs with integrated logging and file management.
+
+    This class centralizes interaction with Groq models (e.g., Qwen) and provides helper
+    utilities for cleaning outputs and simple file I/O. 
+
+    ## Attributes:
+        - __api_key (str): API key used to authenticate with the Groq client (loaded from environment).
+        - model_qwen (str): Model identifier for the Qwen model (from MODEL_NAME_2 env var).
+        - model_openai (str): Model identifier for the OpenAI-compatible model (from MODEL_NAME_3 env var).
+        - client (groq.Groq): Instantiated Groq client.
+        - usage (tuple | None): Last request usage metrics in the form
+          (prompt_tokens, completion_tokens, total_tokens, prompt_time, completion_time, total_time).
+
+    ## Notes:
+        - Requires a `.env` file with GROQ_API_KEY, MODEL_NAME_2 and MODEL_NAME_3 defined.
+        - Methods that call the API catch exceptions and print errors rather than raising; callers should
+          handle missing return values accordingly.
+
+    ## Example:
+        >>> from Utils.agent import Agent
+        >>> agent = Agent()
+        >>> resp, usage = agent.llm_process(agent.model_qwen, "What is the capital of France?")
+        >>> print(resp)
+        The capital of France is Paris.
+    '''
+ 
+    def __init__(self, db=None) -> None:
+        '''
+        Initialize the Agent.
+
+        The constructor loads environment variables for API keys and model names,
+        instantiates the Groq client and prepares the usage attribute.
+
+        ## Args
+            - db: Optional instance of backend.db.DB for prompt/vector access. Passed from instances to avoid circular import and reuse a single DB instance.
+
+        ## Raises:
+            - None: Exceptions during initialization are not explicitly raised here; missing
+              environment variables will lead to a client that may fail on use.
+        '''
+        super().__init__()
+
+        self.db = db
+
+        # Configuración de variables de entorno   
+        self.__api_key = os.getenv('GROQ_API_KEY')
+        self.model_qwen = os.getenv('MODEL_NAME_2')
+        self.model_openai = os.getenv('MODEL_NAME_3')
+        self.model_openai_small = os.getenv('MODEL_NAME_4')
+        
+        # Configuración de client:        
+        self.client = groq.Groq(api_key=self.__api_key)
+
+        self.usage = None
+        
+        # Inicializar clase de tools centralizada
+        self.tools = Tools(agent_instance=self, db_instance=self.db)
+
+    def llm_process(self, model:str, prompt:str, system_content:str='', temperature:float=0.5, top_p:float=0.5, max_tokens:int=50000, cleaned_output:bool=True, **kwargs) -> dict:
+        '''
+        Send a chat completion request and return the response and usage metrics.
+
+        ## Args:
+            - model (str): Model name to use for completion (e.g., Qwen or OpenAI).
+            - prompt (str): User prompt or query to be sent to the LLM.
+            - system_content (str, optional): System instruction to guide the assistant. Defaults to ''.
+            - temperature (float, optional): Sampling temperature. Defaults to 0.5.
+            - top_p (float, optional): Nucleus sampling parameter. Defaults to 0.5.
+            - max_tokens (int, optional): Maximum number of tokens to generate. Defaults to 1000.
+            - cleaned_output (bool, optional): If True, the returned text is passed through :meth:`clean`. Defaults to True.
+            - **kwargs: Additional keyword arguments forwarded to the Groq client.
+
+        ## Returns:
+            dict: A dictionary with the following keys:
+                - 'status' (str): 'success' or 'error'.
+                - 'message' (str): Human-readable description of the outcome.
+                - 'data' (str | None): The model's generated text (cleaned if requested) or None on error.
+                - 'usage' (dict): Usage metrics containing 'prompt_tokens', 'completion_tokens',
+                  'total_tokens', and 'total_time'.
+
+        ## Notes:
+            - If the returned output is empty, a message is printed indicating possible truncation or hidden reasoning.
+            - Exceptions are caught; on error the function returns a dictionary with status 'error' and zeroed usage metrics.
+        '''
+        try:
+            messages = [{'role': 'system', 'content': system_content}, {'role': 'user', 'content': prompt}]
+            response = self.client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        **kwargs,
+                        )            
+            output = response.choices[0].message.content
+            if output is None:
+                output = ""
+            if cleaned_output:
+                output = self.clean(output)
+            completion_tokens = response.usage.completion_tokens
+            prompt_tokens = response.usage.prompt_tokens
+            total_tokens = response.usage.total_tokens
+            total_time = round(response.usage.total_time, 2)
+            if not output:
+                print(f'La respuesta está vacía. Modelo: {model}, completion_tokens: {completion_tokens}, max_tokens: {max_tokens}. Posible truncamiento o razonamiento oculto. Revisar límite de tokens.', flush=True)
+            return {
+                    'status': 'success',
+                    'message': 'Proceso ok.',
+                    'data': output,
+                    'usage': {
+                               'prompt_tokens':prompt_tokens, 
+                               'completion_tokens':completion_tokens,
+                               'total_tokens':total_tokens,
+                               'total_time':total_time
+                             } 
+                   }
+        except Exception as e:
+            print(f'Error al procesar con LLM.\n{str(e)}')
+            return {
+                'status': 'error',
+                'message': str(e),
+                'data': None,
+                'usage': {
+                            'prompt_tokens':0, 
+                            'completion_tokens':0,
+                            'total_tokens':0,
+                            'total_time':0
+                            } 
+            }
+     
+
+    def llm_stream(self, model:str, prompt:str, system_content:str='', temperature:float=0.5, top_p:float=0.5, max_tokens:int=50000, cleaned_output:bool=True, **kwargs) -> Generator:
+        '''
+        Stream a chat completion response from the Groq API.
+
+        This generator yields content chunks as they arrive from the streamed Groq response.
+        Usage statistics from the stream are saved to ``self.usage`` after the stream completes.
+
+        ## Args:
+            - model (str): Model name to use for completion.
+            - prompt (str): User prompt or query.
+            - system_content (str, optional): System instruction. Defaults to ''.
+            - temperature (float, optional): Sampling temperature. Defaults to 0.5.
+            - top_p (float, optional): Nucleus sampling parameter. Defaults to 0.5.
+            - max_tokens (int, optional): Maximum tokens to generate. Defaults to 1000.
+            - cleaned_output (bool, optional): If True, each yielded chunk is passed through :meth:`clean`. Defaults to True.
+            - **kwargs: Additional keyword arguments forwarded to the Groq client.
+
+        ## Yields:
+            str: Cleaned (or raw) content chunk from the model.
+
+        ## Raises:
+            - None: Errors are caught and yielded as strings prefixed with 'Error:'.
+        '''
+        try:
+            messages = [{'role': 'system', 'content': system_content}, {'role': 'user', 'content': prompt}]
+            response = self.client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        stream=True,
+                        **kwargs,
+                        )            
+            usage = None  
+            for chunk in response:
+                if chunk.usage is not None:
+                    usage = chunk.usage                
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    if cleaned_output:
+                        content = self.clean(content)
+                    yield content
+            if usage is not None:
+                completion_tokens = usage.completion_tokens
+                prompt_tokens = usage.prompt_tokens 
+                total_tokens = usage.total_tokens
+                completion_time = usage.completion_time
+                prompt_time = usage.prompt_time
+                total_time = usage.total_time
+                self.usage = (prompt_tokens, completion_tokens, total_tokens, prompt_time, completion_time, total_time)
+            else:
+                self.usage = (0, 0, 0, 0.0, 0.0, 0.0)      
+        except Exception as e:
+            print(f'Error al procesar con LLM.\n{str(e)}')
+            yield f'Error: {str(e)}'
+
+    async def llm_streaming(self, model: str, prompt: str, system_content: str = '', temperature: float = 0,
+                             top_p: float = 0.5, max_tokens: int = 30000, cleaned_output: bool = True,
+                             stream_cancel_event=None, **kwargs):
+        '''
+        Async generator that streams LLM response chunks with per-chunk cancellation support.
+
+        Wraps ``llm_stream`` (sync generator) in an async context. After each chunk,
+        yields control to the event loop and checks the cancellation event.
+
+        Yields:
+            dict: ``{'type': 'chunk', 'content': str}`` for each content chunk, or
+                  ``{'type': 'aborted'}`` if ``stream_cancel_event`` is set mid-stream.
+        '''
+        for chunk in self.llm_stream(
+            model, prompt,
+            system_content=system_content,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            cleaned_output=cleaned_output,
+            **kwargs
+        ):
+            if stream_cancel_event and stream_cancel_event.is_set():
+                yield {'type': 'aborted'}
+                return
+            yield {'type': 'chunk', 'content': chunk}
+            await asyncio.sleep(0.01)
+
+    def web_search(self, query:str, temperature:float=0.5, top_p:float=0.5, max_tokens:int=8192, cleaned_output:bool=True, **kwargs) -> dict:
+        '''
+        Perform a web-search style request using Groq's compound model.
+
+        This method calls the ``groq/compound`` model, which internally performs a web search.
+        Only the final content (reasoning is omitted) is returned.
+
+        ## Args:
+            - query (str): User query for the web search.
+            - temperature (float, optional): Sampling temperature. Defaults to 0.5.
+            - top_p (float, optional): Nucleus sampling parameter. Defaults to 0.5.
+            - max_tokens (int, optional): Maximum tokens to generate. Defaults to 8192.
+            - cleaned_output (bool, optional): If True, the result is passed through :meth:`clean`. Defaults to True.
+            - **kwargs: Additional keyword arguments forwarded to the Groq client.
+
+        ## Returns:
+            dict: A dictionary with keys 'status', 'message', 'data', and 'usage' (always ``None`` for this method).
+
+        ## Raises:
+            - None: Errors are caught and returned in the dictionary with status 'error'.
+        '''
+        try:
+            messages = [{'role': 'user', 'content': query}]
+            response = self.client.chat.completions.create(
+                        model='groq/compound',
+                       
+                        messages=messages,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        
+                        stream=False,
+                        
+                        **kwargs,
+                        )            
+           
+            output = response.choices[0].message.content
+            if cleaned_output:
+                output = self.clean(output)
+           
+
+            return {
+                    'status': 'success',
+                    'message': 'Búsqueda web completada.',
+                    'data': output,
+                    'usage': None 
+                   }
+        except Exception as e:
+            print(f'Error al procesar búsqueda web con LLM.\n{str(e)}')
+            return {
+                'status': 'error',
+                'message': str(e),
+                'data': None,
+                'usage': None
+            }
+
+    def clean(self, text:str) -> str:
+        '''
+        Remove special Unicode characters and formatting artifacts from the provided text.
+
+        The cleaning performed is deliberately conservative: it replaces zero-width and
+        non-standard space characters, several dash variants and some invisible markers.
+
+        ## Args:
+            - text (str): Input text to clean.
+
+        ## Returns:
+            str: Cleaned text.
+
+        ## Example:
+            >>> agent.clean('Hello\\u200bWorld')
+            'HelloWorld'
+        '''
+        text = text.replace('\ufeff', '')
+        text = text.replace('\u202f', ' ')   # espacio fino -> espacio normal
+        text = text.replace('\u2011', '-')   # guion no separable -> guion normal
+        text = text.replace('\u2013', '-')   # guion en dash -> guion normal
+        text = text.replace('\u2014', '-')   # guion em dash -> guion normal
+        text = text.replace(chr(8209), '-')
+        text = text.replace('\u200b', '')       
+        return text
+
+
+  
+    async def load_text(self, load_path:str, encoding:str|None='utf-8') -> str:
+        '''
+        Load the contents of a text file.
+
+        ## Args:
+            - load_path (str): Path to the file to load.
+            - encoding (str | None): File encoding (default 'utf-8').
+
+        ## Returns:
+            str: File contents as a string, or ``None`` on error.
+
+        ## Raises:
+            - None: IO errors are caught and printed; the function returns ``None`` on failure.
+
+        ## Example:
+            >>> text = await agent.load_text('tests/data/sample.txt')
+            >>> print(text[:40])
+            'First line of the file...'
+        '''
+        try:
+            with open(load_path, 'r', encoding=encoding) as f:
+                text = f.read()            
+            return text
+        except Exception as e:
+            print(f'Error en carga de archivo. Verifique ruta especificada o compatibilidad.\n{e}')
+
+    
+    
+    async def save(self, save_path:str, element:str|dict, encoding:str|None='utf-8', is_json:bool=False) -> None:
+        '''
+        Save a string or dictionary to the filesystem.
+
+        ## Args:
+            - save_path (str): Destination file path.
+            - element (str | dict): Content to save. If ``is_json`` is True, this must be JSON-serializable.
+            - encoding (str | None): File encoding (default 'utf-8').
+            - is_json (bool): When True, dump the element as pretty-printed JSON.
+
+        ## Returns:
+            None
+
+        ## Raises:
+            - None: IO errors are caught and printed; the function does not raise.
+
+        ## Example:
+            >>> await agent.save('out.txt', 'hello world')
+            >>> await agent.save('out.json', {'a': 1}, is_json=True)
+        '''
+        try:
+            if not is_json:
+                with open(save_path, 'w', encoding=encoding) as f:
+                    f.write(element)
+            else:
+                with open(save_path, 'w', encoding=encoding) as f:
+                    json.dump(element, f, ensure_ascii=False, indent=4)
+
+            print(f'Archivo guardado en: {save_path}')
+        except Exception as e:        
+            print(f'Error en guardado. Verifique ruta especificada o elemento.\n{e}')
+
+
+
+    @staticmethod
+    def get_timestamp(weekday_bool: bool = False) -> str:
+        '''
+        Generate a timestamp string.
+
+        If `weekday_bool` is True, returns the Spanish name of the current weekday.
+        Otherwise, returns a compact timestamp in the format `ddmmyyHHMMSSmmm`,
+        where the last three digits represent milliseconds.
+
+        ## Args:
+            - weekday_bool (bool, optional): Flag to return the weekday name instead
+              of a numeric timestamp. Defaults to `False`.
+
+        ## Returns:
+            - str: The generated timestamp or weekday name.
+        '''
+        dias = {0: 'Lunes', 1: 'Martes', 2: 'Miércoles', 3: 'Jueves', 4: 'Viernes', 5: 'Sábado', 6: 'Domingo'}
+        if weekday_bool:
+            return dias[datetime.now().weekday()]
+        now = datetime.now()
+        return now.strftime('%d%m%y%H%M%S') + f'{now.microsecond // 1000:03d}'
+
+    @staticmethod
+    def date_format(raw_date: str) -> str:
+        '''
+        Convert a raw timestamp into a human-readable date string.
+
+        The input `raw_date` is expected to be in the format produced by `get_timestamp`
+        (`ddmmyyHHMMSSmmm`). The method extracts day, month, year, hour, minute, and
+        second components and formats them as `dd/mm/yy-HH:MM:SS`.
+
+        ## Args:
+            - raw_date (str): Raw timestamp string.
+
+        ## Returns:
+            - str: Formatted date string.
+        '''
+        day = raw_date[:2]
+        month = raw_date[2:4]
+        year = raw_date[4:6]
+        hour = raw_date[6:8]
+        minute = raw_date[8:10]
+        second = raw_date[10:12]
+        return f'{day}/{month}/{year}-{hour}:{minute}:{second}'
+   
+    async def retry(self, name:str, attempts:int=3, **kwargs) -> dict:
+        '''
+        Retry a function with exponential backoff.
+
+        ## Args:
+            - name (str): Name of the function to retry.
+            - attempts (int): Maximum number of attempts. Defaults to 3.
+            - **kwargs: Arguments to pass to the function.
+
+        ## Returns:
+            dict: Result dictionary containing 'status', 'message', 'data', and 'usage'.
+
+        '''
+        errors = []
+        response = None
+        response_json = None
+        
+        for j in range(3):
+            # Build round_kwargs with errors for rounds 2 and 3
+            round_kwargs = dict(kwargs)
+            if j > 0 and errors:
+                round_kwargs['prompt'] = kwargs.get('prompt', '') + f'\n\n---\n\nTen en cuenta los siguientes errores previos:\n{errors}'
+            
+            for i in range(attempts+1):
+                
+                if i == attempts:
+                    return {
+                            'status': 'canceled',
+                            'message': 'Error al generar respuesta con LLM',
+                            'data': None,
+                            'usage': None
+                            }  
+
+                try:
+                    response = self.llm_process(**round_kwargs)
+                    # Note: return {status, message, data, usage}
+
+                    if not response['data']:
+                        await asyncio.sleep(2**(i+1))
+                        continue
+
+                    break                          
+            
+                
+                except Exception as e:
+                    if i == attempts and j == 2:
+                        return {
+                                'status': 'canceled',
+                                'message': str(e),
+                                'data': None,
+                                'usage': None
+                                } 
+                        
+                    print(f'Error de request {name}, intento {i+1}:\n{str(e)}')
+                    await asyncio.sleep(2**(i+1))
+                    continue  
+        
+            for i in range(attempts+1):
+                try:
+                    
+                    response_json = json.loads(response['data'])    
+                    # NOTE: return {status, message, data:{}}
+                                                                
+                    break       
+                except Exception as e:
+                    if i == attempts and j == 2:
+                        return {
+                                    'status': 'canceled',
+                                    'message': str(e),
+                                    'data': None,
+                                    'usage': None
+                                    } 
+                    
+                    print(f'Error de json {name}, intento {i+1}:\n{str(e)}')
+                    errors.append(str(e))
+                    await asyncio.sleep(1)
+                    continue 
+            
+            # If parse succeeded, exit rounds loop
+            if response_json is not None:
+                break
+
+        if 'CoD' in name:
+
+
+            response['status'] = 'success'
+            response['message'] = 'CoD finalizado'
+            response['data'] = response_json
+
+
+        else:
+            response['status'] = response_json.get('status', 'error')
+            response['message'] = response_json.get('message', 'Unknown error')
+            response['data'] = response_json.get('data', None)
+
+       
+        return response
+
+
+
+    async def usage_metrics(self, usage_dict:dict, **kwargs) -> dict:
+        '''
+        Update cumulative usage metrics with additional values.
+
+        ## Args:
+            - usage_dict (dict): Dictionary containing current cumulative metrics.
+            - **kwargs: Metric values to add (prompt_tokens, completion_tokens, total_tokens, total_time).
+
+        ## Returns:
+            dict: Updated usage dictionary.
+
+        ## Notes:
+            - If any expected key is missing, the original dictionary is returned unchanged.
+        '''
+        try:
+            usage_dict['prompt_tokens'] += kwargs['prompt_tokens']
+            usage_dict['completion_tokens'] += kwargs['completion_tokens']
+            usage_dict['total_tokens'] += kwargs['total_tokens']
+            usage_dict['total_time'] += kwargs['total_time']
+            usage_dict['total_time'] = round(usage_dict['total_time'], 2)
+            return usage_dict
+        except:
+            return {'prompt_tokens':usage_dict['prompt_tokens'],
+                    'completion_tokens':usage_dict['completion_tokens'],
+                    'total_tokens':usage_dict['total_tokens'],
+                    'total_time':usage_dict['total_time']}
+
+     
+    
+    async def router(self, prompt:str='', system_content:str='') -> dict:
+        '''Router: decide si la consulta requiere plan (true) o respuesta directa (false). Usa model_openai_small.'''
+        return await self.retry(
+                            'Router',
+                            model=self.model_openai_small,
+                            prompt=prompt,
+                            system_content=system_content or '',
+                            temperature=0,
+                            top_p=0.3,
+                            max_tokens=500,
+                            cleaned_output=True,
+                            reasoning_effort='low'
+                        )
+
+    async def planner(self, prompt:str='', system_content:str='') -> dict:
+        return await self.retry(
+                            'Planner',
+                            model=self.model_openai,
+                            prompt=prompt,
+                            system_content=system_content,
+                            temperature=0,
+                            top_p=0.3,
+                            max_tokens=50000,
+                            cleaned_output=True,
+                            reasoning_effort='high'
+                        ) 
+
+    async def decision_maker(self, prompt:str='', system_content:str='') -> dict:
+        return await self.retry(
+                                    'Decision Maker',
+                                    model=self.model_openai_small,
+                                    prompt=prompt,
+                                    temperature=0,
+                                    top_p=0.3,
+                                    max_tokens=30000,
+                                    cleaned_output=True,
+                                    reasoning_effort='medium'
+                            )
+
+    async def supervisor(self, prompt:str='', system_content:str='') -> dict:
+        return await self.retry(
+                                    'Supervisor',
+                                    model=self.model_openai,
+                                    prompt=prompt,
+                                    temperature=0,
+                                    top_p=0.3,
+                                    max_tokens=30000,
+                                    cleaned_output=True,
+                                    reasoning_effort='high'
+                                )
+
+
+    async def validator(self, prompt:str='', system_content:str='') -> dict:
+        return await self.retry(
+                                    'Validator',
+                                    model=self.model_openai,
+                                    prompt=prompt,
+                                    temperature=0.4,
+                                    top_p=0.7,
+                                    max_tokens=30000,
+                                    cleaned_output=True,
+                                    reasoning_effort='high'
+                                )
+
+
+    async def corrector(self, prompt:str='', system_content:str='') -> dict:
+        return await self.retry(
+                                    'Corrector',
+                                    model=self.model_openai,
+                                    prompt=prompt,
+                                    temperature=0.5,
+                                    top_p=0.7,
+                                    max_tokens=30000,
+                                    cleaned_output=True,
+                                    reasoning_effort='high',
+                                )
+
+
+    def prompt(self, name: str) -> str:
+        """
+        Obtiene un prompt por nombre desde el vector store.
+        
+        Args:
+            name: Nombre del prompt
+            
+        Returns:
+            Contenido del prompt
+        """
+        if not self.db:
+            return ''
+        try:
+            result = self.db.retrieve_vector('prompt', name)
+            return result if result else ''
+        except Exception:
+            return ''
+
+if __name__ == '__main__': 
+    print('Agent module for LLM interaction and various utilities.')

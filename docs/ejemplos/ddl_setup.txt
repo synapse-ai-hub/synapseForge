@@ -1,0 +1,707 @@
+import os
+import psycopg2
+from dotenv import load_dotenv
+
+def get_env():
+    load_dotenv()
+    host = os.getenv('POSTGRES_HOST', 'localhost')
+    port = int(os.getenv('POSTGRES_PORT', 5432))
+    user = os.getenv('POSTGRES_USER')
+    password = os.getenv('POSTGRES_PASSWORD')
+    database = os.getenv('POSTGRES_DATABASE')
+    if not all([host, port, user, password, database]):
+        raise RuntimeError("Faltan variables POSTGRES_* en el entorno (.env).")
+    return host, port, user, password, database
+
+def connect(dbname, host, port, user, password, autocommit=True):
+    conn = psycopg2.connect(
+        host=host, port=port, user=user, password=password, database=dbname
+    )
+    conn.autocommit = autocommit
+    return conn
+
+def create_database_if_not_exists(host, port, user, password, database):
+    """Equivalente a tu create_db_sql: crea la DB si no existe."""
+    with connect('postgres', host, port, user, password) as temp_conn:
+        with temp_conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (database,))
+            if not cur.fetchone():
+                cur.execute(f'''CREATE DATABASE "{database}"''')
+                print(f'Base de datos {database} creada automáticamente.')
+            else:
+                print(f'Base de datos {database} ya existe.')
+
+def ensure_extensions(conn):
+    """Extensiones requeridas por tu esquema:
+       - pgcrypto para gen_random_uuid()
+       - vector para VECTOR(768) e índice ivfflat
+    """
+    with conn.cursor() as cur:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
+        cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    print("Extensiones verificadas (pgcrypto, vector).")
+
+def create_tables_and_indexes(conn):
+    """Equivalente a tu create_tables_sql (PostgreSQL multi-tenant)."""
+    with conn.cursor() as cur:
+        # users
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                email VARCHAR(255) UNIQUE NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                google_id VARCHAR(100) UNIQUE,
+                google_access_token TEXT,
+                google_refresh_token TEXT,
+                password_hash TEXT,
+                role VARCHAR(20),
+                subscription_status VARCHAR(20) DEFAULT 'starter' 
+                    CHECK (subscription_status IN ('starter', 'growth', 'scale', 'owner', 'invited')),
+                subscription_expires_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT true
+            );
+        """)
+        # Agregar columna password_hash si la tabla ya existe y no tiene la columna
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'password_hash'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN password_hash TEXT;
+                END IF;
+            END $$;
+        """)
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'users' AND column_name = 'vnc_display'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN vnc_display INTEGER;
+                END IF;
+            END $$;
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);")
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_users_subscription 
+            ON users(subscription_status, subscription_expires_at);
+        """)
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'users' AND column_name = 'email_verified'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT true;
+                END IF;
+            END $$;
+        """)
+
+        # auth_codes: códigos de verificación de email y reseteo de contraseña
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS auth_codes (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                code VARCHAR(10) NOT NULL,
+                type VARCHAR(30) NOT NULL CHECK (type IN ('email_verification', 'password_reset')),
+                expires_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_auth_codes_email_type ON auth_codes(email, type);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_auth_codes_expires_at ON auth_codes(expires_at);")
+
+        # pending_registrations: registro pendiente hasta verificar email (no se crea user hasta verificar)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pending_registrations (
+                email VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                password_hash TEXT NOT NULL,
+                role VARCHAR(20) NOT NULL,
+                subscription_status VARCHAR(20),
+                created_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+
+        # user_log
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_log (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                action VARCHAR(255) NOT NULL,
+                metadata JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_log_user_id ON user_log(user_id);")
+
+        # prospect
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS prospect (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                nombre VARCHAR(255),
+                empresa VARCHAR(100),
+                cargo VARCHAR(100),
+                puntuacion FLOAT,
+                grado_de_contacto VARCHAR(50),
+                linkedin VARCHAR(500),
+                pipeline_mode VARCHAR(50),
+                estado VARCHAR(50),
+                fecha_actualizacion_estado TIMESTAMP,
+                fecha DATE,
+                ubicacion VARCHAR(100),
+                foto_url VARCHAR(500),
+                timestamp_linkedin TIMESTAMP,
+                foto_base64 TEXT
+            );
+        """)
+        # Agregar columna foto_url y foto_base64 si la tabla ya existe y no tiene la columna
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'prospect' AND column_name = 'foto_url'
+                ) THEN
+                    ALTER TABLE prospect ADD COLUMN foto_url VARCHAR(500);
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'prospect' AND column_name = 'foto_base64'
+                ) THEN
+                    ALTER TABLE prospect ADD COLUMN foto_base64 TEXT;
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'prospect' AND column_name = 'estado'
+                ) THEN
+                    ALTER TABLE prospect ADD COLUMN estado VARCHAR(50);
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'prospect' AND column_name = 'fecha_actualizacion_estado'
+                ) THEN
+                    ALTER TABLE prospect ADD COLUMN fecha_actualizacion_estado TIMESTAMP;
+                END IF;
+            END $$;
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_prospect_user_id ON prospect(user_id);")
+
+
+        # prospecting_history
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS prospecting_history (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                role VARCHAR(50),
+                content TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_prospecting_history_user_role ON prospecting_history(user_id, role);")
+
+        # company_search
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS company_search (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                nombre VARCHAR(255),
+                sector VARCHAR(255),
+                tamanio VARCHAR(100),
+                ubicacion VARCHAR(255),
+                descripcion TEXT,
+                especialidades TEXT,
+                sitio_web VARCHAR(500),
+                linkedin VARCHAR(500),
+                pipeline_mode VARCHAR(50),
+                fecha DATE,
+                prospected_titles JSONB DEFAULT '{}'::jsonb
+            );
+        """)
+        # Columnas adaptativas por si ya existe la tabla sin ellas
+        for col, col_type in [
+            ('ubicacion', 'VARCHAR(255)'),
+            ('descripcion', 'TEXT'),
+            ('especialidades', 'TEXT'),
+            ('sitio_web', 'VARCHAR(500)'),
+            ('prospected_titles', "JSONB DEFAULT '{}'::jsonb")
+        ]:
+            cur.execute(f"""
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'company_search' AND column_name = '{col}'
+                    ) THEN
+                        ALTER TABLE company_search ADD COLUMN {col} {col_type};
+                    END IF;
+                END $$;
+            """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_company_search_user_id ON company_search(user_id);")
+
+        # priority_1
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS priority_1 (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                nombre VARCHAR(255),
+                empresa VARCHAR(100),
+                cargo VARCHAR(100),
+                puntuacion FLOAT,
+                grado_de_contacto VARCHAR(50),
+                linkedin VARCHAR(500),
+                fecha DATE
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_priority_1_user_id ON priority_1(user_id);")
+
+        # priority_2
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS priority_2 (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                nombre VARCHAR(255),
+                empresa VARCHAR(100),
+                cargo VARCHAR(100),
+                puntuacion FLOAT,
+                grado_de_contacto VARCHAR(50),
+                linkedin VARCHAR(500),
+                fecha DATE
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_priority_2_user_id ON priority_2(user_id);")
+
+        # discarded
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS discarded (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                nombre VARCHAR(255),
+                empresa VARCHAR(100),
+                cargo VARCHAR(100),
+                puntuacion FLOAT,
+                grado_de_contacto VARCHAR(50),
+                linkedin VARCHAR(500),
+                fecha DATE
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_discarded_user_id ON discarded(user_id);")
+
+        # out_of_query: perfiles fuera de criterio; linkedin + parámetros de búsqueda (query booleana y filtros)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS out_of_query (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                linkedin VARCHAR(500) NOT NULL,
+                search_params JSONB NOT NULL DEFAULT '{}'::jsonb
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_out_of_query_user_id ON out_of_query(user_id);")
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_out_of_query_user_linkedin_search_params
+            ON out_of_query (user_id, linkedin, search_params);
+        """)
+
+        # outreach
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS outreach (
+                id INTEGER PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                puntuacion FLOAT,
+                nombre VARCHAR(255),
+                mensaje_1 VARCHAR(20),
+                respuesta_1 VARCHAR(20),
+                mensaje_2 VARCHAR(20),
+                respuesta_2 VARCHAR(20),
+                mensaje_3 VARCHAR(20),
+                respuesta_3 VARCHAR(20),
+                reunion VARCHAR(20),
+                fecha DATE
+            );
+        """)
+        # Agregar columnas mensaje_3 y respuesta_3 si la tabla ya existe y no las tiene
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'outreach' AND column_name = 'mensaje_3'
+                ) THEN
+                    ALTER TABLE outreach ADD COLUMN mensaje_3 VARCHAR(20);
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'outreach' AND column_name = 'respuesta_3'
+                ) THEN
+                    ALTER TABLE outreach ADD COLUMN respuesta_3 VARCHAR(20);
+                END IF;
+            END $$;
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_outreach_user_id ON outreach(user_id);")
+
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_outreach_user_id ON outreach(user_id);")
+
+        # web_search
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS web_search (
+                id SERIAL PRIMARY KEY,
+                conversation_id VARCHAR(255),
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                user_message TEXT,
+                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        # Agregar columna fecha si la tabla ya existe y no tiene la columna
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'web_search' AND column_name = 'fecha'
+                ) THEN
+                    ALTER TABLE web_search ADD COLUMN fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+                END IF;
+            END $$;
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_web_search_conversation_id 
+            ON web_search(conversation_id);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_web_search_user_id 
+            ON web_search(user_id);
+        """)
+
+        # strategy
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS strategy (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                fecha DATE
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_strategy_user_id ON strategy(user_id);")
+
+
+     
+        # ai_credit: tokens de IA usados en respuestas directas (sin plan), por mes
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS ai_credit (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                fecha DATE NOT NULL,
+                tokens_utilizados INTEGER NOT NULL
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_credit_user_id ON ai_credit(user_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_credit_fecha ON ai_credit(fecha);")
+
+        # message_feedback
+        # Tabla para almacenar feedback de usuarios sobre mensajes del asistente
+        # message_id: UUID del mensaje del asistente (generado en streaming_helpers.py)
+        # conversation_id: ID de la conversación donde está el mensaje
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS message_feedback (
+                id SERIAL PRIMARY KEY,
+                message_id VARCHAR(255) NOT NULL,
+                conversation_id VARCHAR(255) NOT NULL,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                feedback_type VARCHAR(10) NOT NULL CHECK (feedback_type IN ('up', 'down')),
+                feedback_reason VARCHAR(255) NULL,
+                feedback_details TEXT NULL,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                UNIQUE (message_id, user_id)
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_message_feedback_user_id ON message_feedback(user_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_message_feedback_message_id ON message_feedback(message_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_message_feedback_conversation_id ON message_feedback(conversation_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_message_feedback_created_at ON message_feedback(created_at DESC);")
+
+        # user_responses
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_responses (
+            id SERIAL PRIMARY KEY,
+            request_id VARCHAR(255) UNIQUE NOT NULL,
+            user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+            response TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now()
+        );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_responses_request_id ON user_responses(request_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_responses_user_id ON user_responses(user_id);")
+
+        # vector_store (pgvector)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vector_store (
+                collection VARCHAR(100) NOT NULL CHECK (collection IN (
+                    'prospect', 'strategy', 'owner', 'prompt', 'outreach',
+                    'chat', 'temp', 'system_template', 'user_template',
+                    'data_analysis', 'search', 'user_rag', 'rag_system',
+                    'corrections', 'memory',
+                    'debug', 'test'
+                )),
+                item_id SERIAL PRIMARY KEY,
+                external_id VARCHAR(255) NOT NULL,
+                user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                document TEXT,
+                metadata JSONB DEFAULT '{}'::jsonb,
+                embedding VECTOR(768),
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                UNIQUE (collection, user_id, external_id)
+            );
+        """)
+
+        # Migración: DROP + ADD constraint. Incluir colecciones existentes en la tabla para no violar filas actuales.
+        cur.execute("ALTER TABLE vector_store DROP CONSTRAINT IF EXISTS vector_store_collection_check;")
+        cur.execute("SELECT DISTINCT collection FROM vector_store;")
+        existing = {r[0] for r in cur.fetchall()}
+        known = [
+            'prospect', 'strategy', 'owner', 'prompt', 'outreach',
+            'chat', 'temp', 'system_template', 'user_template',
+            'data_analysis', 'search', 'user_rag', 'rag_system',
+            'corrections', 'memory', 'debug', 'test'
+        ]
+        all_collections = sorted(set(known) | existing)
+        placeholders = ', '.join(f"'{c}'" for c in all_collections)
+        cur.execute(f"""
+            ALTER TABLE vector_store ADD CONSTRAINT vector_store_collection_check
+            CHECK (collection IN ({placeholders}));
+        """)
+        
+        # Migrar metadata de JSON a JSONB si la tabla ya existe
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'vector_store' 
+                    AND column_name = 'metadata' 
+                    AND data_type = 'json'
+                ) THEN
+                    ALTER TABLE vector_store 
+                    ALTER COLUMN metadata TYPE JSONB USING metadata::jsonb;
+                END IF;
+            END $$;
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vector_store_collection_user
+            ON vector_store (collection, user_id);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vector_store_external_id
+            ON vector_store (collection, external_id);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vector_store_created_at
+            ON vector_store (created_at DESC);
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vector_store_doc_search
+            ON vector_store USING GIN (to_tsvector('spanish', coalesce(document,'')));
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS ivfflat_vector_store_embedding
+            ON vector_store USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = 100)
+            WHERE embedding IS NOT NULL;
+        """)
+
+        # user_settings (configuración por usuario, multi-tenant)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_settings (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                scoring JSONB,
+                -- secrets por usuario: {"LINKEDIN_USER":"...", "LINKEDIN_PASS":"..."}
+                secrets JSONB,
+                -- context por usuario: {"template": ["nombre1", ...], "product": [...], "service": [...], "company": [...]}
+                context JSONB,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);")
+        # Migración: si la FK de user_settings tenía ON DELETE SET NULL, cambiarla a CASCADE para borrar filas al borrar usuario
+        cur.execute("""
+            DO $$
+            DECLARE
+                conname TEXT;
+            BEGIN
+                SELECT tc.constraint_name INTO conname
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.referential_constraints rc
+                    ON tc.constraint_schema = rc.constraint_schema AND tc.constraint_name = rc.constraint_name
+                WHERE tc.table_schema = 'public' AND tc.table_name = 'user_settings'
+                    AND tc.constraint_type = 'FOREIGN KEY' AND rc.delete_rule = 'SET NULL';
+                IF conname IS NOT NULL THEN
+                    EXECUTE format('ALTER TABLE user_settings DROP CONSTRAINT %I', conname);
+                    EXECUTE 'ALTER TABLE user_settings ADD CONSTRAINT user_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE';
+                END IF;
+            END $$;
+        """)
+        
+        # Agregar columna context si la tabla ya existe y no tiene la columna
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'user_settings' AND column_name = 'context'
+                ) THEN
+                    ALTER TABLE user_settings ADD COLUMN context JSONB DEFAULT '{}'::jsonb;
+                END IF;
+            END $$;
+        """)
+        # Agregar columna pipeline_mode si no existe
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'user_settings' AND column_name = 'pipeline_mode'
+                ) THEN
+                    ALTER TABLE user_settings ADD COLUMN pipeline_mode VARCHAR(50) DEFAULT 'prospecting';
+                END IF;
+            END $$;
+        """)
+
+        # homepage_visits (analytics de visitas a la página de inicio)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS homepage_visits (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                session_id VARCHAR(255),
+                first_visit TIMESTAMPTZ,
+                visit_count INTEGER DEFAULT 1,
+                last_visit TIMESTAMPTZ,
+                user_agent TEXT,
+                referrer TEXT,
+                language VARCHAR(10),
+                theme VARCHAR(10),
+                cookie_consent VARCHAR(20) DEFAULT 'accepted',
+                created_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        # Agregar columna user_id si la tabla ya existe y no tiene la columna
+        cur.execute("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'homepage_visits' AND column_name = 'user_id'
+                ) THEN
+                    ALTER TABLE homepage_visits ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+                END IF;
+            END $$;
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_homepage_visits_user_id ON homepage_visits(user_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_homepage_visits_session_id ON homepage_visits(session_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_homepage_visits_created_at ON homepage_visits(created_at DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_homepage_visits_cookie_consent ON homepage_visits(cookie_consent);")
+
+        # payment (registro de pagos con conversión USD/ARS)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS payment (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                order_id VARCHAR(255) UNIQUE NOT NULL,
+                payment_request_id VARCHAR(255) UNIQUE NOT NULL,
+                payment_id VARCHAR(255),
+                status VARCHAR(20) DEFAULT 'PENDING' 
+                    CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'REFUNDED')),
+                plan_id VARCHAR(50) NOT NULL,
+                months INTEGER NOT NULL,
+                amount_usd FLOAT NOT NULL,
+                amount_ars FLOAT NOT NULL,
+                unit_price_usd FLOAT NOT NULL,
+                unit_price_ars FLOAT NOT NULL,
+                usd_to_ars_rate FLOAT NOT NULL,
+                currency VARCHAR(10) DEFAULT 'ARS',
+                buyer_email VARCHAR(255) NOT NULL,
+                buyer_name VARCHAR(255) NOT NULL,
+                buyer_phone VARCHAR(50),
+                buyer_doc_type VARCHAR(20),
+                buyer_doc_number VARCHAR(50),
+                checkout_url TEXT,
+                payment_check_url TEXT,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                webhook_received_at TIMESTAMPTZ DEFAULT now()
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_user_id ON payment(user_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_order_id ON payment(order_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_payment_request_id ON payment(payment_request_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_status ON payment(status);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_payment_created_at ON payment(created_at DESC);")
+
+        # e2e_test_results: resultados de tests E2E (fecha, hora, test, resultado, llm_explanation)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS e2e_test_results (
+                id SERIAL PRIMARY KEY,
+                fecha DATE NOT NULL,
+                hora TIME NOT NULL,
+                test TEXT NOT NULL,
+                resultado VARCHAR(20) NOT NULL CHECK (resultado IN ('pass', 'fail')),
+                llm_explanation TEXT
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_e2e_test_results_fecha_hora ON e2e_test_results(fecha, hora DESC);")
+
+        # debug_metrics: IDs de debug procesados para el dashboard de métricas
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS debug_metrics (
+                external_id VARCHAR(255) NOT NULL,
+                fecha DATE NOT NULL
+            );
+        """)
+
+        # company_search: resultados de búsquedas de empresas en LinkedIn (sin scoring)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS company_search (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                nombre VARCHAR(255),
+                sector VARCHAR(255),
+                tamanio VARCHAR(100),
+                linkedin VARCHAR(500),
+                pipeline_mode VARCHAR(50) DEFAULT 'prospecting',
+                fecha DATE
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_company_search_user_id ON company_search(user_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_company_search_linkedin ON company_search(linkedin);")
+
+        # system_updates: track last modification date of system features (e.g. LinkedIn UI fixes)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS system_updates (
+                id SERIAL PRIMARY KEY,
+                feature_name VARCHAR(255) UNIQUE NOT NULL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_system_updates_feature ON system_updates(feature_name);")
+
+    print("Tablas e índices creados/verificados correctamente.")
+
+def main():
+    host, port, user, password, database = get_env()
+    # 1) Crear la base (si no existe)
+    create_database_if_not_exists(host, port, user, password, database)
+    # 2) Conectar a la base objetivo y crear extensiones + tablas/índices
+    with connect(database, host, port, user, password) as conn:
+        ensure_extensions(conn)
+        create_tables_and_indexes(conn)
+
+if __name__ == "__main__":
+    main()

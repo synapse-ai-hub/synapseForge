@@ -256,7 +256,7 @@ cd synapseForge
 2. **Crear y activar un entorno virtual** (recomendado Python 3.12+)
 
 ```bash
-py -3.12 -m venv synapseForge
+py -3.12 -m venv .synapseForge
 .\synapseForge\Scripts\Activate.ps1
 ```
 

@@ -7,7 +7,7 @@
 $jsonPath = Join-Path $PSScriptRoot "commands.json"
 
 Write-Host ""
-Write-Host "  Trading CLI | Global Framework" -ForegroundColor Cyan
+Write-Host "  synapseForge CLI | Global Framework" -ForegroundColor Cyan
 Write-Host "  ------------------------------------------------" -ForegroundColor DarkGray
 
 if (Test-Path $jsonPath) {

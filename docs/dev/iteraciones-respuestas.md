@@ -100,17 +100,73 @@ Este documento registra las iteraciones con agentes especializados y sus respues
 | Atributo | Detalle |
 |----------|---------|
 | **Item** | Documentar flujo de ejecución del chat_orchestrator para compatibilidad arquitectónica |
-| **Agente** | ai-architect |
-| **Estado** | [Pendiente/In Progress/Completado] |
-| **Fecha** | |
+| **Agente** | ai-architect + NotebookLM (synapse-architecture, ai-architect) |
+| **Estado** | Completado |
+| **Fecha** | Mayo 2026 |
 
 **Pregunta formulada:**
-
+Analizar el flujo de ejecución del chat_orchestrator para definir compatibilidad arquitectónica con synapseForge. Solo el flujo es compatible, no las herramientas ni prompts. Incluir: comportamiento según status (success/error/canceled), contratos de herramientas, puntos de bypass, observabilidad, prompts dinámicos, y gestión de modelos.
 
 **Respuesta:**
 
+## Resumen del Análisis - Arquitectura AI-Native
 
-**Notas adicionales:**
+### 1. Flujo del Orquestador (5 etapas)
+- **Router (LLM0)**: Clasifica intención y determina ruta (11 rutas posibles: direct, planner, clarify, etc.)
+- **Planner (LLM1)**: Genera plan de pasos si la solicitud es compleja
+- **Decision Maker (LLM2)**: Traduce lenguaje natural a parámetros JSON
+- **Executor (Tools)**: Ejecuta las herramientas
+- **Validator (LLM4)**: Valida output antes de síntesis final
+
+### 2. Comportamiento según Status
+- **Success**: El flujo continúa al siguiente paso o a la síntesis final
+- **Error/Canceled**: Se activa bucle de corrección - el feedback se reinyecta al Planner para ajustar estrategia
+
+### 3. Puntos de Bypass
+- **Direct**: Respuestas simples saltan Planner/Decision Maker/Validator
+- **Single tool**: Omite Planner si es una sola herramienta
+- **Consultas determinísticas**: Omite Validator
+- **Nombre de persona**: Bypass de RAG, usa búsqueda de perfiles
+
+### 4. Contrato de Herramientas
+```
+{status, message, data: {reasoning, output, correction}, usage}
+```
+
+### 5. Observabilidad
+- **_debug_id**: Identificador de rastreo que se propaga
+- **reasoning**: Campo obligatorio en todos los agentes
+- **usage**: Métricas de tokens y tiempo de ejecución
+
+### 6. Prompt Engineering vs Context Engineering
+- **Prompt Engineering**: "Constitución" del sistema - reglas fijas, formato JSON, "no inventar datos"
+- **Context Engineering**: Inyección dinámica en runtime - memoria usuario, historial, feedback loops
+
+### 7. Gestión de Modelos (LLM vs SLM)
+- **LLMs**: Router, Planner, Decision Maker, Validator, Síntesis final
+- **SLMs/Especializados**: Embeddings (búsqueda semántica), Reranking, Búsqueda web
+- **Justificación**: Reducción de latencia, precisión por descomposición, eficiencia en RAG, resiliencia
+
+---
+
+## Evaluación con Prácticas Modernas (2026)
+
+| Componente | Nivel de Alineación |
+|------------|---------------------|
+| Router (Handoff dinámico) | Máximo |
+| Planner (Magentic Task-Ledger) | Excelente |
+| Decision Maker (Separation of Concerns) | Alto |
+| Validator (Maker-Checker/LLM Judge) | Máximo |
+| Bypasses (Tiered Complexity) | Excelente |
+| Clarify (Human-in-the-Loop) | Necesario |
+
+**Conclusión**: Arquitectura "AI-Native" - trata a la IA como plano de control de un sistema distribuido. Escalable, auditable, financieramente sostenible.
+
+**Documentos completos:**
+- `docs/dev/F0.2-analisis-sistema-referencia.md`
+- `docs/dev/F0.2-evaluacion-practicas-modernas.md`
+
+
 
 
 ---

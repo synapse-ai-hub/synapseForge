@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/synapse-ai-hub/ProspectingAgent/raw/main/src/LogoBlancoGrande2.png" alt="Logo de synapse.ai" width="80">
+  <img src="https://github.com/synapse-ai-hub/ProspectingAgent/raw/main/src/logo.png" alt="Logo de synapse.ai" width="80">
 </p>
 
 ---

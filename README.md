@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./src/LogoBlancoGrande2.png" alt="Logo synapse.ai" width="150">
+  <img src="./src/logo.png" alt="Logo synapse.ai" width="150">
 </p>
 
 <h1 align="center">synapseForge</h1>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../src/logo.png" alt="Logo de synapse.ai" width="80">
+  <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" width="150">
 </p>
 
 ---

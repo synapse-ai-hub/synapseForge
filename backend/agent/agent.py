@@ -523,10 +523,18 @@ class Agent():
                 yield {'type': 'tool_calls_detected', 'content': normalized}
         else:
             options = {}
-            if temperature:
+            if temperature is not None:
                 options['temperature'] = temperature
+            if top_p is not None:
+                options['top_p'] = top_p
             if max_tokens:
                 options['num_predict'] = max_tokens
+            for k in ('seed', 'num_ctx', 'top_k', 'min_p', 'repeat_penalty',
+                      'frequency_penalty', 'presence_penalty', 'mirostat',
+                      'mirostat_tau', 'mirostat_eta', 'typical_p', 'tfs_z',
+                      'num_thread', 'num_gpu', 'stop'):
+                if k in kwargs:
+                    options[k] = kwargs.pop(k)
             stream = self.ollama_client.chat(
                 model=model,
                 messages=msgs,

@@ -77,7 +77,7 @@ MAX_SUBAGENT_DEPTH = 3
 
 
 class AgentLoop:
-    """OpenCode-style agent loop with native tool calling.
+    """Agent loop with native tool calling.
 
     The loop iterates calling the LLM with available tools. The LLM
     autonomously decides whether to call a tool or produce the final

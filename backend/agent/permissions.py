@@ -1,0 +1,491 @@
+"""Agent permission & prompt resolution (runtime).
+
+Given an agent name, this module locates its markdown definition in the
+``agents/`` folder (config directory) and exposes three independent resolvers,
+each called from a different place:
+
+- :func:`get_tool_permissions` — called from ``backend.utils.tools``
+  (``tools_registry``). Returns **only** the tool permissions.
+- :func:`get_skill_permissions` — called from ``backend.utils.skill_loader``
+  (``format_skills_section``). Returns **only** the skill permissions.
+- :func:`get_agent_prompt` — called from the system-prompt builder (loop,
+  once agent selection is wired). Returns **only** the prompt body.
+
+Each resolver reads the same markdown at runtime; none of them store
+state. No defaults are applied — an agent exposes exactly what its
+frontmatter declares.
+
+The actual filtering of tools/skills is done by :func:`filter_tools` and
+:func:`filter_skills` (also defined here), which the callers invoke after
+resolving the permissions.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import sys
+from typing import Any
+
+import yaml
+
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(os.path.dirname(_current_dir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from backend.agent.config_dir import get_agents_dir
+from backend.agent.contract import make_error_response, make_success_response
+from backend.agent.utils.error_logger import log_error
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Ensure the project root is in sys.path so absolute imports (backend.*)
+# resolve correctly regardless of how the file is invoked.
+# ---------------------------------------------------------------------------
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(os.path.dirname(_current_dir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+
+# ---------------------------------------------------------------------------
+# Folder discovery (config directory)
+# ---------------------------------------------------------------------------
+
+
+def _locate_agents_dir() -> str | None:
+    """Locate the external ``agents/`` folder.
+
+    Uses the config directory ``~/.config/synapseForge/agents/``.
+    Returns ``None`` (no error) if the folder does not exist.
+    """
+    agents_dir = get_agents_dir()
+    if agents_dir.is_dir():
+        return str(agents_dir)
+    return None
+
+
+def _read_markdown(agent_name: str) -> tuple[str | None, str | None]:
+    """Locate and read an agent's markdown file.
+
+    Args:
+        agent_name: Agent name (without ``.md``).
+
+    Returns:
+        ``(md_path, content)`` or ``(None, None)`` if not found.
+    """
+    agents_dir = _locate_agents_dir()
+    if not agents_dir:
+        return None, None
+    md_path = os.path.join(agents_dir, f"{agent_name}.md")
+    if not os.path.isfile(md_path):
+        return None, None
+    try:
+        with open(md_path, encoding="utf-8-sig") as f:
+            return md_path, f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        log_error(str(e), source="permissions.py:_read_markdown")
+        logger.warning("Error al leer %s: %s", md_path, e)
+        return None, None
+
+
+def _parse_frontmatter(content: str) -> dict[str, Any]:
+    """Parse the YAML frontmatter block of an agent markdown string.
+
+    Args:
+        content: Full markdown content.
+
+    Returns:
+        The parsed frontmatter dict, or ``{}`` if missing/unparseable.
+    """
+    if not content.lstrip().startswith("---"):
+        return {}
+
+    lines = content.splitlines()
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end is None:
+        return {}
+
+    fm_text = "\n".join(lines[1:end])
+    try:
+        return yaml.safe_load(fm_text) or {}
+    except yaml.YAMLError as e:
+        log_error(str(e), source="permissions.py:_parse_frontmatter")
+        logger.warning("Error parseando frontmatter: %s", e)
+        return {}
+
+
+def _read_prompt_body(content: str) -> str:
+    """Extract the prompt body (text below the frontmatter).
+
+    Args:
+        content: Full markdown content.
+
+    Returns:
+        The prompt body string, or empty if not present.
+    """
+    if not content.lstrip().startswith("---"):
+        return content.strip()
+
+    lines = content.splitlines()
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end is None:
+        return content.strip()
+    return "\n".join(lines[end + 1 :]).strip()
+
+
+# ---------------------------------------------------------------------------
+# Resolvers (one per concern)
+# ---------------------------------------------------------------------------
+
+
+def get_tool_permissions(agent_name: str | None) -> dict[str, Any]:
+    """Resolve an agent's **tool** permissions at runtime.
+
+    Reads ``agents/<agent_name>.md`` and returns only the top-level
+    ``permission`` entries (tool permissions) via the unified contract.
+
+    Args:
+        agent_name: Agent name (without ``.md``). ``None``/empty → empty
+            permissions (no filtering).
+
+    Returns:
+        Contract response. On success, ``data`` is a JSON **string** with
+        the tool permission dict.
+    """
+    if not agent_name:
+        return make_success_response(
+            message="No agent selected.", data=json.dumps({})
+        )
+
+    _, content = _read_markdown(agent_name)
+    if content is None:
+        return make_error_response(message=f"Agent '{agent_name}' not found.")
+
+    fm = _parse_frontmatter(content)
+    permission = fm.get("permission", {}) or {}
+    tools_perms = {k: v for k, v in permission.items() if not isinstance(v, dict)}
+
+    return make_success_response(
+        message=f"Tool permissions for agent '{agent_name}'.",
+        data=json.dumps(tools_perms),
+    )
+
+
+def get_skill_permissions(agent_name: str | None) -> dict[str, Any]:
+    """Resolve an agent's **skill** permissions at runtime.
+
+    Reads ``agents/<agent_name>.md`` and returns only the ``skill``
+    sub-block of ``permission`` via the unified contract.
+
+    Args:
+        agent_name: Agent name (without ``.md``). ``None``/empty → empty
+            permissions (no filtering).
+
+    Returns:
+        Contract response. On success, ``data`` is a JSON **string** with
+        the skill permission dict.
+    """
+    if not agent_name:
+        return make_success_response(
+            message="No agent selected.", data=json.dumps({})
+        )
+
+    _, content = _read_markdown(agent_name)
+    if content is None:
+        return make_error_response(message=f"Agent '{agent_name}' not found.")
+
+    fm = _parse_frontmatter(content)
+    permission = fm.get("permission", {}) or {}
+    skills_perms = permission.get("skill", {}) or {}
+
+    return make_success_response(
+        message=f"Skill permissions for agent '{agent_name}'.",
+        data=json.dumps(skills_perms),
+    )
+
+
+def get_agent_prompt(agent_name: str | None) -> dict[str, Any]:
+    """Resolve an agent's **prompt body** at runtime.
+
+    Reads ``agents/<agent_name>.md`` and returns only the text below the
+    frontmatter (the system prompt) via the unified contract.
+
+    Args:
+        agent_name: Agent name (without ``.md``). ``None``/empty → empty
+            prompt.
+
+    Returns:
+        Contract response. On success, ``data`` is the prompt body string.
+    """
+    if not agent_name:
+        return make_success_response(message="No agent selected.", data="")
+
+    _, content = _read_markdown(agent_name)
+    if content is None:
+        return make_error_response(message=f"Agent '{agent_name}' not found.")
+
+    return make_success_response(
+        message=f"Prompt for agent '{agent_name}'.",
+        data=_read_prompt_body(content),
+    )
+
+
+def get_agent_parameters(agent_name: str | None) -> dict[str, Any]:
+    """Resolve an agent's **model parameters** from frontmatter.
+
+    Reads ``agents/<agent_name>.md`` and extracts the ``parameters`` block
+    (temperature, top_p, model). Returns defaults if not specified.
+
+    Args:
+        agent_name: Agent name (without ``.md``). ``None``/empty → defaults.
+
+    Returns:
+        Contract response. On success, ``data`` is a JSON string with
+        ``{"temperature": float, "top_p": float, "model": str | None}``.
+    """
+    defaults = {"temperature": 0.0, "top_p": 0.5, "model": None}
+
+    if not agent_name:
+        return make_success_response(
+            message="No agent selected, using defaults.",
+            data=json.dumps(defaults),
+        )
+
+    _, content = _read_markdown(agent_name)
+    if content is None:
+        return make_error_response(message=f"Agent '{agent_name}' not found.")
+
+    fm = _parse_frontmatter(content)
+    params = fm.get("parameters", {}) or {}
+
+    # Merge with defaults
+    result = {
+        "temperature": params.get("temperature", defaults["temperature"]),
+        "top_p": params.get("top_p", defaults["top_p"]),
+        "model": params.get("model", defaults["model"]),
+        "seed": params.get("seed", defaults["seed"])
+    }
+
+    return make_success_response(
+        message=f"Parameters for agent '{agent_name}'.",
+        data=json.dumps(result),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agent listing — name + description for system-prompt injection
+# ---------------------------------------------------------------------------
+
+
+def list_agents() -> dict:
+    """List all available agents with their ``name`` and ``description``.
+
+    Scans the ``agents/`` folder (dev/prod), parses frontmatter of each
+    ``.md`` file, and returns ``name`` + ``description`` for each agent.
+    Reuses existing ``_locate_agents_dir`` and ``_parse_frontmatter``.
+
+    Returns:
+        Contract response. On success, ``data`` is a JSON list of
+        ``{"name": str, "description": str}``.
+    """
+    agents_dir = _locate_agents_dir()
+    if not agents_dir:
+        return make_success_response(
+            message="No agents folder found.",
+            data=json.dumps([]),
+        )
+
+    result: list[dict[str, str]] = []
+    for entry in sorted(os.listdir(agents_dir)):
+        if not entry.endswith(".md"):
+            continue
+        md_path = os.path.join(agents_dir, entry)
+        try:
+            with open(md_path, encoding="utf-8-sig") as f:
+                content = f.read()
+        except (OSError, UnicodeDecodeError) as e:
+            log_error(str(e), source="permissions.py:get_agent_descriptions")
+            logger.warning("Error al leer %s: %s", md_path, e)
+            continue
+
+        fm = _parse_frontmatter(content)
+        name = fm.get("name", entry[:-3])
+        description = fm.get("description", "")
+        result.append({"name": name, "description": description})
+
+    return make_success_response(
+        message=f"{len(result)} agente(s) encontrado(s).",
+        data=json.dumps(result),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Filtering helpers (called by tools_registry & format_skills_section)
+# ---------------------------------------------------------------------------
+
+
+def wildcard_match(pattern: str, text: str) -> bool:
+    """Return ``True`` if *text* matches the wildcard *pattern*.
+
+    Supports a single ``*`` wildcard (matches any sequence, including
+    empty). ``Wildcard.match`` for the simple cases
+    used in agent frontmatter.
+
+    Args:
+        pattern: Pattern possibly containing ``*``.
+        text: Value to test against the pattern.
+
+    Returns:
+        ``True`` if *text* matches *pattern*.
+    """
+    if pattern == "*":
+        return True
+    if pattern == text:
+        return True
+    regex = "^" + re.escape(pattern).replace(r"\*", ".*") + "$"
+    return re.match(regex, text) is not None
+
+
+def dict_to_ruleset(perm_dict: dict[str, Any] | None) -> list[dict[str, str]]:
+    """Convert a flat permission dict into a list of rules.
+
+    Only string-valued entries become rules; nested dicts are ignored.
+
+    Args:
+        perm_dict: Permission mapping (e.g. ``{"read": "allow", ...}``).
+
+    Returns:
+        List of ``{"permission": str, "pattern": "*", "action": str}``.
+    """
+    rules: list[dict[str, str]] = []
+    if not perm_dict:
+        return rules
+    for key, value in perm_dict.items():
+        if isinstance(value, dict):
+            continue
+        rules.append(
+            {"permission": str(key), "pattern": "*", "action": str(value)}
+        )
+    return rules
+
+
+def evaluate(
+    permission: str,
+    pattern: str,
+    *rulesets: list[dict[str, str]],
+) -> str:
+    """Evaluate the action for a permission/pattern against rulesets.
+
+    ``evaluate``: scans all rulesets, finds the **last**
+    rule whose ``permission`` and ``pattern`` both match (via wildcard),
+    and returns its action. If no rule matches, returns ``"ask"``.
+
+    Args:
+        permission: The permission name to check (e.g. a tool name).
+        pattern: The pattern to match (usually ``"*"``).
+        *rulesets: One or more lists of rules. Later rulesets take
+            precedence over earlier ones.
+
+    Returns:
+        One of ``"allow"``, ``"deny"`` or ``"ask"``.
+    """
+    rules: list[dict[str, str]] = []
+    for rs in rulesets:
+        rules.extend(rs)
+
+    for rule in reversed(rules):
+        if wildcard_match(permission, rule.get("permission", "")) and wildcard_match(
+            pattern, rule.get("pattern", "*")
+        ):
+            return rule.get("action", "ask")
+
+    return "ask"
+
+
+def filter_tools(
+    tools: list[dict[str, Any]],
+    tool_perms: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Filter a tool registry by an agent's tool permissions.
+
+    Only tools whose name resolves to ``"allow"`` are kept. When
+    *tool_perms* is ``None`` or empty, the list is returned unchanged.
+
+    Args:
+        tools: List of tool schemas in API format.
+        tool_perms: Top-level permission dict from the agent frontmatter.
+
+    Returns:
+        Filtered list of tool schemas.
+    """
+    if not tool_perms:
+        return tools
+
+    ruleset = dict_to_ruleset(tool_perms)
+    if not ruleset:
+        return tools
+
+    filtered: list[dict[str, Any]] = []
+    for tool in tools:
+        name = tool.get("function", {}).get("name", "")
+        if not name:
+            continue
+        if evaluate(name, "*", ruleset) == "allow":
+            filtered.append(tool)
+        else:
+            logger.debug("Tool '%s' filtered out by permission.", name)
+
+    return filtered
+
+
+def filter_skills(
+    skills_text: str,
+    skill_perms: dict[str, Any] | None,
+) -> str:
+    """Filter a formatted skills section by an agent's skill permissions.
+
+    Parses the ``### <name>`` headers, keeps only blocks whose name
+    resolves to ``"allow"``, and rebuilds the string. When *skill_perms*
+    is ``None`` or empty, the text is returned unchanged.
+
+    Args:
+        skills_text: Output of ``format_skills_section`` (markdown).
+        skill_perms: The ``skill`` sub-dict from the agent frontmatter.
+
+    Returns:
+        Filtered markdown skills section.
+    """
+    if not skill_perms or not skills_text.strip():
+        return skills_text
+
+    ruleset = dict_to_ruleset(skill_perms)
+    if not ruleset:
+        return skills_text
+
+    blocks = skills_text.split("\n\n")
+    kept: list[str] = []
+    for block in blocks:
+        match = re.match(r"^###\s+(.+)$", block.strip(), re.MULTILINE)
+        if not match:
+            kept.append(block)
+            continue
+        name = match.group(1).strip()
+        if evaluate(name, "*", ruleset) == "allow":
+            kept.append(block)
+        else:
+            logger.debug("Skill '%s' filtered out by permission.", name)
+
+    return "\n\n".join(kept)

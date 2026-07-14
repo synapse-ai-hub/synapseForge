@@ -1,0 +1,17 @@
+Entorno virtual: se crea (.<repo>nobre_repo</repo>)
+.commands/
+.github/
+backend/
+cicd/
+client_db/
+frontend/
+on_boarding/
+src/
+tests/
+.env.example
+.gitignore (reemplazar ".synapseForge" por ".<repo>nombre_repo</repo>")
+LICENSE
+README.md (no el de este repo, template de skills.)
+config/
+requirements.txt (revisar si falta alguna dependencia)
+

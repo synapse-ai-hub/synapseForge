@@ -1,0 +1,81 @@
+const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
+
+export interface ChatSession {
+  session_id: string;
+  title: string;
+  preview: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+export interface SessionMessage {
+  id: string;
+  type: "user" | "assistant";
+  content: string;
+  toolCalls?: Array<{ id?: string; name: string; args: Record<string, any> }> | null;
+  toolResults?: Array<{ tool_call_id?: string; tool_name: string; result: any }> | null;
+}
+
+export interface SessionMessages {
+  session_id: string;
+  messages: SessionMessage[];
+}
+
+export interface SessionListResponse {
+  status: string;
+  message: string;
+  data: ChatSession[];
+}
+
+export interface SessionDetailResponse {
+  status: string;
+  message: string;
+  data: SessionMessages;
+}
+
+export const sessionService = {
+  /** List all chat sessions ordered by most recent activity. */
+  async listSessions(): Promise<ChatSession[]> {
+    const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const result = (await response.json()) as SessionListResponse;
+    if (result && result.status === "error") {
+      throw new Error(result.message || "Error al obtener las sesiones");
+    }
+    return Array.isArray(result.data) ? result.data : [];
+  },
+
+  /** Load the full message history of a session. */
+  async getSession(sessionId: string): Promise<SessionMessages> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "GET" },
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const result = (await response.json()) as SessionDetailResponse;
+    if (result && result.status === "error") {
+      throw new Error(result.message || "Error al obtener la sesión");
+    }
+    return result.data;
+  },
+
+  /** Delete a session and all its messages. */
+  async deleteSession(sessionId: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+  },
+};
+
+export default sessionService;

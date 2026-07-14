@@ -3,3 +3,41 @@
 
 # Variables de entorno
 *.env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Distribuciones y paquetes
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Logs y bases de datos
+*.log
+
+
+# Configs de editor comunes (puedes agregar más si querés)
+.vscode/
+.idea/
+
+# Temporales
+*.tmp
+.~lock.*
+
+# Node modules
+node_modules/
+
+
+# Archivos subidos
+uploads/
+
+# Documentación interna
+docs/

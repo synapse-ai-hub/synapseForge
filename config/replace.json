@@ -1,0 +1,14 @@
+{
+  "logo": {
+    "path": "path/to/logo",
+    "width": null,
+    "height": null
+  },
+  "empresa": "nombre_empresa_desarrolladora",
+  "owner": "nombre_owner",
+  "legal": "nombre_legal",
+  "repo": "nombre_repo",
+  "cliente": "nombre_cliente",
+  "logo_cliente": "path/to/logo_cliente/ubicación_original.png",
+  "descripcion": "Nombre del proyecto"
+}

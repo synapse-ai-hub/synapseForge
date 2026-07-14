@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" width="150">
+  <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" width="">
 </p>
+
+---
 
 <h1 align="center">synapseForge</h1>
 
-<p align="center">
-  Framework Python para construir, orquestar y desplegar agentes de IA a escala.
-</p>
+---
 
 <p align="center">
   <a href="./LICENSE">
@@ -16,293 +16,303 @@
 
 ---
 
-## Qué es synapseForge
-
-**synapseForge** es un framework que permite construir agentes de IA sin necesidad de programar. El usuario describe lo que necesita en lenguaje natural, el builder genera la estructura del agente, se itera hasta que queda conforme, y luego se compila en código ejecutable.
-
-A diferencia de LangChain, CrewAI, AutoGen y n8n — que requieren escribir código o configurar nodos manualmente — synapseForge funciona en modo conversacional: vos explicás lo que necesitás y el framework lo construye solo.
-
-El framework incluye primitivas propias para Agent, Tool, Memory y Pipelines de ejecución, con validación exhaustiva, prompting estructurado, y observabilidad completa.
+<h3 align="center">CLI + Framework para crear, construir y ejecutar proyectos de agentes IA full-stack</h3>
 
 ---
 
-## El Problema
+## Descripción
 
-Construir agentes de IA requiere saber programar. LangChain y CrewAI exigen escribir código Python. n8n requiere configurar nodos visualmente. En todos los casos, si no sabés de código, estás limitado.
+synapseForge es un paquete PyPI (`pip install synapseforge`) que provee:
 
-synapseForge invierte esa ecuación: el conocimiento está en el framework, no en el usuario. Vos describís la intención en lenguaje natural y el builder se encarga del resto.
+1. **CLI `synapseforge`** con subcomandos para gestionar el ciclo de vida completo de un proyecto
+2. **Framework de agentes** (backend/agent/) instalado como dependencia: Agent, Tools, Loop, Sessions, MCP, Skills, Permissions
+3. **Template de proyecto** embebido en el paquete (backend FastAPI + frontend React/Vite/TS) que se materializa con `synapseforge init`
+
+El usuario instala el paquete, inicializa un proyecto, configura `config/replace.json`, ejecuta `build` (inject placeholders, copy logo, gen ico, install deps, build frontend) y `run` (levanta uvicorn + vite dev).
 
 ---
 
-## Arquitectura
+## ¿Qué resuelve?
+
+- **Scaffolding repetitivo**: Un comando crea venv, copia template, inyecta config, compila frontend
+- **Configuración dispersa**: Un solo `config/replace.json` con placeholders XML para todo el proyecto
+- **Logo/branding del cliente**: Copia automática + generación `.ico` via `generate_ico.py`
+- **Dependencias duales**: `pip install` en venv del proyecto + `npm install` + `npm run build` en frontend
+- **MCP integrado**: Config en `~/.config/synapseForge/config.json`, health check via CLI y API
+- **Distribución**: El usuario decide cómo empaquetar/desplegar (PyInstaller, Docker, systemd, etc.)
+
+---
+
+## Store — Tools y Skills Disponibles
+
+El paquete incluye un `store/` con tools y skills listas para instalar:
+
+```
+synapseforge/store/
+├── tools_store/             # Tools disponibles (.py)
+│   └── ...                  # Instalar con: synapseforge install tool <nombre>
+└── skills_store/            # Skills disponibles (carpeta con SKILL.md)
+    └── ...                  # Instalar con: synapseforge install skill <nombre>
+```
+
+El usuario instala las que necesita via CLI, y se copian a `~/.config/synapseForge/tools/` o `~/.config/synapseForge/skills/`. El agente no tiene skills nativas — todo se personaliza.
+
+| Comando | Descripción |
+|---------|-------------|
+| `synapseforge install tool <nombre>` | Instala una tool del store al config del usuario |
+| `synapseforge install skill <nombre>` | Instala una skill del store al config del usuario |
+| `synapseforge remove tool <nombre>` | Elimina una tool del config del usuario |
+| `synapseforge remove skill <nombre>` | Elimina una skill del config del usuario |
+| `synapseforge list tools` | Lista tools disponibles en store + instaladas |
+| `synapseforge list skills` | Lista skills disponibles en store + instaladas |
+
+---
+
+## Estructura del producto
+
+### 1. Paquete PyPI (`synapseforge`)
+
+```
+synapseforge/
+├── cli/                    # Entry point: init, build, run
+├── templates/
+│   └── project/            # Template embebido (backend/, frontend/, config/)
+├── backend/agent/          # Framework (instalado como dependencia)
+│   ├── agent.py            # Agent class: Groq/Ollama, streaming, tool calling
+│   ├── tools.py            # Registry: native + external (~/.config/synapseForge/tools/) + MCP
+│   ├── loop.py             # AgentLoop: while True → LLM → tool_calls → execute → continue
+│   ├── session.py          # SessionManager: SQLite WAL, messages, config_kv, error_log
+│   ├── permissions.py      # Agent defs en ~/.config/synapseForge/agents/*.md (frontmatter YAML)
+│   ├── config_dir.py       # ~/.config/synapseForge/ (skills, tools, agents, config.json)
+│   ├── contract.py         # ContractResponse: status, message, data, tool_calls, usage
+│   ├── utils/
+│   │   ├── mcp_helper.py   # MCP stdio/HTTP, tool discovery, execution, health
+│   │   ├── skill_loader.py # SKILL.md parsing, triggers, reference guide
+│   │   ├── generate_ico.py # PNG → ICO (usado en build)
+│   │   └── ...
+│   └── prompts/            # system_prompt.md, title.md, select_skills.md, select_reference.md
+```
+
+### 2. Proyecto generado (`synapseforge init mi-proyecto`)
+
+```
+mi-proyecto/
+├── config/
+│   └── replace.json        # Placeholders: empresa, owner, legal, repo, cliente, logo_cliente, descripcion, logo, width, height
+├── backend/
+│   ├── main.py             # FastAPI app, lifespan, routers, CORS, health
+│   ├── routes/
+│   │   ├── chat.py         # POST /api/chat → SSE stream (AgentLoop)
+│   │   ├── config.py       # Providers, models, context-window, MCP servers/health
+│   │   └── sessions.py     # CRUD sessions, messages, titles
+│   ├── requirements.txt    # synapseforge, fastapi, uvicorn, groq, ollama, python-dotenv, etc.
+│   └── ./      # Venv creado en init (Python 3.12+, nombre = repo)
+├── frontend/
+│   ├── package.json        # React 18, TS, Vite, Tailwind, shadcn/ui, lucide-react
+│   ├── vite.config.ts
+│   ├── src/
+│   │   ├── services/chatService.ts    # SSE parsing: chunk, tool_call, tool_result, subagent_*, session_title, done
+│   │   ├── services/configService.ts  # Providers, models, context-window, MCP health
+│   │   ├── services/sessionService.ts # Sessions list, delete
+│   │   ├── components/Sidebar.tsx     # Sessions tab + Config tab (provider/model, context, MCP health)
+│   │   ├── components/MessageBubble.tsx
+│   │   └── ...
+│   └── dist/               # Generado en build (npm run build)
+├── .config/
+│   └── synapseForge/       # Config usuario (skills/, tools/, agents/, config.json solo MCP)
+└── README.md               # Este archivo (generado con placeholders)
+```
+
+### 3. Configuración usuario (`~/.config/synapseForge/`)
 
 ```
 synapseForge/
-├── core/           # Primitivas propias: Agent, Tool, Memory, State
-├── pipelines/      # Pipeline de ejecución: Router, Planner, Executor, Validator
-├── builder/        # Asistente conversacional
-└── templates/      # Arquetipos de agentes predefinidos
+├── skills/                 # Carpeta por skill con SKILL.md (description, triggers, body, Reference Guide)
+├── tools/                  # .py sueltos con TOOL_NAME, TOOL_DESCRIPTION, TOOL_PARAMETERS, execute()
+├── agents/                 # .md con frontmatter YAML: name, description, permission:{tool:{}, skill:{}}, parameters:{}
+└── config.json             # Solo MCP: {mcp: {timeout, servers: {label: {command, args, env, server_url, transport, disabled}}}}
 ```
-
-### Core — Primitivas del Framework
-
-- **Agent**: Entidad autónoma con modelo, herramientas, memoria y configuración
-- **Tool**: Funciones ejecutables que el agente puede invocar
-- **Memory**: Memoria de corto plazo (sesión) y largo plazo (histórico)
-- **State**: Gestión de estado para workflows complejos
-
-### Pipelines — Orquestación
-
-Pipeline de ejecución robusto que incluye:
-
-- **Router**: Decide el modo de operación según el input
-- **Planner**: Genera el plan de ejecución
-- **Executor**: Ejecuta las herramientas
-- **Validator**: Valida inputs y outputs en cada paso
-
-Cada paso incluye validación exhaustiva, retry inteligente con backoff, y streaming progresivo.
-
-### Builder — Constructor Conversacional
-
-Flujo completo:
-
-1. **Usuario describe** en lenguaje natural lo que necesita
-2. **Builder genera** una especificación preliminar
-3. **Iteración** hasta que el usuario queda conforme
-4. **Compilación** a código Python ejecutable
-
-### Templates — Arquetipos
-
-Agentes predefinidos listos para usar o personalizar:
-
-- Research Agent
-- Outreach Agent
-- Support Agent
-- Analysis Agent
-- Orchestrator
-
----
-
-## Comparación con Frameworks Existentes
-
-| Feature | synapseForge | LangChain | CrewAI | AutoGen | n8n |
-|---------|-------------|----------|-------|--------|-----|
-| **Modo de uso** | Conversacional | Código | Código | Código | Visual |
-| **Programar** | No requerido | Requiere | Requiere | Requiere | Parcial |
-| **Spec visual** | Sí (Markdown) | No | No | No | Parcial |
-| **Iteración** | Sí | No | No | No | Limitado |
-| **Compilación** | Automática | No | No | No | No |
-| **Primitivas propias** | Sí | No | No | No | No |
-| **Validación exhaustiva** | Sí | No | No | No | Limitado |
-| **Prompting estructurado** | Sí | No | No | No | No |
-| **Multi-agente** | Sí | Sí | Sí | Sí | Limitado |
-| **Memoria** | Corto y largo plazo | Básica | Básica | Moderada | Básica |
-| **Observabilidad** | Completa | LangSmith | Limitada | Azure | Logs |
-| **Streaming** | Sí | Sí | Sí | Sí | Sí |
-
----
-
-## Diferenciadores Clave
-
-### Sin Programar
-
-El usuario no escribe código. Describe en lenguaje natural y el builder genera todo. Esto es lo que ningún otro framework ofrece.
-
-### Primitivas Propias
-
-synapseForge no depende de LangChain ni ninguna otra librería. Todo está implementado desde cero: Agent, Tool, Memory, Pipeline. El builder genera código que usa exclusivamente el framework propio.
-
-### Validación Exhaustiva
-
-Cada input y output se valida antes de ejecutarse. Si una tool falla, el framework no continúa ciegamente — valida, reporta el error, y permite corregir antes de seguir.
-
-### Prompting Estructurado
-
-El framework incluye ingeniería de prompts integrada. No vas a escribir prompts a mano — el builder los genera con estructura específica para cada caso de uso.
-
-### Memoria Robusta
-
-Memoria de corto plazo (sesión actual) y largo plazo (histórico por usuario). Aislamiento total entre sesiones.
-
-### Observabilidad Completa
-
-Traces, métricas, errores detallados, cost tracking. Todo built-in, sin dependencias externas.
-
----
-
-## Cómo Funciona el Builder
-
-### Paso 1: Descripción
-
-El usuario escribe:
-
-```
-"Quiero un agente que busque información de empresas en la web,
-les envíe un email personalizado con los hallazgos,
-y guarde los resultados en una base de datos."
-```
-
-### Paso 2: Generación
-
-El builder genera una spec en Markdown.
-
-### Paso 3: Iteración
-
-El usuario revisa, sugiere cambios. El builder regenera con los cambios.
-
-### Paso 4: Compilación
-
-Cuando el usuario aprueba, el builder genera:
-
-- `agente.py`: Clase principal
-- `tools.py`: Herramientas personalizadas
-- `config.yaml`: Configuración
-- `requirements.txt`: Dependencias
-- `README.md`: Instrucciones
-
-### Paso 5: Ejecución
-
-```python
-from mi_agente import Agent
-
-agent = Agent(config="config.yaml")
-agent.run(query="empresas de tecnología en Buenos Aires")
-```
-
----
-
-## Público Objetivo
-
-### Desarrolladores
-
-Pueden usar el framework directamente o usar el builder para prototipar. El código generado es código Python estándar, readable y modificable.
-
-### No-Técnicos
-
-El builder les da acceso a Agent sin saber programar. Describir, iterar, usar.
-
-### Empresas
-
-Self-hosting, control total, sin dependencias de terceros. El agente se ejecuta donde quieras.
-
----
-
-## Por Qué Elegir synapseForge
-
-1. **No necesitás programar** — Describís y usan. LangChain requiere código; synapseForge no.
-
-2. **Es flexible y adaptable** — El framework es tuyo, no dependés de las limitaciones de LangChain o n8n. Herramientas custom, validaciones custom, prompting custom.
-
-3. **Validación exhaustiva** — LangChain pasa errores; synapseForge valida, reporta, y permite corregir.
-
-4. **Prompting integrado** — El builder genera prompts con ingeniería estructura, no a mano.
-
-5. **Memoria robusta** — Aislamiento total entre sesiones y usuarios.
-
-6. **Herramientas propias** — Definís las herramientas que necesitás. Ninguna predefinida. Todo lo creás vos.
-
----
-
-## Estado Persistente
-
-Checkpointing nativo con:
-
-- **Pause & Resume**: Pausar, esperar input humano, continuar
-- **Time-travel**: Volver a un estado anterior y re-ejecutar
-- **Multi-thread**: Múltiples ejecuciones paralelas con aislamiento
-
----
-
-## Roadmap
-
-### Fase 1: MVP
-
-- Builder conversacional básico
-- Spec en Markdown
-- Pipeline de ejecución
-- Templates 3 agentes
-- Ejecución CLI
-
-### Fase 2: Beta
-
-- Iteración visual (interfaz)
-- Compilación automática
-- Checkpointing básico
-- Observabilidad integrada
-
-### Fase 3: Production
-
-- Agentes multi-thread
-- Dashboard de métricas
-- Deployment simplificado
-
-### Fase 4: Enterprise
-
-- Teams y multi-tenant
-- RBAC
-- Plugins personalizables
 
 ---
 
 ## Instalación
 
-1. **Clonar el repositorio**
+### 1. Instalar paquete
 
 ```bash
-git clone https://github.com/synapse-ai-hub/synapseForge.git
-cd synapseForge
+>>> pip install synapseforge
 ```
 
-2. **Crear y activar un entorno virtual** (recomendado Python 3.12+)
+### 2. Inicializar proyecto
 
 ```bash
-py -3.12 -m venv .synapseForge
-.\synapseForge\Scripts\Activate.ps1
+>>> synapseforge init mi-proyecto
+>>> cd mi-proyecto
 ```
 
-3. **Instalar dependencias**
+Crea: estructura de carpetas, `config/replace.json` vacío, venv `./` en backend/ (nombre = repo), copia template.
 
-```bash
-pip install -r requirements.txt
+### 3. Configurar
+
+Editar `config/replace.json`:
+
+```json
+{
+  "empresa": "Mi Empresa",
+  "owner": "mi-usuario",
+  "legal": "Mi Empresa S.A.",
+  "repo": "mi-proyecto",
+  "cliente": "Mi Cliente",
+  "logo_cliente": "path/to/logo_cliente.png",
+  "descripcion": "Descripción del proyecto",
+  "logo": "https://github.com/.../logo.png",
+  "width": 150,
+  "height": null
+}
 ```
 
-4. **Inicializar base de datos**
+### 4. Construir
 
 ```bash
-python db/ddl_setup.py
+>>> synapseforge build
+```
+
+Pipeline secuencial:
+1. **Inject placeholders** — Reemplaza `<tag>valor</tag>` en todo el proyecto desde `replace.json`
+2. **Copy logo cliente** — `logo_cliente` → `frontend/src/assets/logo_cliente.png` (verbatim)
+3. **Generate .ico** — Ejecuta `backend/agent/utils/generate_ico.py` → `logo_cliente.ico`
+4. **Install Python deps** — `pip install -r backend/requirements.txt` en `./`
+5. **Check Node** — Verifica `node` y `npm` en PATH (requiere Node 20+)
+6. **Install Node deps** — `npm install` en `frontend/`
+7. **Build frontend** — `npm run build` en `frontend/` → genera `frontend/dist/`
+
+### 5. Ejecutar
+
+```bash
+>>> synapseforge run
+```
+
+Levanta en paralelo:
+- Backend: `uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000` (venv `./` activado)
+- Frontend: `npm run dev` en `frontend/` (puerto 3000)
+- Abre navegador en `http://localhost:3000`
+
+---
+
+## CLI — Comandos
+
+| Comando | Descripción |
+|---------|-------------|
+| `synapseforge init <nombre>` | Crea proyecto desde template + venv |
+| `synapseforge build` | Pipeline completo: inject, logo, ico, deps, build frontend |
+| `synapseforge run` | Levanta backend (uvicorn) + frontend (vite dev) |
+| `synapseforge --help` | Ayuda global y por subcomando |
+
+---
+
+## Pipeline / Flujo principal
+
+```mermaid
+flowchart TD
+    A[pip install synapseforge] --> B[synapseforge init mi-proyecto]
+    B --> C[Editar config/replace.json]
+    C --> D[synapseforge build]
+    D --> D1[Inject placeholders XML]
+    D --> D2[Copy logo_cliente → frontend/src/assets/]
+    D --> D3[generate_ico.py → logo_cliente.ico]
+    D --> D4[pip install -r backend/requirements.txt]
+    D --> D5[npm install en frontend/]
+    D --> D6[npm run build en frontend/]
+    D6 --> E[synapseforge run]
+    E --> E1[uvicorn backend.main:app --reload]
+    E --> E2[npm run dev en frontend/]
+    E2 --> F[Navegador: http://localhost:3000]
+    F --> G[Chat SSE → AgentLoop → Tools/MCP/Skills]
 ```
 
 ---
 
-## Uso
+## Backend — Arquitectura clave
 
-### Constructor Conversacional
-
-```python
-from synapseforge import Builder
-
-builder = Builder()
-spec = await builder.generate_spec("Quiero un agente que...")
-await builder.compile(spec)
-```
-
-### Framework Directo
+### AgentLoop (`backend/agent/loop.py`)
 
 ```python
-from synapseforge import Agent
-
-agent = Agent(tools=[...])
-await agent.run("tu query")
+async def run(session_id, user_message, file_contents, stream_cancel_event, system_prompt, tool_permissions, skill_permissions, parameters, agent_name, depth, parent_id):
+    # 1. Create/recover session (SQLite)
+    # 2. Load history (max_turns from config)
+    # 3. Build system_prompt (base + skills + agents list)
+    # 4. Resolve tools (native + external + MCP) filtered by permissions
+    # 5. while iteration < MAX_ITERATIONS:
+    #    # 6.   llm_streaming(model, messages, tools) → yields chunk / tool_calls_detected
+    # 7.   if tool_calls: execute each → append tool results → continue
+    # 8.   else: yield final chunk → save → done
 ```
+
+### Tools Registry (`backend/agent/tools.py`)
+
+- **Nativas**: `read`, `write`, `edit`, `glob`, `grep`, `webfetch`, `websearch`, `question`, `task`, `shell`, `skill`, `reference`, `check_email`, `mcp`
+- **Externas**: `~/.config/synapseForge/tools/*.py` (carga dinámica, schema desde signature + docstring)
+- **MCP**: `mcp_helper.get_mcp_tools()` → descubre tools de servidores en `config.json` → registra como `type: function` schemas
+- **Ejecución**: `_execute_tool(name, **kwargs)` despacha a nativa → externa → MCP → error
+
+### MCP (`backend/agent/utils/mcp_helper.py`)
+
+- `McpConnection`: subprocess stdio persistente, JSON-RPC 2.0 (`tools/list`, `tools/call`)
+- `get_mcp_tools()`: conecta a cada servidor stdio, lista tools, wrappea a function schema
+- `execute_mcp_tool(name, args)`: despacha al servidor dueño
+- Health check: stdio (tools/list) + HTTP (GET server_url)
+
+### Sessions (`backend/agent/session.py`)
+
+- SQLite WAL: `sessions`, `messages`, `config_kv`, `error_log`
+- `messages`: role, content, tool_calls (JSON), tool_results (JSON), tool_call_id, tool_name, turn_number
+- `config_kv`: `selected_model`, `selected_provider`, `context_window_turns` (persistidos, cargados en lifespan)
+
+### Permissions (`backend/agent/permissions.py`)
+
+- Agentes definidos en `~/.config/synapseForge/agents/<name>.md` con frontmatter YAML
+- `permission.tool`: dict tool→allow/deny/ask; `permission.skill`: dict skill→allow/deny/ask
+- `filter_tools()`, `filter_skills()` evalúan wildcard `*` y precedencia (última gana)
 
 ---
 
-## Stack
+## Frontend — Flujo de Chat
 
-- Python 3.12+
-- FastAPI
-- PostgreSQL + pgvector
-- Multi-provider: Groq, OpenAI, Anthropic, Bedrock, Ollama
+1. Usuario escribe mensaje + adjunta archivos opcionales
+2. `chatService.sendMessage()` → `POST /api/chat` con `FormData` (message, session_id, files[])
+3. SSE stream parsing: `data: {"type": "chunk|tool_call|tool_result|subagent_call|subagent_result|session_title|done", "content": ...}`
+4. `MessageBubble` renderiza chunks incrementales, tool calls colapsables, resultados
+5. `Sidebar`:
+   - **Sessions tab**: lista (title, preview, timestamp), click carga historial, delete
+   - **Config tab**: provider/model dropdowns, context window input, MCP health badges (connected/failed/disabled + tools count)
+
+---
+
+## Requisitos Previos
+
+| Herramienta | Versión | Verificación en `build` |
+|-------------|---------|-------------------------|
+| **Python** | 3.12+ | Requerido para `pip install synapseforge` |
+| **Node.js** | 20+ | Verificado en `build` (falla si no está) |
+| **Ollama** | Latest | Solo si se usa provider LOCAL (opcional) |
+| **Git** | 2.40+ | Para clonar/versionar |
+
+> **Node.js y Ollama NO se instalan automáticamente**. El CLI verifica y muestra error claro si faltan.
+
+---
+
+## Stack Tecnológico
+
+![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-3-003b57?logo=sqlite&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-API-f97316?logo=groq&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-Local-000000?logo=ollama&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind-3-06b6d4?logo=tailwindcss&logoColor=white)
+![PyInstaller](https://img.shields.io/badge/PyInstaller-6-3776ab?logo=python&logoColor=white)
 
 ---
 
@@ -312,7 +322,6 @@ Apache 2.0 - Ver archivo [LICENSE](./LICENSE)
 
 ---
 
-## Recursos
+Copyright (c) 2026 SYNASPE AI SAS
 
-- Repositorio: https://github.com/synapse-ai-hub/synapseForge
-- Documentación: Ver carpeta `docs/producto/`
+---

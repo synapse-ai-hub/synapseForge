@@ -1,1 +1,1 @@
-"""Backend package - Core framework components for synapseForge."""
+"""Backend package for the <descripcion>nombre_proyecto</descripcion> API."""

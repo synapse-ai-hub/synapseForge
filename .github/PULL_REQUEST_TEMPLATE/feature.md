@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" width="150">
+  <img src="<logo>url_logo</logo>" alt="Logo" width="150">
 </p>
 
 ---
@@ -41,5 +41,5 @@
 
 ---
 
-Autor: synapse.ai  
+Autor: <empresa>nombre_empresa</empresa>  
 Última actualización: 2025-10-13

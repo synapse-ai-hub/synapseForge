@@ -1,0 +1,84 @@
+Pon un título corto y descriptivo para esta conversación.
+
+## Instrucciones
+
+- Primero, detecta el idioma de la conversación.
+
+- **NUNCA DEBES USAR FORMATO MARKDOWN, SOLO TEXTO PLANO**.
+
+- **MÁXIMO DIEZ PALABRAS, PERO SIEMPRE PROCURA USAR LA MENOR CANTIDAD POSIBLE**.
+
+- EL TÍTULO DEBE SER SIEMPRE EN EL MISMO IDIOMA EN EL QUE ESCRIBE EL USUARIO.
+
+- **Si el mensaje del usuario es en español, el título debe ser en español. Si el mensaje del usuario es en inglés, el título debe ser en inglés**.
+
+- **⚠️ CRÍTICO: No puedes usar exactamente los mismos títulos de la lista debajo. El título debe ser DIFERENTE al nombre exacto, nada más. Si está en la lista, no lo uses. 
+
+---
+
+## Restricciones
+
+- **Tienes estrictamente prohibido devolver cualquier artefacto de formato markdown**. Solo debes devolver **TEXTO PLANO, SIN NEGRITAS, SIN NUMERALES, SIN NINGÚN ARTEFACTO MARKDOWN**.
+
+- **Tienes terminantemente prohibido devolver un título con palabras de relleno, indicaciones, que contenga "conversación" o cualquier cosa de ese estilo, solo debes devolver el título**. 
+
+---
+
+## Ejemplos
+
+### Correcto
+
+**Usuario**: ¿Qué tools tenés disponibles?
+
+**Título**: Tools disponibles
+
+### Incorrectos
+
+1. Con artefactos:
+
+**Usuario**: ¿Qué tools tenés disponibles?
+
+**Título**: **Tools disponibles**
+
+2. Con texto de relleno:
+
+**Usuario**: ¿Qué tools tenés disponibles?
+
+**Título**: Conversación con el usuario sobre Tools disponibles
+
+3. Con texto de relleno y artefactos:
+
+**Usuario**: ¿Qué tools tenés disponibles?
+
+**Título**: **Conversaión con el usuario**: Tools disponibles
+
+---
+
+## Checklist final
+
+- [] ¿El título está en formato markdown? Si tiene algún artefacto, como `**`, modificarlo. Está prohibido.
+- [] ¿Tiene, como máximo, diez palabras? Si tiene más, modificarlo.
+- [] ¿Es el mínimo de palabras que necesito para mantenerlo descriptivo pero entendible?
+- [] ¿El título está en el mismo idioma que el mensaje del usuario?
+- [] Si la conversación está en español, ¿el título está en español?
+- [] Si la conversación está en inglés, ¿el título está en inglés?
+- [] ¿El título NO es exactamente igual a ninguno de la lista debajo?
+- [] ¿El título contiene cosas como "Identificación de idioma...", "**Identificación de idioma...**", "Conversación con el usuario...", "**Conversación con el usuario...**", "Idioma detectado..." o estupideces de relleno o formato markdown? Si es así, modificarlo, no tiene que tener texto de relleno ni artefactos markdown, solo el contenido del título, sin explicaciones, sin nada extra, solo el contenido del título.
+
+**TIENES ESTRICTAMENTE PROHIBIDO AGREGAR EXPLICACIONES O CONTENIDO DE RELLENO, SOLO EL CONTENIDO**.
+
+Si pensaste algo como "Idioma detectado: español. Título: Tools disponibles", está mal, no deben ir explicaciones ni tu razonamiento, solo el contenido del título: "Tools disponibles", conciso, concreto, sin explicaciones, sin adornos, sin nada extra. Todo lo que no sea el contenido conciso del título, como idioma detectado, conversación con el usuario, la palabra "título", se considera extra, de relleno, **NO VA**. Jamás pongas cosas así, está terminantemente prohibido.
+
+---
+
+## Datos
+
+### Conversación
+
+{message}
+
+### Títulos que ya existen - NO USE EXACTAMENTE ESTOS NOMBRES
+
+{titles}
+
+

@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+@theme {
+  --color-app-primary: #D76F10;
+  --color-app-primary-light: #F0A347;
+  --color-app-bg: #FFFFFF;
+  --color-app-bg-secondary: #F5F5F5;
+  --color-app-bg-tertiary: #EBEBEB;
+  --color-app-text: #151515;
+  --color-app-text-secondary: #5C5C5C;
+  --color-app-border: #D4D4D4;
+  --color-app-accent: #D76F10;
+  --color-app-success: #2B7D5B;
+  --color-app-warning: #C4903A;
+  --color-app-error: #C2413D;
+}
+
+/* Base styles */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--color-app-bg);
+  color: var(--color-app-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-app-primary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-app-primary-light);
+}
+
+/* Markdown styling for chat messages */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.markdown-content p {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+}
+.markdown-content ul,
+.markdown-content ol {
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+.markdown-content li {
+  margin-bottom: 0.25rem;
+}
+.markdown-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--color-app-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.markdown-content th {
+  background-color: var(--color-app-bg-tertiary);
+  font-weight: 600;
+}
+.markdown-content code {
+  background-color: var(--color-app-bg-tertiary);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-size: 0.875em;
+}
+.markdown-content pre {
+  background-color: var(--color-app-bg-tertiary);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+}
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+.markdown-content a {
+  color: var(--color-app-primary);
+  text-decoration: underline;
+}
+.markdown-content blockquote {
+  border-left: 4px solid var(--color-app-border);
+  padding-left: 1rem;
+  margin-left: 0;
+  color: var(--color-app-text-secondary);
+}
+.markdown-content strong {
+  font-weight: 600;
+}
+.markdown-content {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ===== Typing dots animation ===== */
+@keyframes typing-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
+}
+
+.typing-dot {
+  animation: typing-bounce 1.4s infinite ease-in-out;
+}
+.typing-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0s;
+}

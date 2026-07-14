@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" width="150">
+  <img src="<logo>url_logo</logo>" alt="Logo" width="150">
+
+---
+  
 </p><h1 align="center">🚀 Comandos CLI y entorno virtual</h1>
 
 ---

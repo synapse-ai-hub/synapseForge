@@ -1,4 +1,4 @@
-"""Agent loop package for the <descripcion>nombre_proyecto</descripcion>.
+"""Agent loop package for the <descripcion>Nombre del proyecto</descripcion>.
 
 Contains the while(true) agent loop, SQLite session persistence,
 context management, and compaction configuration.
@@ -14,6 +14,12 @@ _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+
+# Register custom SUBAGENT log level (must be imported early, before any usage)
+try:
+    from backend.agent.utils.subagent_logger import SUBAGENT_LEVEL as _SUBAGENT_LEVEL
+except ImportError:
+    pass
 
 from backend.agent.utils.error_logger import log_error
 

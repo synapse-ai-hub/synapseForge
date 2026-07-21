@@ -409,7 +409,7 @@ async def execute_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 class McpServerStatus:
-    """MCP server status constants."""
+    """MCP server status constants (matching opencode's Status type)."""
     CONNECTED = "connected"
     DISABLED = "disabled"
     FAILED = "failed"

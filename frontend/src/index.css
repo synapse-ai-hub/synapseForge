@@ -92,7 +92,9 @@ body {
   background-color: var(--color-app-bg-tertiary);
   padding: 1rem;
   border-radius: 8px;
-  overflow-x: auto;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
   margin-bottom: 0.75rem;
 }
 .markdown-content pre code {

@@ -57,7 +57,7 @@ def liberar_modelo(modelo: str, session_id: str | None = None, turn_number: int 
     except Exception as e:
         log_error(str(e), session_id=session_id, turn_number=turn_number, parent_id=parent_id, source=source + "(keep_alive)")
         pass
-    time.sleep(3)
+    time.sleep(1)
     gc.collect()
     gc.collect()
 
@@ -74,7 +74,7 @@ def liberar_modelo(modelo: str, session_id: str | None = None, turn_number: int 
                         json={"model": modelo, "keep_alive": 0},
                         timeout=5,
                     )
-                    time.sleep(3)
+                    time.sleep(1)
                     gc.collect()
     except Exception as e:
         log_error(str(e), session_id=session_id, turn_number=turn_number, parent_id=parent_id, source=source + "(check_ps)")
@@ -145,7 +145,7 @@ def liberar_todos_los_modelos(session_id: str | None = None, turn_number: int | 
         logger.debug(f"Error consultando modelos activos: {e}")
     
     # 3. GC y espera
-    time.sleep(3)
+    time.sleep(1)
     gc.collect()
     gc.collect()
     
@@ -167,7 +167,7 @@ def reiniciar_llama_server(session_id: str | None = None, turn_number: int | Non
     except Exception as e:
         log_error(str(e), session_id=session_id, turn_number=turn_number, parent_id=parent_id, source="clean_memory.py:reiniciar_llama_server(taskkill)")
         pass
-    time.sleep(3)
+    time.sleep(1)
 
     if ollama_server_vivo(session_id=session_id, turn_number=turn_number, parent_id=parent_id):
         logger.info("  llama-server recuperado.")
@@ -177,7 +177,21 @@ def reiniciar_llama_server(session_id: str | None = None, turn_number: int | Non
     return False
 
 
+def obtener_modelo_actual() -> str | None:
+    """Obtiene el modelo resuelto actualmente desde el singleton agent.
+    
+    Returns:
+        Nombre del modelo o None si no hay modelo seleccionado.
+    """
+    try:
+        from backend.instances import agent
+        return agent._resolved_model
+    except Exception:
+        return None
+
+
 if __name__ == '__main__':
     print('clean_memory module — gestión de VRAM para Ollama.')
     print(f'  ollama_server_vivo(): {ollama_server_vivo()}')
+    print(f'  modelo actual: {obtener_modelo_actual()}')
     print('  liberar_modelo(model), reiniciar_llama_server() disponibles.')

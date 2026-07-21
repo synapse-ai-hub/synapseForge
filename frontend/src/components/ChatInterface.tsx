@@ -3,6 +3,7 @@ import {
   useRef,
   useEffect,
   useCallback,
+  useMemo,
   type KeyboardEvent,
 } from "react";
 import {
@@ -17,13 +18,15 @@ import {
   BarChart3,
   Copy,
   ChevronDown,
+  Loader2,
+  LogOut,
 } from "lucide-react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import LogoImage from "../assets/logo_cliente.png";
+import LogoImage from "../assets/logo_empresa.png";
 import chatService from "../services/chatService";
 import { Button } from "./ui/button";
-import type { Message } from "../App";
+import type { Message, SubagentEvent, ContentBlock } from "../App";
 
 /* ------------------------------------------------------------------ */
 /*  Exported welcome message for App initialization                   */
@@ -213,6 +216,7 @@ interface ChatInterfaceProps {
   onSessionEnd?: () => void;
   onShowMetrics: () => void;
   onSessionTitleUpdate?: (sessionId: string, title: string) => void;
+  verboseMode: boolean;
 }
 
 export function ChatInterface({
@@ -228,6 +232,7 @@ export function ChatInterface({
   onSessionEnd,
   onShowMetrics,
   onSessionTitleUpdate,
+  verboseMode,
 }: ChatInterfaceProps) {
   /* ---- state ---- */
   const [input, setInput] = useState("");
@@ -295,6 +300,19 @@ export function ChatInterface({
     };
   }, []);
 
+  /* ---- shutdown app ---- */
+  const handleShutdown = useCallback(async () => {
+    if (!window.confirm("¿Cerrar la aplicación completamente?")) return;
+    try {
+      const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
+      await fetch(`${API_BASE_URL}/api/shutdown`, { method: "POST" });
+    } catch {
+      // Ignore network errors - server is shutting down
+    }
+    // Close the window (works if opened by window.open or as PWA)
+    window.close();
+  }, []);
+
   /* ---- auto-resize textarea ---- */
   useEffect(() => {
     const ta = textareaRef.current;
@@ -352,6 +370,8 @@ export function ChatInterface({
 
   /* ---- send message ---- */
   const handleSend = useCallback(async () => {
+    const _t0 = performance.now();
+    // console.log(`[DEBUG_TIEMPO_SSE] handleSend called — t=${_t0}`);
     const text = input.trim();
     if (!text || isStreaming) return;
 
@@ -376,16 +396,25 @@ export function ChatInterface({
 
     // Create assistant placeholder
     const assistantId = generateId();
+    // console.log(`[DEBUG_TIEMPO_SSE] assistantId created: ${assistantId} — t=${performance.now()}, elapsed=${performance.now() - _t0}`);
     const assistantMessage: Message = {
       id: assistantId,
       type: "assistant",
       content: "",
       isStreaming: true,
+      blocks: [],
+      toolCalls: [],
+      toolResults: [],
     };
+    // console.log(`[DEBUG_TIEMPO_SSE] assistantMessage id: ${assistantMessage.id} — t=${performance.now()}`);
     setMessages((prev) => [...prev, assistantMessage]);
     // Forzar auto-scroll al enviar mensaje (como ProspectingAgent)
     setAutoScrollEnabled(true);
     setIsStreaming(true);
+
+    let accumulatedContent = "";
+    let accumulatedReasoning = "";
+    let accumulatedBlocks: ContentBlock[] = [];
 
     try {
       const eventStream = chatService.sendMessage({
@@ -394,10 +423,8 @@ export function ChatInterface({
         sessionId: activeSessionId,
       });
 
-      let accumulatedContent = "";
-      let accumulatedReasoning = "";
-
       for await (const event of eventStream) {
+        // console.log(`[DEBUG_TIEMPO_SSE] event received type=${event.type} — t=${performance.now()}, elapsed=${performance.now() - _t0}`);
         switch (event.type) {
           case "router_status":
           case "reasoning":
@@ -411,7 +438,7 @@ export function ChatInterface({
 
           case "tool_call":
             {
-              // Validate tool_call payload before storing
+              // Validate tool_call payload before storing (always, even if verbose is off)
               const tcPayload =
                 typeof event.content === "object" && event.content !== null
                   ? event.content
@@ -436,14 +463,24 @@ export function ChatInterface({
                       ? tcPayload.parameters
                       : {},
               };
+              accumulatedBlocks.push({
+                type: "tool",
+                name: validated.tool,
+                args: validated.parameters,
+                result: undefined,
+              });
               setMessages((prev) =>
                 prev.map((m) => {
+                  if (m.id !== assistantId) return m;
                   const tc = Array.isArray(m.toolCalls) ? m.toolCalls : [];
-                  return m.id === assistantId
-                    ? { ...m, toolCalls: [...tc, validated] }
-                    : m;
+                  return { ...m, blocks: [...accumulatedBlocks], toolCalls: [...tc, validated] };
                 }),
               );
+              // Brief delay to break React 18's automatic batching between tool_call
+              // and tool_result. Without this, consecutive setState calls in the same
+              // async handler are batched into one render — the tool block appears
+              // already with its result filled in, and the spinner is never visible.
+              await new Promise(resolve => setTimeout(resolve, 0));
             }
             break;
 
@@ -457,21 +494,90 @@ export function ChatInterface({
                 typeof payload.name === "string" ? payload.name : "unknown";
               const toolResultValue =
                 "result" in payload ? payload.result : payload;
+              // Update accumulatedBlocks
+              for (let i = accumulatedBlocks.length - 1; i >= 0; i--) {
+                if (accumulatedBlocks[i].type === "tool" && (accumulatedBlocks[i] as any).result === undefined) {
+                  accumulatedBlocks[i] = { ...accumulatedBlocks[i], result: toolResultValue } as any;
+                  break;
+                }
+              }
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? {
-                        ...m,
-                        toolResults: [
-                          ...(Array.isArray(m.toolResults) ? m.toolResults : []),
-                          { tool: toolName, result: toolResultValue },
-                        ],
-                      }
-                    : m,
-                ),
+                prev.map((m) => {
+                  if (m.id !== assistantId) return m;
+                  return {
+                    ...m,
+                    blocks: [...accumulatedBlocks],
+                    toolResults: [
+                      ...(Array.isArray(m.toolResults) ? m.toolResults : []),
+                      { tool: toolName, result: toolResultValue },
+                    ],
+                  };
+                }),
               );
             }
             break;
+
+          case "subagent_event": {
+            const payload =
+              typeof event.content === "object" && event.content !== null
+                ? event.content
+                : {};
+            const childId: string = payload.child_session_id || "";
+            const agentName: string = payload.agent_name || "";
+            const innerEvent: any = payload.event || {};
+
+            if (!childId) break;
+
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== assistantId) return m;
+                const current = { ...m };
+                const events = { ...(current.subagentEvents || {}) };
+                if (!events[childId]) {
+                  events[childId] = {
+                    child_session_id: childId,
+                    agent_name: agentName,
+                    tool_calls: [],
+                    tool_results: [],
+                    content: "",
+                    reasoning: "",
+                  };
+                }
+                const child = events[childId];
+                let updatedChild = { ...child };
+
+                switch (innerEvent.type) {
+                  case "tool_call":
+                    updatedChild.tool_calls = [
+                      ...(child.tool_calls || []),
+                      {
+                        name: innerEvent.content?.name || "unknown",
+                        args: innerEvent.content?.args || {},
+                      },
+                    ];
+                    break;
+                  case "tool_result":
+                    updatedChild.tool_results = [
+                      ...(child.tool_results || []),
+                      {
+                        name: innerEvent.content?.name || "unknown",
+                        result: innerEvent.content?.result || "",
+                      },
+                    ];
+                    break;
+                  case "chunk":
+                    updatedChild.content = (child.content || "") + (innerEvent.content || "");
+                    break;
+                  case "reasoning":
+                    updatedChild.reasoning = (child.reasoning || "") + (innerEvent.content || "");
+                    break;
+                }
+
+                return { ...current, subagentEvents: { ...events, [childId]: updatedChild } };
+              }),
+            );
+            break;
+          }
 
           case "session_title":
             if (activeSessionId && typeof event.content === "string") {
@@ -481,25 +587,55 @@ export function ChatInterface({
 
           case "chunk":
             accumulatedContent += event.content;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: accumulatedContent } : m,
-              ),
-            );
+            {
+              const chunk = event.content || "";
+              const last = accumulatedBlocks[accumulatedBlocks.length - 1];
+              if (last && last.type === "text") {
+                accumulatedBlocks[accumulatedBlocks.length - 1] = {
+                  ...last,
+                  content: last.content + chunk,
+                };
+              } else {
+                accumulatedBlocks.push({ type: "text", content: chunk });
+              }
+            }
+            setMessages((prev) => {
+              const matched = prev.some((m) => m.id === assistantId);
+              // console.log(`[DEBUG_TIEMPO_SSE] chunk setMessages — assistantId=${assistantId}, matchFound=${matched}, prevLen=${prev.length}, t=${performance.now()}`);
+              return prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: accumulatedContent, blocks: [...accumulatedBlocks] }
+                  : m,
+              );
+            });
             break;
 
           case "usage":
             break;
 
           case "done":
+            // console.log(`[DEBUG_TIEMPO_SSE] done event — assistantId=${assistantId}, t=${performance.now()}`);
             break;
 
           case "ask_discount":
             if (event.content) {
-              accumulatedContent += `\n\n---\n${event.content}\n---\n\n`;
+              const suffix = `\n\n---\n${event.content}\n---\n\n`;
+              accumulatedContent += suffix;
+              // Also append to last text block in accumulatedBlocks
+              const lastBlock = accumulatedBlocks[accumulatedBlocks.length - 1];
+              if (lastBlock && lastBlock.type === "text") {
+                accumulatedBlocks[accumulatedBlocks.length - 1] = {
+                  ...lastBlock,
+                  content: lastBlock.content + suffix,
+                };
+              } else {
+                accumulatedBlocks.push({ type: "text", content: suffix });
+              }
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantId ? { ...m, content: accumulatedContent } : m,
+                  m.id === assistantId
+                    ? { ...m, content: accumulatedContent, blocks: [...accumulatedBlocks] }
+                    : m,
                 ),
               );
             }
@@ -515,23 +651,28 @@ export function ChatInterface({
       const errorMsg =
         err instanceof Error ? err.message : "Error desconocido";
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? { ...m, content: `*Error: ${errorMsg}*` }
-            : m,
-        ),
+        prev.map((m) => {
+          if (m.id !== assistantId) return m;
+          const blocks = [...(m.blocks || accumulatedBlocks)];
+          blocks.push({ type: "text", content: `*Error: ${errorMsg}*` });
+          return { ...m, content: `*Error: ${errorMsg}*`, blocks };
+        }),
       );
     } finally {
+      // console.log(`[DEBUG_TIEMPO_SSE] finally — assistantId=${assistantId}, setIsStreaming(false), t=${performance.now()}, elapsed=${performance.now() - _t0}`);
       setIsStreaming(false);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
-      );
+      setMessages((prev) => {
+        const matched = prev.some((m) => m.id === assistantId);
+        // console.log(`[DEBUG_TIEMPO_SSE] finally setMessages — assistantId=${assistantId}, matchFound=${matched}, prevLen=${prev.length}, t=${performance.now()}`);
+        return prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m));
+      });
       onSessionEnd?.();
     }
-  }, [input, isStreaming, files, setMessages, setIsStreaming, sessionId, onSessionStart]);
+  }, [input, isStreaming, files, setMessages, setIsStreaming, sessionId, onSessionStart, verboseMode]);
 
   /* ---- stop streaming ---- */
   const handleCancel = useCallback(() => {
+    // console.log(`[DEBUG_TIEMPO_SSE] handleCancel called — t=${performance.now()}`);
     chatService.cancelStream();
   }, []);
 
@@ -580,7 +721,7 @@ export function ChatInterface({
             className="h-7 sm:h-15 w-auto"
           />
           <h1 className="text-sm sm:text-lg font-semibold text-app-text">
-            <descripcion>nombre_proyecto</descripcion>
+            <descripcion>Nombre del proyecto</descripcion>
           </h1>
         </div>
 
@@ -605,6 +746,18 @@ export function ChatInterface({
           >
             <BarChart3 size={14} />
             <span className="hidden sm:inline">Métricas</span>
+          </Button>
+
+          {/* Salir - cerrar app completa */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleShutdown}
+            className="gap-1 sm:gap-1.5 text-xs h-7 sm:h-8 text-app-error hover:bg-red-50 hover:text-app-error"
+            title="Cerrar aplicación"
+          >
+            <LogOut size={14} />
+            <span className="hidden sm:inline">Salir</span>
           </Button>
 
         </div>
@@ -642,7 +795,7 @@ export function ChatInterface({
         >
           <div className="relative max-w-full sm:max-w-3xl lg:max-w-4xl mx-auto space-y-4 sm:space-y-6">
             {messages.map((msg) => (
-              <MessageRow key={msg.id} message={msg} />
+              <MessageRow key={msg.id} message={msg} verboseMode={verboseMode} />
             ))}
 
             {/* Suggestions grid */}
@@ -766,20 +919,178 @@ export function ChatInterface({
 function ToolCallBlock({
   toolCall,
   result,
+  isStreaming = false,
+  waitingForChunk = false,
+  subagentEvents,
+  isLatestTool = true,
 }: {
   toolCall: { tool: string; parameters?: Record<string, any> };
   result?: { tool: string; result: any };
+  isStreaming?: boolean;
+  waitingForChunk?: boolean;
+  subagentEvents?: Record<string, SubagentEvent>;
+  isLatestTool?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [childTools, setChildTools] = useState<Array<{ tool: string; parameters?: Record<string, any>; result?: any }>>([]);
+  const fetchedRef = useRef(false);
+
+  // Determine status: 'calling' | 'success' | 'error'
+  const isTask = toolCall.tool === "task";
+  const hasResult = !!result;
+  const isError = hasResult && result.result && (
+    (typeof result.result === "string" && result.result.toLowerCase().includes("error")) ||
+    (typeof result.result === "object" && result.result !== null && "error" in result.result)
+  );
+  
+  // Status logic:
+  // - If waiting for first chunk: keep calling (spinner) until text arrives
+  // - If has result: success or error based on content
+  // - If no result, isStreaming and isLatestTool: calling (spinner)
+  // - If no result, isStreaming but NOT latest tool: done (no spinner, closed by newer tool)
+  // - If no result and NOT streaming (historical): error (red, no spinner)
+  const status = waitingForChunk
+    ? "calling"
+    : hasResult
+      ? (isError ? "error" : "success")
+      : (isStreaming && isLatestTool ? "calling" : (isStreaming ? "done" : "error"));
+
+  // Status colors (done = previous tool closed by a newer one)
+  const statusColors = {
+    calling: "text-app-text-secondary",
+    success: "text-emerald-600",
+    error: "text-red-600",
+    done: "text-app-text-secondary/50",
+  };
+
+  // Find matching child session ID from real-time events or result XML
+  const childSessionId = useMemo(() => {
+    // First try to find from real-time events
+    if (subagentEvents && isTask) {
+      const ids = Object.keys(subagentEvents);
+      if (ids.length > 0) return ids[0];
+    }
+    // Fall back to parsing from result XML
+    if (isTask && hasResult && typeof result?.result === "string") {
+      const match = result.result.match(/<task\s+id="([^"]+)"/);
+      return match ? match[1] : null;
+    }
+    return null;
+  }, [subagentEvents, isTask, hasResult, result]);
+
+  // Build child tools list from real-time events (priority) or lazy fetch
+  const realtimeChildTools = useMemo(() => {
+    if (!childSessionId || !subagentEvents?.[childSessionId]) return null;
+    const child = subagentEvents[childSessionId];
+    const tools: Array<{ tool: string; parameters?: Record<string, any>; result?: any }> = [];
+    if (child.tool_calls) {
+      child.tool_calls.forEach((tc, i) => {
+        tools.push({
+          tool: tc.name,
+          parameters: tc.args,
+          result: child.tool_results?.[i]?.result,
+        });
+      });
+    }
+    return tools;
+  }, [childSessionId, subagentEvents]);
+
+  // Fetch child session tools on demand (when user expands task) - fallback for historical sessions
+  const fetchChildTools = useCallback(async () => {
+    if (fetchedRef.current || !isTask || !hasResult || realtimeChildTools) return;
+    fetchedRef.current = true;
+
+    const resultStr = result?.result;
+    if (typeof resultStr !== "string") return;
+
+    const match = resultStr.match(/<task\s+id="([^"]+)"/);
+    if (!match) return;
+
+    const childId = match[1];
+    try {
+      const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
+      const response = await fetch(`${API_BASE_URL}/api/sessions/${encodeURIComponent(childId)}`);
+      const data = await response.json();
+      if (data?.data?.messages) {
+        const tools: Array<{ tool: string; parameters?: Record<string, any>; result?: any }> = [];
+        data.data.messages.forEach((msg: any) => {
+          if (msg.type !== "assistant") return;
+          // New blocks format
+          if (msg.blocks) {
+            msg.blocks.forEach((b: any) => {
+              if (b.type === "tool") {
+                tools.push({
+                  tool: b.name ?? "unknown",
+                  parameters: b.args ?? {},
+                  result: b.result,
+                });
+              }
+            });
+          }
+          // Legacy toolCalls format
+          if (msg.toolCalls) {
+            msg.toolCalls.forEach((tc: any, i: number) => {
+              tools.push({
+                tool: tc.name ?? "unknown",
+                parameters: tc.args ?? {},
+                result: msg.toolResults?.[i]?.result,
+              });
+            });
+          }
+        });
+        setChildTools(tools);
+      }
+    } catch {
+      // Silently fail - child tools just won't show
+    }
+  }, [isTask, hasResult, result, realtimeChildTools]);
+
+  const handleToggle = () => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen) {
+      fetchChildTools();
+    }
+  };
+
+  // Determine child tool status
+  const getChildStatus = (childResult?: any) => {
+    if (!childResult) return "calling";
+    if (
+      (typeof childResult === "string" && childResult.toLowerCase().includes("error")) ||
+      (typeof childResult === "object" && childResult !== null && "error" in childResult)
+    ) return "error";
+    return "success";
+  };
+
+  const childStatusColors = {
+    calling: "text-app-text-secondary",
+    success: "text-emerald-600",
+    error: "text-red-600",
+  };
+
+  // Child tools to display: real-time if available, otherwise lazy-fetched
+  const displayChildTools = realtimeChildTools ?? childTools;
+
+  // Child text content (from real-time chunks)
+  const childContent = useMemo(() => {
+    if (!childSessionId || !subagentEvents?.[childSessionId]) return null;
+    return subagentEvents[childSessionId].content || null;
+  }, [childSessionId, subagentEvents]);
 
   return (
     <div className="rounded-lg border border-app-border bg-app-bg-tertiary p-2.5">
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex w-full items-center justify-between gap-2 text-left text-xs text-app-text-secondary hover:text-app-primary"
+        onClick={handleToggle}
+        className="flex w-full items-center justify-between gap-2 text-left text-xs hover:text-app-primary"
       >
-        <span className="font-medium text-app-text">🔧 {toolCall.tool}</span>
+        <span className={`font-medium ${statusColors[status]}`}>
+          {status === "calling" && <Loader2 className="h-4 w-4 animate-spin inline-block mr-1" />}
+          {status === "success" && <span className="text-emerald-600">✓ </span>}
+          {status === "error" && <span className="text-red-600">✗ </span>}
+          🔧 {toolCall.tool}
+        </span>
         <ChevronDown
           size={14}
           className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
@@ -799,7 +1110,49 @@ function ToolCallBlock({
             </div>
           )}
 
-          {result && (
+          {/* Child text content (real-time from sub-agent chunks) */}
+          {isTask && childContent && (
+            <div className="border-t border-app-border pt-2">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
+                Respuesta del sub-agente
+              </div>
+              <div className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] text-app-text">
+                {childContent}
+              </div>
+            </div>
+          )}
+
+          {/* Child tools (for task) - real-time if streaming, otherwise lazy-fetched */}
+          {isTask && displayChildTools.length > 0 && (
+            <div className="border-t border-app-border pt-2 space-y-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
+                Herramientas del sub-agente
+              </div>
+              {displayChildTools.map((ct, i) => {
+                const childStatus = getChildStatus(ct.result);
+                return (
+                  <div key={i} className="ml-3 pl-2 border-l-2 border-app-border space-y-1">
+                    <div className="flex items-center gap-1 text-[11px]">
+                      <span className={childStatusColors[childStatus]}>
+                        {childStatus === "success" && "✓"}
+                        {childStatus === "error" && "✗"}
+                        {childStatus === "calling" && "⏳"}
+                      </span>
+                      <span className="font-medium">{ct.tool}</span>
+                    </div>
+                    {ct.parameters && Object.keys(ct.parameters).length > 0 && (
+                      <pre className="ml-4 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-1.5 text-[10px] text-app-text">
+                        {JSON.stringify(ct.parameters, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+{/* Result for non-task tools */}
+          {result && !isTask && (
             <div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
                 Resultado
@@ -820,11 +1173,17 @@ function ToolCallBlock({
 /* ------------------------------------------------------------------ */
 /*  MessageRow                                                        */
 /* ------------------------------------------------------------------ */
+/*  MessageRow                                                        */
+/* ------------------------------------------------------------------ */
 
-function MessageRow({ message }: { message: Message }) {
+function MessageRow({ message, verboseMode }: { message: Message; verboseMode: boolean }) {
   const [showReasoning, setShowReasoning] = useState(false);
   const panelId = `reasoning-${message.id}`;
   const isAssistant = message.type === "assistant";
+
+  // Determine if the assistant is waiting for its first text chunk (affects spinner logic)
+  const hasTextBlock = message.blocks?.some((b) => b.type === "text");
+  const waitingForChunk = message.isStreaming && !hasTextBlock;
 
   if (isAssistant) {
     return (
@@ -876,37 +1235,81 @@ function MessageRow({ message }: { message: Message }) {
             </div>
           )}
 
-          {/* Tool calls */}
-          {message.toolCalls && message.toolCalls.length > 0 && (
-            <div className="mb-3 space-y-2">
-              {message.toolCalls.map((tc, i) => (
-                <ToolCallBlock
-                  key={`${tc.tool}-${i}`}
-                  toolCall={tc}
-                  result={message.toolResults?.[i]}
-                />
-              ))}
+          {/* Blocks in order: text interleaved with tools */}
+          {message.blocks && message.blocks.length > 0 ? (
+            <div className="space-y-2">
+              {message.blocks.map((block, i) => {
+                if (block.type === "text") {
+                  return (
+                    <div key={i}>
+                      <MarkdownRenderer content={block.content} />
+                    </div>
+                  );
+                }
+                if (block.type === "tool") {
+                  if (!verboseMode) return null;
+                  return (
+                    <ToolCallBlock
+                      key={i}
+                      toolCall={{ tool: block.name, parameters: block.args }}
+                      result={block.result !== undefined ? { tool: block.name, result: block.result } : undefined}
+                      isStreaming={message.isStreaming}
+                      waitingForChunk={waitingForChunk}
+                      subagentEvents={message.subagentEvents}
+                      isLatestTool={i === (message.blocks?.length ?? 0) - 1}
+                    />
+                  );
+                }
+                return null;
+              })}
             </div>
+          ) : (
+            /* Fallback for legacy messages without blocks (welcome, very old sessions) */
+            <>
+              <MarkdownRenderer content={message.content} />
+              {/* Tool calls from legacy format */}
+              {verboseMode && message.toolCalls && message.toolCalls.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {message.toolCalls.map((tc, i) => (
+                    <ToolCallBlock
+                      key={`${tc.tool}-${i}`}
+                      toolCall={tc}
+                      result={message.toolResults?.[i]}
+                      isStreaming={false}
+                      subagentEvents={undefined}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          {/* Markdown content */}
-          <MarkdownRenderer content={message.content} />
-
-          {message.type === "assistant" && !message.isStreaming && message.id !== "welcome" && message.content && (
-            <button
-              type="button"
-              onClick={() => navigator.clipboard?.writeText(message.content || "")}
-              className="mt-2 inline-flex items-center gap-1 rounded-full border border-[rgba(215,111,16,0.2)] bg-[rgba(215,111,16,0.08)] px-2 py-1 text-[11px] text-app-primary transition-colors hover:bg-[rgba(215,111,16,0.15)]"
-            >
-              <Copy size={12} />
-              Copiar
-            </button>
+          {/* Copy button (only when there's actual text content) */}
+          {message.type === "assistant" && !message.isStreaming && message.id !== "welcome" && (
+            (message.content || (message.blocks && message.blocks.some((b) => b.type === "text"))) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const text = message.blocks
+                    ? message.blocks.filter((b) => b.type === "text").map((b) => (b as any).content).join("\n\n")
+                    : message.content || "";
+                  navigator.clipboard?.writeText(text);
+                }}
+                className="mt-2 inline-flex items-center gap-1 rounded-full border border-[rgba(215,111,16,0.2)] bg-[rgba(215,111,16,0.08)] px-2 py-1 text-[11px] text-app-primary transition-colors hover:bg-[rgba(215,111,16,0.15)]"
+              >
+                <Copy size={12} />
+                Copiar
+              </button>
+            )
           )}
 
-          {/* Streaming cursor */}
-          {message.isStreaming && !message.content && (
-            <TypingIndicator />
-          )}
+          {/* TypingIndicator:
+              Verbose OFF — always show typing during streaming (user sees activity).
+              Verbose ON  — typing only when no text AND no tool blocks (tools have own spinner). */}
+          {message.isStreaming && (
+            (!verboseMode) ||
+            (verboseMode && !message.blocks?.some((b) => b.type === "text") && !message.blocks?.some((b) => b.type === "tool"))
+          ) && <TypingIndicator />}
         </div>
       </div>
     );

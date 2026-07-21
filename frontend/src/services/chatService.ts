@@ -20,6 +20,8 @@ const chatService = {
    * Yields parsed SSE events as StreamEvent objects.
    */
   async *sendMessage(params: ChatParams): AsyncGenerator<StreamEvent> {
+    const _t0 = performance.now();
+    // console.log(`[DEBUG_TIEMPO_SSE] sendMessage started — t=${_t0}`);
     const { message, files, sessionId } = params;
     const controller = new AbortController();
     activeController = controller;
@@ -36,6 +38,8 @@ const chatService = {
       body: formData,
       signal: controller.signal,
     });
+
+    // console.log(`[DEBUG_TIEMPO_SSE] sendMessage fetch response received — status=${response.status}, t=${performance.now()}, elapsed=${performance.now() - _t0}`);
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => "");
@@ -56,6 +60,7 @@ const chatService = {
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
+          // console.log(`[DEBUG_TIEMPO_SSE] reader.done — stream closed naturally, t=${performance.now()}`);
           buffer += decoder.decode(); // Flush decoder residual bytes
           break;
         }
@@ -69,6 +74,12 @@ const chatService = {
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               const data = line.slice(6);
+              // [DONE] is a raw marker, not JSON — skip parsing
+              if (data === "[DONE]") {
+                // console.log(`[DEBUG_TIEMPO_SSE] [DONE] raw marker received, returning generator — t=${performance.now()}, elapsed=${performance.now() - _t0}`);
+                yield { type: "done", content: "[DONE]" };
+                return;
+              }
               try {
                 const parsed = JSON.parse(data);
                 yield parsed as StreamEvent;
@@ -82,13 +93,16 @@ const chatService = {
           }
         }
       }
+      // console.log(`[DEBUG_TIEMPO_SSE] sendMessage while loop ended (no more SSE data) — t=${performance.now()}`);
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
+        // console.log(`[DEBUG_TIEMPO_SSE] sendMessage caught AbortError, yielding cancel — t=${performance.now()}`);
         yield { type: "chunk", content: "*Transmisión cancelada.*" };
         return;
       }
       throw err;
     } finally {
+      // console.log(`[DEBUG_TIEMPO_SSE] sendMessage finally — reader.releaseLock(), t=${performance.now()}`);
       reader.releaseLock();
       activeController = null;
     }
@@ -96,9 +110,13 @@ const chatService = {
 
   /** Cancel an active stream by aborting the underlying fetch request. */
   cancelStream(): void {
+    // console.log(`[DEBUG_TIEMPO_SSE] cancelStream called — t=${performance.now()}`);
     if (activeController) {
+      // console.log(`[DEBUG_TIEMPO_SSE] cancelStream — aborting controller, t=${performance.now()}`);
       activeController.abort();
       activeController = null;
+    } else {
+      // console.log(`[DEBUG_TIEMPO_SSE] cancelStream — no activeController, t=${performance.now()}`);
     }
   },
 

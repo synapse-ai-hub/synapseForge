@@ -14,6 +14,8 @@ interface SidebarProps {
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
   refreshTrigger: number;
+  verboseMode: boolean;
+  onVerboseModeChange: (val: boolean) => void;
 }
 
 function formatTimestamp(value: string): string {
@@ -46,6 +48,8 @@ export function Sidebar({
   onSelectSession,
   onNewChat,
   refreshTrigger,
+  verboseMode,
+  onVerboseModeChange,
 }: SidebarProps) {
   const [tab, setTab] = useState<SidebarTab>("sessions");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -184,208 +188,214 @@ export function Sidebar({
         </button>
       </div>
 
-      {tab === "sessions" ? (
-        <>
-          {/* New chat */}
-          <div className="p-3 border-b border-app-border bg-white">
-            <Button onClick={onNewChat} className="w-full gap-2">
-              <Plus size={16} />
-              Nuevo Chat
-            </Button>
+      {/* Sessions tab — always mounted, hidden via CSS when inactive */}
+      <div
+        className="flex-1 flex flex-col min-h-0"
+        style={{ display: tab === 'sessions' ? 'flex' : 'none' }}
+      >
+        {/* New chat */}
+        <div className="p-3 border-b border-app-border bg-white">
+          <Button onClick={onNewChat} className="w-full gap-2">
+            <Plus size={16} />
+            Nuevo Chat
+          </Button>
+        </div>
+
+        {/* Session list + MCP panel */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* History - 70% */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5 min-h-0" style={{ maxHeight: "70%" }}>
+            {isLoading ? (
+              <div className="text-center py-4 text-sm text-app-text-secondary">
+                Cargando...
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="text-center py-4 text-sm text-app-text-secondary">
+                No hay conversaciones todavía.
+              </div>
+            ) : (
+              sessions.map((s) => {
+                const isActive = activeSessionId === s.session_id;
+                return (
+                  <div
+                    key={s.session_id}
+                    onClick={() => onSelectSession(s.session_id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelectSession(s.session_id);
+                      }
+                    }}
+                    className={`group w-full text-left p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                      isActive
+                        ? "border-app-primary bg-white"
+                        : "border-transparent bg-white hover:bg-app-bg-tertiary"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <MessageSquare
+                        size={14}
+                        className="mt-0.5 shrink-0 text-app-primary"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium text-app-text truncate">
+                          {s.title}
+                        </div>
+                        {s.preview ? (
+                          <div className="text-[11px] text-app-text-secondary truncate mt-0.5">
+                            {s.preview}
+                          </div>
+                        ) : null}
+                        <div className="text-[11px] text-app-text-secondary mt-0.5">
+                          {formatTimestamp(s.updated_at)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDelete(s.session_id, e)}
+                        disabled={deletingId === s.session_id}
+                        className="shrink-0 rounded p-1 text-app-text-secondary opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-app-error transition-all"
+                        aria-label="Eliminar conversación"
+                      >
+                        {deletingId === s.session_id ? (
+                          <div
+                            style={{
+                              width: "14px",
+                              height: "14px",
+                              border: "2px solid #9ca3af",
+                              borderTop: "2px solid #C2413D",
+                              borderRadius: "50%",
+                              animation: "spin 1s linear infinite",
+                            }}
+                          />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
-          {/* Session list + MCP panel */}
-          <div className="flex-1 flex flex-col min-h-0">
-            {/* History - 70% */}
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5 min-h-0" style={{ maxHeight: "70%" }}>
-              {isLoading ? (
-                <div className="text-center py-4 text-sm text-app-text-secondary">
+          {/* MCP Panel - 30% */}
+          <div className="border-t border-app-border bg-app-bg-secondary flex-shrink-0" style={{ height: "30%" }}>
+            <div className="p-3 border-b border-app-border bg-white">
+              <div className="w-full max-w-[calc(100%-1.5rem)] mx-auto rounded-md bg-app-primary px-3 py-2 text-center">
+                <div className="flex justify-center items-center gap-2 text-xs font-medium text-white">
+                  <Server size={12} className="text-white" />
+                  Servidores MCP
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-0">
+              {mcpLoading ? (
+                <div className="text-center py-4 text-xs text-app-text-secondary">
                   Cargando...
                 </div>
-              ) : sessions.length === 0 ? (
-                <div className="text-center py-4 text-sm text-app-text-secondary">
-                  No hay conversaciones todavía.
+              ) : mcpServers.length === 0 ? (
+                <div className="text-center py-4 text-xs text-app-text-secondary">
+                  No hay servidores MCP configurados.
                 </div>
               ) : (
-                sessions.map((s) => {
-                  const isActive = activeSessionId === s.session_id;
+                mcpServers.map((server) => {
+                  const health = mcpHealth[server.label];
+                  const isConnected = health?.status === "connected";
+                  const isFailed = health?.status === "failed";
+                  const isDisabled = health?.status === "disabled" || server.disabled;
+                  
+                  const statusBadgeClass = isConnected
+                    ? "bg-app-primary text-white"
+                    : isFailed
+                    ? "bg-app-error/10 text-app-error"
+                    : isDisabled
+                    ? "bg-app-bg-tertiary text-app-text-secondary"
+                    : "bg-app-warning/10 text-app-warning";
+                  const statusText = isConnected
+                    ? "Conectado"
+                    : isFailed
+                    ? "Error"
+                    : isDisabled
+                    ? "Deshabilitado"
+                    : "Desconocido";
+
+                  const transportBadgeClass = server.transport === "http"
+                    ? "bg-app-primary/10 text-app-primary"
+                    : "bg-app-success/10 text-app-success";
+
                   return (
                     <div
-                      key={s.session_id}
-                      onClick={() => onSelectSession(s.session_id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSelectSession(s.session_id);
-                        }
-                      }}
-                      className={`group w-full text-left p-2.5 rounded-lg border cursor-pointer transition-colors ${
-                        isActive
-                          ? "border-app-primary bg-white"
-                          : "border-transparent bg-white hover:bg-app-bg-tertiary"
-                      }`}
+                      key={server.label}
+                      className="p-2 rounded-lg border border-app-border bg-app-bg hover:bg-app-bg-tertiary transition-colors"
                     >
-                      <div className="flex items-start gap-2">
-                        <MessageSquare
-                          size={14}
-                          className="mt-0.5 shrink-0 text-app-primary"
-                        />
+                      <div className="flex items-center gap-2">
+                        {server.transport === "http" ? (
+                          <Globe size={14} className="text-app-primary" />
+                        ) : server.command?.includes("mssql") || server.command?.includes("sql") ? (
+                          <Database size={14} className="text-app-primary" />
+                        ) : (
+                          <Cpu size={14} className="text-app-primary" />
+                        )}
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-app-text truncate">
-                            {s.title}
-                          </div>
-                          {s.preview ? (
-                            <div className="text-[11px] text-app-text-secondary truncate mt-0.5">
-                              {s.preview}
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-xs font-medium text-app-text truncate">
+                              {server.label}
                             </div>
-                          ) : null}
-                          <div className="text-[11px] text-app-text-secondary mt-0.5">
-                            {formatTimestamp(s.updated_at)}
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium ${statusBadgeClass}`}>
+                              {statusText}
+                            </span>
+                          </div>
+                          {server.description && (
+                            <div className="text-[10px] text-app-text-secondary truncate mt-0.5">
+                              {server.description}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium ${transportBadgeClass}`}>
+                              {server.transport === "http" ? "HTTP" : "STDIO"}
+                            </span>
+                            {isConnected && health?.tools_count !== undefined && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-app-primary/10 text-app-primary">
+                                {health.tools_count} tools
+                              </span>
+                            )}
+                            {isFailed && health?.error && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-app-error/10 text-app-error" title={health.error}>
+                                Error
+                              </span>
+                            )}
+                            {server.disabled && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-app-bg-tertiary text-app-text-secondary">
+                                Deshabilitado
+                              </span>
+                            )}
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => handleDelete(s.session_id, e)}
-                          disabled={deletingId === s.session_id}
-                          className="shrink-0 rounded p-1 text-app-text-secondary opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-app-error transition-all"
-                          aria-label="Eliminar conversación"
-                        >
-                          {deletingId === s.session_id ? (
-                            <div
-                              style={{
-                                width: "14px",
-                                height: "14px",
-                                border: "2px solid #9ca3af",
-                                borderTop: "2px solid #C2413D",
-                                borderRadius: "50%",
-                                animation: "spin 1s linear infinite",
-                              }}
-                            />
-                          ) : (
-                            <Trash2 size={14} />
-                          )}
-                        </button>
                       </div>
                     </div>
                   );
                 })
               )}
             </div>
-
-            {/* MCP Panel - 30% */}
-            <div className="border-t border-app-border bg-app-bg-secondary flex-shrink-0" style={{ height: "30%" }}>
-              <div className="p-3 border-b border-app-border bg-white">
-                <div className="w-full max-w-[calc(100%-1.5rem)] mx-auto rounded-md bg-app-primary px-3 py-2 text-center">
-                  <div className="flex justify-center items-center gap-2 text-xs font-medium text-white">
-                    <Server size={12} className="text-white" />
-                    Servidores MCP
-                  </div>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 min-h-0">
-                {mcpLoading ? (
-                  <div className="text-center py-4 text-xs text-app-text-secondary">
-                    Cargando...
-                  </div>
-                ) : mcpServers.length === 0 ? (
-                  <div className="text-center py-4 text-xs text-app-text-secondary">
-                    No hay servidores MCP configurados.
-                  </div>
-                ) : (
-                  mcpServers.map((server) => {
-                    const health = mcpHealth[server.label];
-                    const isConnected = health?.status === "connected";
-                    const isFailed = health?.status === "failed";
-                    const isDisabled = health?.status === "disabled" || server.disabled;
-                    
-                    // Status badge colors - connected uses primary (like Nuevo Chat button)
-                    const statusBadgeClass = isConnected
-                      ? "bg-app-primary text-white"
-                      : isFailed
-                      ? "bg-app-error/10 text-app-error"
-                      : isDisabled
-                      ? "bg-app-bg-tertiary text-app-text-secondary"
-                      : "bg-app-warning/10 text-app-warning";
-                    const statusText = isConnected
-                      ? "Conectado"
-                      : isFailed
-                      ? "Error"
-                      : isDisabled
-                      ? "Deshabilitado"
-                      : "Desconocido";
-
-                    // Transport badge colors using design system
-                    const transportBadgeClass = server.transport === "http"
-                      ? "bg-app-primary/10 text-app-primary"
-                      : "bg-app-success/10 text-app-success";
-
-                    return (
-                      <div
-                        key={server.label}
-                        className="p-2 rounded-lg border border-app-border bg-app-bg hover:bg-app-bg-tertiary transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          {server.transport === "http" ? (
-                            <Globe size={14} className="text-app-primary" />
-                          ) : server.command?.includes("mssql") || server.command?.includes("sql") ? (
-                            <Database size={14} className="text-app-primary" />
-                          ) : (
-                            <Cpu size={14} className="text-app-primary" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <div className="text-xs font-medium text-app-text truncate">
-                                {server.label}
-                              </div>
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium ${statusBadgeClass}`}>
-                                {statusText}
-                              </span>
-                            </div>
-                            {server.description && (
-                              <div className="text-[10px] text-app-text-secondary truncate mt-0.5">
-                                {server.description}
-                              </div>
-                            )}
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium ${transportBadgeClass}`}>
-                                {server.transport === "http" ? "HTTP" : "STDIO"}
-                              </span>
-                              {isConnected && health?.tools_count !== undefined && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-app-primary/10 text-app-primary">
-                                  {health.tools_count} tools
-                                </span>
-                              )}
-                              {isFailed && health?.error && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-app-error/10 text-app-error" title={health.error}>
-                                  Error
-                                </span>
-                              )}
-                              {server.disabled && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-app-bg-tertiary text-app-text-secondary">
-                                  Deshabilitado
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
           </div>
-        </>
-      ) : (
-        <ConfigTab />
-      )}
+        </div>
+      </div>
+
+      {/* Config tab — always mounted too, hidden via CSS when inactive */}
+      <div
+        className="flex-1 flex flex-col min-h-0 overflow-y-auto"
+        style={{ display: tab === 'config' ? 'flex' : 'none' }}
+      >
+        <ConfigTab verboseMode={verboseMode} onVerboseModeChange={onVerboseModeChange} />
+      </div>
     </aside>
   );
 }
 
-function ConfigTab() {
+function ConfigTab({ verboseMode, onVerboseModeChange }: { verboseMode: boolean; onVerboseModeChange: (val: boolean) => void }) {
   const [providers, setProviders] = useState<Array<{ provider: string; label: string }>>([]);
   const [models, setModels] = useState<string[]>([]);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
@@ -396,12 +406,22 @@ function ConfigTab() {
   const [savingContext, setSavingContext] = useState(false);
 
   const load = useCallback(async (prov?: string) => {
+    let label: string | undefined;
     try {
       setLoading(true);
+      label = "[ConfigTab] load " + Date.now();
+      console.time(label);
+      // Individual timing per endpoint
+      const tProv = "[ConfigTab] getProviders " + Date.now();
+      const tModels = "[ConfigTab] getModels " + Date.now();
+      const tCW = "[ConfigTab] getContextWindow " + Date.now();
+      console.time(tProv);
+      console.time(tModels);
+      console.time(tCW);
       const [provResp, m, cw] = await Promise.all([
-        configService.getProviders(),
-        configService.getModels(prov),
-        configService.getContextWindow(),
+        configService.getProviders().finally(() => console.timeEnd(tProv)),
+        configService.getModels(prov).finally(() => console.timeEnd(tModels)),
+        configService.getContextWindow().finally(() => console.timeEnd(tCW)),
       ]);
       setProviders(provResp.providers || []);
       setModels(m.models || []);
@@ -414,6 +434,7 @@ function ConfigTab() {
       console.error("Error cargando configuración:", err);
     } finally {
       setLoading(false);
+      if (label) console.timeEnd(label);
     }
   }, []);
 
@@ -522,6 +543,32 @@ function ConfigTab() {
             Guardar
           </Button>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between py-2">
+        <div>
+          <div className="text-xs font-medium text-app-text-secondary">
+            Modo verbose
+          </div>
+          <p className="text-[11px] text-app-text-secondary mt-1">
+            Muestra herramientas y sub-agentes en la conversación.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={verboseMode}
+          onClick={() => onVerboseModeChange(!verboseMode)}
+          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-app-primary-light ${
+            verboseMode ? "bg-app-primary" : "bg-app-bg-tertiary"
+          }`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+              verboseMode ? "translate-x-4" : "translate-x-0"
+            }`}
+          />
+        </button>
       </div>
     </div>
   );

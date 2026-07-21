@@ -1,5 +1,3 @@
-import groq
-import ollama
 import sys
 import os
 import json
@@ -11,6 +9,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from typing import Any, Dict, Generator
 import asyncio
+from groq import AsyncGroq
+from ollama import AsyncClient
 
 logger = logging.getLogger(__name__)
 
@@ -110,13 +110,13 @@ class Agent():
         # Always try to create both clients.  The frontend dropdown will
         # only show providers whose client initialised successfully.
         try:
-            self.groq_client = groq.Groq(api_key=self.__api_key)
+            self.groq_client = AsyncGroq(api_key=self.__api_key)
         except Exception as e:
             log_error(str(e), source="agent.py:__init__(groq)")
             self.groq_client = None
 
         try:
-            self.ollama_client = ollama.Client(host='http://localhost:11434')
+            self.ollama_client = AsyncClient(host='http://localhost:11434')
         except Exception as e:
             log_error(str(e), source="agent.py:__init__(ollama)")
             self.ollama_client = None
@@ -262,15 +262,15 @@ class Agent():
             )
         return out
 
-    def llm_process(self, model: str, prompt: str | None = None,
-                    system_content: str | None = None,
-                    messages: list[dict[str, Any]] | None = None,
-                    temperature: float | None = None,
-                    top_p: float | None = None,
-                    max_tokens: int | None = None,
-                    cleaned_output: bool = True,
-                    tools: list | None = None,
-                    **kwargs) -> ContractResponse:
+    async def llm_process(self, model: str, prompt: str | None = None,
+                          system_content: str | None = None,
+                          messages: list[dict[str, Any]] | None = None,
+                          temperature: float | None = None,
+                          top_p: float | None = None,
+                          max_tokens: int | None = None,
+                          cleaned_output: bool = True,
+                          tools: list | None = None,
+                          **kwargs) -> ContractResponse:
         """Send a chat completion and return content + tool_calls.
 
         Accepts either the classic ``prompt`` + ``system_content`` (backwards
@@ -326,7 +326,7 @@ class Agent():
                 if tools:
                     groq_kwargs["tools"] = tools
                     groq_kwargs["tool_choice"] = "auto"
-                response = self.groq_client.chat.completions.create(
+                response = await self.groq_client.chat.completions.create(
                     model=model,
                     messages=msgs,
                     **groq_kwargs,
@@ -356,17 +356,16 @@ class Agent():
                           'num_thread', 'num_gpu', 'stop'):
                     if k in kwargs:
                         options[k] = kwargs.pop(k)
-                keep_alive_val = kwargs.pop('keep_alive', None)
                 for k in list(kwargs):
                     print(f'[WARN] Ollama no soporta el parámetro "{k}". Será ignorado.', flush=True)
                     kwargs.pop(k)
 
-                response = self.ollama_client.chat(
+                response = await self.ollama_client.chat(
                     model=model,
                     messages=msgs,
                     tools=tools if tools else None,
                     options=options,
-                    keep_alive=keep_alive_val,
+                    keep_alive=-1,
                 )
                 output = response.message.content or ""
                 raw_tc = response.message.tool_calls
@@ -472,11 +471,11 @@ class Agent():
                 groq_kwargs["tools"] = tools
                 groq_kwargs["tool_choice"] = "auto"
 
-            stream = self.groq_client.chat.completions.create(**groq_kwargs)
+            stream = await self.groq_client.chat.completions.create(**groq_kwargs)
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
 
-            for chunk in stream:
+            async for chunk in stream:
                 if stream_cancel_event and stream_cancel_event.is_set():
                     yield {'type': 'aborted'}
                     return
@@ -535,15 +534,16 @@ class Agent():
                       'num_thread', 'num_gpu', 'stop'):
                 if k in kwargs:
                     options[k] = kwargs.pop(k)
-            stream = self.ollama_client.chat(
+            stream = await self.ollama_client.chat(
                 model=model,
                 messages=msgs,
                 stream=True,
                 tools=tools if tools else None,
                 options=options,
+                keep_alive=-1,
             )
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
-            for chunk in stream:
+            async for chunk in stream:
                 if stream_cancel_event and stream_cancel_event.is_set():
                     yield {'type': 'aborted'}
                     return

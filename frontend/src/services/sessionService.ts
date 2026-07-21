@@ -9,12 +9,27 @@ export interface ChatSession {
   message_count: number;
 }
 
+export interface TextBlock {
+  type: "text";
+  content: string;
+}
+
+export interface ToolBlock {
+  type: "tool";
+  name: string;
+  args: Record<string, any>;
+  result?: any;
+}
+
+export type ContentBlock = TextBlock | ToolBlock;
+
 export interface SessionMessage {
   id: string;
   type: "user" | "assistant";
   content: string;
   toolCalls?: Array<{ id?: string; name: string; args: Record<string, any> }> | null;
   toolResults?: Array<{ tool_call_id?: string; tool_name: string; result: any }> | null;
+  blocks?: ContentBlock[] | null;
 }
 
 export interface SessionMessages {

@@ -1,10 +1,11 @@
-"""Chat SSE streaming endpoint for the <descripcion>nombre_proyecto</descripcion>."""
+"""Chat SSE streaming endpoint for the <descripcion>Nombre del proyecto</descripcion>."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import time as _time
 import os
 import sys
 import uuid
@@ -25,6 +26,7 @@ if _project_root not in sys.path:
 
 from backend.agent.loop import AgentLoop
 from backend.agent.utils.error_logger import log_error, set_error_context, reset_error_context
+from backend.instances import agent, session_manager, context_manager
 from backend.routes.file_text_extractor import (
     ExtractionResult,
     extract_text_from_bytes,
@@ -90,11 +92,11 @@ async def chat_endpoint(
     stream_cancel_event = asyncio.Event()
 
     async def event_stream():
+        _t0 = _time.time()
+        # # logger.info("[DEBUG_TIEMPO_SSE] event_stream() started — t=%.3f", _t0)
         # Set error context for this request (inside event_stream so set/reset share same async context)
         error_ctx_token = set_error_context(session_id=session_id, turn_number=0)
         try:
-            from backend.instances import agent, session_manager, context_manager
-
             agent_loop = AgentLoop(
                 agent=agent,
                 session_manager=session_manager,
@@ -106,18 +108,20 @@ async def chat_endpoint(
                 file_contents=file_contents,
                 stream_cancel_event=stream_cancel_event,
             ):
-                # If client disconnected, stop
+                # If client disconnected, signal cancellation but let generator finish naturally
+                # (loop.py will handle aborted event, save partial response, and yield [DONE])
                 if await request.is_disconnected():
                     stream_cancel_event.set()
-                    break
                 yield sse_event
         except Exception as exc:
             log_error(str(exc), source="backend/routes/chat.py")
-            logger.exception("Error in agent loop stream: %s", exc)
+            logger.exception("[DEBUG_TIEMPO_SSE] Error in agent loop stream: %s", exc)
             # Yield a terminal error event so the client sees something
             yield f"data: {json.dumps({'type': 'chunk', 'content': 'En este momento no se puede ejecutar la solicitud. Por favor, intentá más tarde.'})}\n\n"
             yield "data: [DONE]\n\n"
         finally:
+            _t_fin = _time.time()
+            # # logger.info("[DEBUG_TIEMPO_SSE] event_stream() finished — t=%.3f, total=%.3f", _t_fin, _t_fin - _t0)
             reset_error_context(error_ctx_token)
 
     return StreamingResponse(

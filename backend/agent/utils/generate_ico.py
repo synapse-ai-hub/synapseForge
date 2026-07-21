@@ -1,10 +1,10 @@
-"""Script to generate .ico file from logo_cliente.png.
+"""Script to generate .ico file from logo_empresa.png.
 
 Usage:
     python backend/agent/utils/generate_ico.py
 
-Reads: frontend/src/assets/logo_cliente.png
-Writes: frontend/src/assets/logo_cliente.ico
+Reads: frontend/src/assets/logo_empresa.png
+Writes: frontend/src/assets/logo_empresa.ico
 """
 
 from pathlib import Path
@@ -14,8 +14,8 @@ from PIL import Image
 def generate_ico():
     """Generate .ico file from the company logo PNG."""
     project_root = Path(__file__).parent.parent.parent.parent
-    png_path = project_root / "frontend" / "src" / "assets" / "logo_cliente.png"
-    ico_path = project_root / "frontend" / "src" / "assets" / "logo_cliente.ico"
+    png_path = project_root / "frontend" / "src" / "assets" / "logo_empresa.png"
+    ico_path = project_root / "frontend" / "src" / "assets" / "logo_empresa.ico"
 
     if not png_path.exists():
         print(f"ERROR: Source PNG not found at {png_path}")

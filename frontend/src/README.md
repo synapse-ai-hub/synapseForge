@@ -4,7 +4,7 @@
 
 ---
 
-<h1 align="center">[Frontend — <descripcion>nombre_proyecto</descripcion>]</h1>
+<h1 align="center">[Frontend — <descripcion>Nombre del proyecto</descripcion>]</h1>
 
 ---
 
@@ -16,13 +16,13 @@
 
 ---
 
-<h3 align="center">[Interfaz de usuario React + TypeScript + Vite para el <descripcion>nombre_proyecto</descripcion>]</h3>
+<h3 align="center">[Interfaz de usuario React + TypeScript + Vite para el <descripcion>Nombre del proyecto</descripcion>]</h3>
 
 ---
 
 ## Descripción
 
-Frontend del **<descripcion>nombre_proyecto</descripcion>**. Aplicación React 18 + TypeScript + Vite que provee la interfaz de chat streaming (SSE), panel de configuración de modelo/proveedor/contexto, gestión de sesiones y visualización de tool calls en tiempo real.
+Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación React 18 + TypeScript + Vite que provee la interfaz de chat streaming (SSE), panel de configuración de modelo/proveedor/contexto, gestión de sesiones y visualización de tool calls en tiempo real.
 
 ### ✨ Características Principales
 
@@ -53,8 +53,8 @@ frontend/
 ├─ public/                     # Assets estáticos
 ├─ src/
 │  ├─ assets/                  # Logo, imágenes
-│  │  └─ logo_cliente.png      # Logo de la empresa
-│  │  └─ logo_cliente.ico      # Favicon generado
+│  │  └─ logo_empresa.png      # Logo de la empresa
+│  │  └─ logo_empresa.ico      # Favicon generado
 │  ├─ components/              # Componentes React
 │  │  ├─ Chat/                 # Área de chat principal
 │  │  │  ├─ ChatArea.tsx       # Contenedor de mensajes

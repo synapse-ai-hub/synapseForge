@@ -13,6 +13,7 @@ import glob as glob_module
 import importlib
 import importlib.util
 import inspect
+import types
 import json
 import logging
 import os
@@ -123,6 +124,15 @@ class Tools:
             elif len(non_none) > 1:
                 annotation = non_none[0]  # fallback: use first non-None
 
+        # Handle types.UnionType (PEP 604 syntax: str | None)
+        # These have __args__ but no __origin__
+        if isinstance(annotation, types.UnionType):
+            non_none = [a for a in annotation.__args__ if a is not type(None)]
+            if len(non_none) == 1:
+                annotation = non_none[0]
+            elif len(non_none) > 1:
+                annotation = non_none[0]  # fallback: use first non-None
+
         json_type = Tools._PY_TYPE_TO_JSON.get(annotation)
         if json_type is None:
             return None
@@ -141,14 +151,14 @@ class Tools:
     def tools_registry(self, tool_permissions: dict | None = None) -> list[dict]:
         """Tools available for LLM function calling.
 
-        When *tool_permissions* is ``None`` (router / no agent selected) all
-        tools are returned. When a dict is provided (resolved from an agent's
+        When *tool_permissions* is ``None`` or empty, no tools are returned
+        (deny by default). When a dict is provided (resolved from an agent's
         frontmatter via ``get_tool_permissions``) only the allowed tools are
         kept.
 
         Args:
             tool_permissions: Top-level permission dict from the agent
-                frontmatter, or ``None`` to return all tools.
+                frontmatter.
 
         Returns:
             List of tool schemas in API format.
@@ -895,6 +905,44 @@ class Tools:
             result block consumed by the parent agent as a tool result.
         """
         # 1. Resolve sub-agent data from its markdown definition
+        # Check if loop.py already resolved permissions (cached on tools instance)
+        cached = getattr(self, "_task_config", None)
+        if cached and cached.get("agent_name") == agent_name:
+            # Reuse cached values — avoids re-reading agent .md
+            tool_perms = cached["tool_permissions"]
+            skill_perms = cached["skill_permissions"]
+            parameters = cached["parameters"]
+            # Clear cache for next delegation
+            self._task_config = None
+        else:
+            # First-time resolution (called outside loop.py)
+            tool_perms: dict = {}
+            tp = get_tool_permissions(agent_name)
+            if tp.get("status") == "success":
+                try:
+                    tool_perms = json.loads(tp["data"])
+                except (json.JSONDecodeError, TypeError) as e:
+                    log_error(str(e), source="tools.py:task(tool_perms)")
+                    tool_perms = {}
+
+            skill_perms: dict = {}
+            sp = get_skill_permissions(agent_name)
+            if sp.get("status") == "success":
+                try:
+                    skill_perms = json.loads(sp["data"])
+                except (json.JSONDecodeError, TypeError) as e:
+                    log_error(str(e), source="tools.py:task(skill_perms)")
+                    skill_perms = {}
+
+            # Resolve model parameters from sub-agent frontmatter
+            params_result = get_agent_parameters(agent_name)
+            parameters: dict = {}
+            if params_result.get("status") == "success":
+                try:
+                    parameters = json.loads(params_result.get("data", "{}"))
+                except (json.JSONDecodeError, TypeError) as e:
+                    log_error(str(e), source="tools.py:task(parameters)")
+
         prompt_result = get_agent_prompt(agent_name)
         if prompt_result.get("status") != "success":
             return make_error_response(
@@ -902,24 +950,6 @@ class Tools:
                 usage=zero_usage(),
             )
         system_prompt = prompt_result.get("data", "") or ""
-
-        tool_perms: dict = {}
-        tp = get_tool_permissions(agent_name)
-        if tp.get("status") == "success":
-            try:
-                tool_perms = json.loads(tp["data"])
-            except (json.JSONDecodeError, TypeError) as e:
-                log_error(str(e), source="tools.py:task(tool_perms)")
-                tool_perms = {}
-
-        skill_perms: dict = {}
-        sp = get_skill_permissions(agent_name)
-        if sp.get("status") == "success":
-            try:
-                skill_perms = json.loads(sp["data"])
-            except (json.JSONDecodeError, TypeError) as e:
-                log_error(str(e), source="tools.py:task(skill_perms)")
-                skill_perms = {}
 
         # 2. Create an integrated child session (parent_id = current session)
         from backend.instances import agent, session_manager, context_manager
@@ -942,15 +972,7 @@ class Tools:
         # 3. Run the sub-agent loop inside the child session
         from backend.agent.loop import AgentLoop
 
-        # Resolve model parameters from sub-agent frontmatter
-        params_result = get_agent_parameters(agent_name)
-        parameters: dict = {}
-        if params_result.get("status") == "success":
-            try:
-                parameters = json.loads(params_result.get("data", "{}"))
-            except (json.JSONDecodeError, TypeError) as e:
-                log_error(str(e), source="tools.py:task(parameters)")
-
+        stream_cancel_event = getattr(self, "_stream_cancel_event", None)
         loop = AgentLoop(
             agent=agent,
             session_manager=session_manager,
@@ -958,6 +980,11 @@ class Tools:
         )
         final_text = ""
         state = "completed"
+        event_queue = getattr(self, "_subagent_event_queue", None)
+        if event_queue is not None:
+            logger.info("task() has event_queue for child=%s", child_id[:8])
+        else:
+            logger.info("task() NO event_queue for child=%s", child_id[:8])
         try:
             async for sse in loop.run(
                 session_id=child_id,
@@ -969,6 +996,8 @@ class Tools:
                 agent_name=agent_name,
                 depth=depth + 1,
                 parent_id=parent_id,
+                parent_model=agent._resolved_model,
+                stream_cancel_event=stream_cancel_event,
             ):
                 if sse.strip() == "data: [DONE]":
                     break
@@ -978,6 +1007,25 @@ class Tools:
                     except (json.JSONDecodeError, ValueError) as e:
                         log_error(str(e), source="tools.py:task(sse_parse)")
                         continue
+
+                    # Forward sub-agent event to parent's SSE stream in real-time
+                    if event_queue is not None:
+                        sub_event = {
+                            "type": "subagent_event",
+                            "content": {
+                                "child_session_id": child_id,
+                                "agent_name": agent_name,
+                                "event": payload,
+                            },
+                        }
+                        await event_queue.put(sub_event)
+                        if payload.get("type") in ("tool_call", "tool_result"):
+                            logger.info(
+                                ">> queued event type=%s child=%s",
+                                payload.get("type"),
+                                child_id[:8],
+                            )
+
                     if payload.get("type") == "chunk":
                         final_text += payload.get("content", "")
         except Exception as exc:

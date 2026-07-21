@@ -7,6 +7,7 @@ sidebar that shows the conversation history.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -86,12 +87,81 @@ async def list_sessions():
         return make_error_response(message="Error al obtener las sesiones")
 
 
+def _build_blocks(messages: list[dict]) -> list[dict] | None:
+    """Build ordered blocks from assistant + tool messages in one turn.
+
+    Each step produces a text block (if the LLM wrote something) followed
+    by one tool block per tool call.  The tool result is matched to its
+    tool block by iterating in reverse and looking for the last unmatched
+    block with the same tool name.
+
+    Args:
+        messages: All messages in a turn, ordered by ``(turn_number, step, id)``.
+
+    Returns:
+        A list of ``{"type","content"}`` / ``{"type","name","args","result"}``
+        dicts, or ``None`` if the list is empty.
+    """
+    blocks: list[dict] = []
+    for msg in messages:
+        role = msg.get("role")
+        if role == "assistant":
+            content = msg.get("content") or ""
+            if content:
+                blocks.append({"type": "text", "content": content})
+            tool_calls = msg.get("tool_calls")
+            if tool_calls:
+                for tc in tool_calls:
+                    name = tc.get("name", "")
+                    args = tc.get("args", tc.get("function", {}).get("arguments", {}))
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {"raw": args}
+                    if not isinstance(args, dict):
+                        args = {"raw": str(args)}
+                    blocks.append({
+                        "type": "tool",
+                        "name": name,
+                        "args": args,
+                        "result": None,
+                    })
+        elif role == "tool":
+            tool_name = msg.get("tool_name", "")
+            raw_content = msg.get("content") or ""
+            parsed: str | dict = raw_content
+            try:
+                parsed = json.loads(raw_content) if raw_content else ""
+            except (json.JSONDecodeError, TypeError):
+                parsed = raw_content
+            # Match to last unmatched tool block with same name
+            for i in range(len(blocks) - 1, -1, -1):
+                b = blocks[i]
+                if b["type"] == "tool" and b["name"] == tool_name and b.get("result") is None:
+                    b["result"] = parsed
+                    break
+
+    # Fallback: fill remaining None results from assistant's tool_results
+    for msg in messages:
+        if msg.get("role") == "assistant" and msg.get("tool_results"):
+            trs = msg["tool_results"]
+            idx = 0
+            for b in blocks:
+                if b["type"] == "tool" and b.get("result") is None and idx < len(trs):
+                    b["result"] = trs[idx].get("result", "")
+                    idx += 1
+
+    return blocks if blocks else None
+
+
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
     """Return the full message history of a session.
 
-    Only ``user`` and ``assistant`` messages are returned, mapped to the
-    frontend-friendly shape (``id``, ``type``, ``content``, ``toolCalls``, ``toolResults``).
+    Messages are grouped by turn. Each **assistant turn** is collapsed
+    into a single message with an ordered ``blocks`` array that preserves
+    the exact order of text and tool invocations.
 
     Args:
         session_id: The session identifier.
@@ -104,22 +174,38 @@ async def get_session(session_id: str):
         return make_error_response(message="Session manager no disponible")
     try:
         raw_messages = session_manager.load_messages(session_id)
-        mapped: list[dict] = []
+        # Group by turn_number
+        turns: dict[int, list[dict]] = {}
         for msg in raw_messages:
-            role = msg.get("role")
-            if role not in ("user", "assistant"):
-                continue
-            tool_calls = msg.get("tool_calls") or None
-            tool_results = msg.get("tool_results") or None
-            mapped.append(
-                {
-                    "id": f"msg-{msg.get('id')}",
-                    "type": role,
-                    "content": msg.get("content") or "",
-                    "toolCalls": tool_calls,
-                    "toolResults": tool_results,
-                }
-            )
+            tn = msg.get("turn_number") or 0
+            turns.setdefault(tn, []).append(msg)
+
+        mapped: list[dict] = []
+        for tn in sorted(turns.keys()):
+            turn_msgs = turns[tn]
+
+            user_msgs = [m for m in turn_msgs if m.get("role") == "user"]
+            non_user = [m for m in turn_msgs if m.get("role") != "user"]
+
+            for um in user_msgs:
+                mapped.append({
+                    "id": f"msg-{um.get('id')}",
+                    "type": "user",
+                    "content": um.get("content") or "",
+                    "turn_number": tn,
+                })
+
+            if non_user:
+                blocks = _build_blocks(non_user)
+                if blocks:
+                    mapped.append({
+                        "id": f"turn-{tn}",
+                        "type": "assistant",
+                        "content": "",  # blocks replace flat content
+                        "blocks": blocks,
+                        "turn_number": tn,
+                    })
+
         return validate_response(
             make_success_response(
                 message="Mensajes obtenidos",

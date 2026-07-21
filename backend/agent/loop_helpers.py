@@ -56,9 +56,11 @@ def fetch_context_window_turns() -> int:
 def build_system_prompt(agent_name: str | None = None) -> str:
     """Build the system prompt for an agent.
 
-    - If *agent_name* is ``None`` (router): load ``system_prompt.md`` via
-      ``agent.prompt('system_prompt')`` and fill the ``{fecha}``,
-      ``{skills}`` and ``{agents}`` placeholders.
+    - If *agent_name* is ``None`` (router): look for ``AGENT.md`` in the
+      agents config directory. If it exists, use it as the base prompt.
+      Otherwise fall back to ``system_prompt.md`` via ``agent.prompt``.
+      In both cases, append the current date and the list of available
+      agents (from the agents folder). No placeholders, no ``.format()``.
     - If *agent_name* is provided (sub-agent): resolve the system prompt
       from the agent's markdown via ``get_agent_prompt``.
 
@@ -76,19 +78,54 @@ def build_system_prompt(agent_name: str | None = None) -> str:
             "Agent '%s' no encontrado; usando system prompt del router.", agent_name
         )
 
+# Router: base prompt from AGENT.md if it exists, else system_prompt.md
+    from backend.agent.config_dir import get_agents_dir
+
+    agent_md_path = get_agents_dir() / "AGENT.md"
+    # print(f"[DEBUG_DE_LA VERGA QUE HICE] AGENT.md path: {agent_md_path}, exists: {agent_md_path.is_file()}")
+    if agent_md_path.is_file():
+        try:
+            base_prompt = agent_md_path.read_text(encoding="utf-8")
+            # print(f"[DEBUG_DE_LA VERGA QUE HICE] AGENT.md loaded, length: {len(base_prompt)}")
+            logger.info("Usando AGENT.md como system prompt del router.")
+        except (OSError, UnicodeDecodeError) as exc:
+            # print(f"[DEBUG_DE_LA VERGA QUE HICE] Error reading AGENT.md: {exc}")
+            logger.warning("Error al leer AGENT.md: %s; usando system_prompt.md.", exc)
+            log_error(str(exc), source="loop_helpers.py:build_system_prompt")
+            base_prompt = agent.prompt("system_prompt")
+    else:
+        # print(f"[DEBUG_DE_LA VERGA QUE HICE] AGENT.md not found, using system_prompt.md")
+        base_prompt = agent.prompt("system_prompt")
+
+    # print(f"[DEBUG_DE_LA VERGA QUE HICE] base_prompt length: {len(base_prompt)}, preview: {base_prompt[:200]}")
+
+    # Date
+    fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    # Agents from the agents folder
     agents_result = list_agents()
     agents = (
         json.loads(agents_result["data"])
         if agents_result.get("status") == "success"
         else []
     )
+    agents_str = ""
+    if agents:
+        agents_str = "\n".join(
+            f"- {a['name']}: {a['description']}" for a in agents
+        )
 
-    prompt = agent.prompt('system_prompt').format(
-        fecha=datetime.now().strftime("%d/%m/%Y %H:%M"),
-        skills=format_skills_section(),
-        agents=agents or "",
-    )
-    return prompt
+    # Concatenate: base + date + agents (no .format())
+    parts = []
+    if base_prompt:
+        parts.append(base_prompt)
+    parts.append(f"## Fecha\n{fecha}")
+    if agents_str:
+        parts.append(f"## Agentes\n{agents_str}")
+
+    final_prompt = "\n\n".join(parts)
+    # print(f"[DEBUG_DE_LA VERGA QUE HICE] build_system_prompt final length: {len(final_prompt)}, preview: {final_prompt[:300]}")
+    return final_prompt
 
 
 def build_initial_messages(

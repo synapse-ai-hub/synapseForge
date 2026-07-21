@@ -7,6 +7,7 @@ Provides endpoints to:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -41,6 +42,10 @@ router = APIRouter(prefix="/config", tags=["config"])
 _context_window_turns: int = -1
 """Number of turns to keep in context.  ``-1`` = all.  Set via
 ``POST /config/context-window``."""
+
+_verbose_mode: bool = False
+"""Whether verbose mode (show tool / sub-agent cards) is enabled.
+Set via ``POST /config/verbose-mode``."""
 
 
 def _default_model_for_provider(provider: str, models: list[str]) -> str | None:
@@ -87,7 +92,7 @@ async def set_context_window(data: dict[str, Any]) -> JSONResponse:
     """
     try:
         value = int(data.get("max_turns", -1))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
         log_error(str(e), source="backend/routes/config.py")
         return JSONResponse(
             status_code=400,
@@ -106,6 +111,7 @@ async def set_context_window(data: dict[str, Any]) -> JSONResponse:
             },
         )
 
+    global _context_window_turns
     _context_window_turns = value
 
     try:
@@ -122,6 +128,63 @@ async def set_context_window(data: dict[str, Any]) -> JSONResponse:
             "status": "success",
             "message": f"Context window set to {value} turn(s).",
             "max_turns": value,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Verbose mode
+# ---------------------------------------------------------------------------
+
+
+@router.get("/verbose-mode")
+async def get_verbose_mode() -> JSONResponse:
+    """Return the current verbose-mode flag."""
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "success",
+            "verbose_mode": _verbose_mode,
+        },
+    )
+
+
+@router.post("/verbose-mode")
+async def set_verbose_mode(data: dict[str, Any]) -> JSONResponse:
+    """Set the verbose-mode flag.
+
+    Request body::
+
+        {"verbose_mode": true}
+    """
+    raw = data.get("verbose_mode", False)
+    if not isinstance(raw, bool):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": "verbose_mode must be a boolean.",
+            },
+        )
+    value = raw
+
+    global _verbose_mode
+    _verbose_mode = value
+
+    try:
+        if session_manager is not None:
+            session_manager.set_config("verbose_mode", str(value))
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py")
+        logger.warning("No se pudo persistir verbose_mode: %s", exc)
+
+    logger.info("Verbose mode set to %s", value)
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "success",
+            "message": f"Verbose mode set to {value}.",
+            "verbose_mode": value,
         },
     )
 
@@ -150,14 +213,14 @@ async def list_providers() -> JSONResponse:
     available: list[dict[str, str]] = []
 
     # Ollama — try ``ollama list``
-    ollama_models = get_ollama_models()
+    ollama_models = await asyncio.to_thread(get_ollama_models)
     if ollama_models:
         available.append({"provider": "LOCAL", "label": "Ollama (local)"})
 
     # Groq — try the API
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if api_key:
-        groq_models = get_groq_models(api_key)
+        groq_models = await asyncio.to_thread(get_groq_models, api_key)
         if groq_models:
             available.append({"provider": "API", "label": "Groq (API)"})
 
@@ -217,11 +280,11 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     load_dotenv()
 
     if provider == "LOCAL":
-        models = get_ollama_models()
+        models = await asyncio.to_thread(get_ollama_models)
         provider_label = "Ollama (local)"
     elif provider == "API":
         api_key = os.getenv("GROQ_API_KEY", "").strip()
-        models = get_groq_models(api_key)
+        models = await asyncio.to_thread(get_groq_models, api_key)
         provider_label = "Groq (API)"
     else:
         return JSONResponse(
@@ -312,6 +375,17 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             },
         )
 
+    # Liberar modelo anterior si es LOCAL (Ollama) y cambió
+    modelo_anterior = agent._resolved_model
+    if modelo_anterior and modelo_anterior != model and agent.provider == "LOCAL":
+        try:
+            from backend.agent.utils.clean_memory import liberar_modelo
+            await asyncio.to_thread(liberar_modelo, modelo_anterior)
+            logger.info("Modelo anterior liberado: %s", modelo_anterior)
+        except Exception as exc:
+            log_error(str(exc), source="backend/routes/config.py:select_model")
+            logger.warning("No se pudo liberar modelo anterior %s: %s", modelo_anterior, exc)
+
     agent._resolved_model = model
     agent.provider = provider
 
@@ -375,6 +449,16 @@ def load_persisted_config() -> None:
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo cargar la ventana de contexto: %s", exc)
+
+    try:
+        vm = session_manager.get_config("verbose_mode")
+        if vm is not None:
+            global _verbose_mode
+            _verbose_mode = vm.lower() == "true"
+            logger.info("Verbose mode persistido cargado: %s", _verbose_mode)
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py")
+        logger.warning("No se pudo cargar verbose_mode: %s", exc)
 
 
 # ---------------------------------------------------------------------------

@@ -10,5 +10,6 @@
   "repo": "nombre_repo",
   "cliente": "nombre_cliente",
   "logo_cliente": "path/to/logo_cliente/ubicación_original.png",
-  "descripcion": "Nombre del proyecto"
+  "descripcion": "Nombre del proyecto",
+  "tarea": "Nombre de la tarea"
 }

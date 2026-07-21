@@ -46,6 +46,7 @@ def setup_database(conn: sqlite3.Connection) -> None:
             tool_call_id TEXT,
             tool_name TEXT,
             turn_number INTEGER,
+            step INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
         );

@@ -48,51 +48,46 @@ class SessionManager:
     VALID_ROLES = frozenset({"system", "user", "assistant", "tool"})
 
     def __init__(self, db_path: str = _DB_PATH) -> None:
-        """Initialise the session manager without connecting to the database.
+        """Initialise the session manager.
 
-        The actual SQLite connection is created lazily on the first
-        read or write operation.
+        Connections are now created per-operation (not singleton) to avoid
+        transaction state leaking across operations (which caused hangs on
+        refresh after cancellation).
 
         Args:
             db_path: Path to the SQLite database file.
         """
         self.db_path = db_path
-        self.conn: sqlite3.Connection | None = None
         self._lock = threading.RLock()
-        self._initialized = False
 
     # ------------------------------------------------------------------
     # Connection management
     # ------------------------------------------------------------------
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Return the lazy-initialised SQLite connection.
+        """Create a new SQLite connection for each operation.
 
         Creates the parent directory, opens the connection, sets
         optimised PRAGMAs, and creates tables if they do not exist yet.
-        Uses double-checked locking so the same connection is created
-        exactly once even when ``load_messages`` (lock-free) races with
-        a write method during initialisation.
+        Each call returns a fresh connection to avoid transaction state
+        leaking across operations (which caused hangs on refresh after cancellation).
 
         Returns:
-            The open ``sqlite3.Connection`` instance.
+            A new ``sqlite3.Connection`` instance.
         """
-        if self.conn is None:
-            with self._lock:
-                if self.conn is None:
-                    db_dir = os.path.dirname(self.db_path)
-                    if db_dir:
-                        os.makedirs(db_dir, exist_ok=True)
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
 
-                    conn = sqlite3.connect(
-                        self.db_path, check_same_thread=False
-                    )
-                    conn.row_factory = sqlite3.Row
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    conn.execute("PRAGMA foreign_keys=ON")
-                    self._create_tables(conn)
-                    self.conn = conn
-        return self.conn
+        conn = sqlite3.connect(
+            self.db_path, check_same_thread=False
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=5000")
+        self._create_tables(conn)
+        return conn
 
     def _create_tables(self, conn: sqlite3.Connection) -> None:
         """Create all agent tables using the canonical schema from ddl_setup.
@@ -100,12 +95,7 @@ class SessionManager:
         Args:
             conn: The open SQLite connection to run DDL on.
         """
-        if self._initialized:
-            return
-
         setup_database(conn)
-
-        self._initialized = True
 
     # ------------------------------------------------------------------
     # Session operations
@@ -127,26 +117,30 @@ class SessionManager:
         try:
             with self._lock:
                 conn = self._get_connection()
-                existing = conn.execute(
-                    "SELECT session_id FROM sessions WHERE session_id = ?",
-                    (session_id,),
-                ).fetchone()
+                try:
+                    existing = conn.execute(
+                        "SELECT session_id FROM sessions WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()
 
-                if existing is not None:
-                    return make_error_response(
-                        message=f"Session '{session_id}' already exists.",
-                        usage=zero_usage(),
+                    if existing is not None:
+                        return make_error_response(
+                            message=f"Session '{session_id}' already exists.",
+                            usage=zero_usage(),
+                        )
+
+                    now = datetime.now(timezone.utc).isoformat()
+                    metadata_json = json.dumps(metadata) if metadata is not None else None
+
+                    conn.execute(
+                        "INSERT INTO sessions (session_id, created_at, updated_at, metadata, parent_id) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (session_id, now, now, metadata_json, parent_id),
                     )
+                    conn.commit()
 
-                now = datetime.now(timezone.utc).isoformat()
-                metadata_json = json.dumps(metadata) if metadata is not None else None
-
-                conn.execute(
-                    "INSERT INTO sessions (session_id, created_at, updated_at, metadata, parent_id) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (session_id, now, now, metadata_json, parent_id),
-                )
-                conn.commit()
+                finally:
+                    conn.close()
 
             return make_success_response(
                 message="Session created.",
@@ -178,13 +172,12 @@ class SessionManager:
             Returns an empty list if the session does not exist or has
             no messages.
         """
+        conn = self._get_connection()
         try:
-            conn = self._get_connection()
-
             if max_turns <= 0:
                 # Load ALL messages
                 rows = conn.execute(
-                    "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC",
+                    "SELECT * FROM messages WHERE session_id = ? ORDER BY turn_number, step, id ASC",
                     (session_id,),
                 ).fetchall()
             else:
@@ -199,7 +192,7 @@ class SessionManager:
                 # +1 to include the current incomplete turn as well
                 rows = conn.execute(
                     "SELECT * FROM messages WHERE session_id = ? AND "
-                    "turn_number >= ? ORDER BY id ASC",
+                    "turn_number >= ? ORDER BY turn_number, step, id ASC",
                     (session_id, min_turn),
                 ).fetchall()
 
@@ -219,6 +212,8 @@ class SessionManager:
                 "Failed to load messages for session '%s'", session_id
             )
             return []
+        finally:
+            conn.close()
 
     def get_session_metadata(self, session_id: str) -> dict:
         """Load the metadata JSON of a session.
@@ -230,8 +225,8 @@ class SessionManager:
             The metadata dict, or ``{}`` if the session does not exist
             or has no metadata.
         """
+        conn = self._get_connection()
         try:
-            conn = self._get_connection()
             row = conn.execute(
                 "SELECT metadata FROM sessions WHERE session_id = ?",
                 (session_id,),
@@ -246,6 +241,8 @@ class SessionManager:
                 "Failed to load metadata for session '%s'", session_id
             )
             return {}
+        finally:
+            conn.close()
 
     def list_sessions(self) -> list[dict]:
         """List all sessions ordered by most recent activity.
@@ -256,11 +253,11 @@ class SessionManager:
             first user message), ``preview`` (first user message content),
             and ``message_count``. Returns an empty list on failure.
         """
+        conn = self._get_connection()
         try:
-            conn = self._get_connection()
             rows = conn.execute(
                 "SELECT session_id, created_at, updated_at, metadata, title "
-                "FROM sessions ORDER BY updated_at DESC"
+                "FROM sessions WHERE parent_id IS NULL ORDER BY updated_at DESC"
             ).fetchall()
 
             sessions: list[dict] = []
@@ -307,6 +304,8 @@ class SessionManager:
             log_error(str(e), source="backend/agent/session.py")
             logger.exception("Failed to list sessions")
             return []
+        finally:
+            conn.close()
 
     def save_message(
         self,
@@ -318,6 +317,7 @@ class SessionManager:
         tool_call_id: str | None = None,
         tool_name: str | None = None,
         turn_number: int | None = None,
+        step: int = 0,
     ) -> dict:
         """Persist a single message and update the session timestamp.
 
@@ -344,16 +344,16 @@ class SessionManager:
                 usage=zero_usage(),
             )
 
+        conn = self._get_connection()
         try:
             with self._lock:
-                conn = self._get_connection()
                 now = datetime.now(timezone.utc).isoformat()
 
                 conn.execute(
                     "INSERT INTO messages "
                     "(session_id, role, content, tool_calls, tool_results, "
-                    "tool_call_id, tool_name, turn_number, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "tool_call_id, tool_name, turn_number, step, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         role,
@@ -363,6 +363,7 @@ class SessionManager:
                         tool_call_id,
                         tool_name,
                         turn_number,
+                        step,
                         now,
                     ),
                 )
@@ -386,6 +387,8 @@ class SessionManager:
                 message=f"Failed to save message for session '{session_id}'.",
                 usage=zero_usage(),
             )
+        finally:
+            conn.close()
 
     def get_last_turn_number(self, session_id: str) -> int:
         """Return the highest ``turn_number`` stored for a session.
@@ -396,8 +399,8 @@ class SessionManager:
         Returns:
             The maximum ``turn_number`` or ``0`` if no messages exist.
         """
+        conn = self._get_connection()
         try:
-            conn = self._get_connection()
             row = conn.execute(
                 "SELECT COALESCE(MAX(turn_number), 0) AS max_turn "
                 "FROM messages WHERE session_id = ?",
@@ -408,6 +411,8 @@ class SessionManager:
             log_error(str(e), source="backend/agent/session.py")
             logger.exception("Failed to get last turn for '%s'", session_id)
             return 0
+        finally:
+            conn.close()
 
     def delete_session(self, session_id: str) -> dict:
         """Delete a session and all its messages.
@@ -418,10 +423,9 @@ class SessionManager:
         Returns:
             A contract response dict indicating success or failure.
         """
+        conn = self._get_connection()
         try:
             with self._lock:
-                conn = self._get_connection()
-
                 conn.execute(
                     "DELETE FROM messages WHERE session_id = ?", (session_id,)
                 )
@@ -451,6 +455,8 @@ class SessionManager:
                 message=f"Failed to delete session '{session_id}'.",
                 usage=zero_usage(),
             )
+        finally:
+            conn.close()
 
     def get_config(self, key: str) -> str | None:
         """Read a value from the key-value config store.
@@ -462,9 +468,9 @@ class SessionManager:
             The stored value as a string, or ``None`` if the key does not
             exist or an error occurs.
         """
+        conn = self._get_connection()
         try:
             with self._lock:
-                conn = self._get_connection()
                 row = conn.execute(
                     "SELECT value FROM config_kv WHERE key = ?", (key,)
                 ).fetchone()
@@ -473,6 +479,8 @@ class SessionManager:
             log_error(str(e), source="backend/agent/session.py")
             logger.exception("Failed to get config '%s'", key)
             return None
+        finally:
+            conn.close()
 
     def set_config(self, key: str, value: str) -> dict:
         """Persist a key-value pair in the config store (UPSERT).
@@ -484,9 +492,9 @@ class SessionManager:
         Returns:
             A contract response dict indicating success or failure.
         """
+        conn = self._get_connection()
         try:
             with self._lock:
-                conn = self._get_connection()
                 conn.execute(
                     "INSERT INTO config_kv (key, value) VALUES (?, ?) "
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -498,6 +506,8 @@ class SessionManager:
             log_error(str(e), source="backend/agent/session.py")
             logger.exception("Failed to set config '%s'", key)
             return make_error_response(message="Failed to set config.", usage=zero_usage())
+        finally:
+            conn.close()
 
     def update_session_title(self, session_id: str, title: str) -> dict:
         """Update the title of a session.
@@ -509,9 +519,9 @@ class SessionManager:
         Returns:
             A contract response dict indicating success or failure.
         """
+        conn = self._get_connection()
         try:
             with self._lock:
-                conn = self._get_connection()
                 conn.execute(
                     "UPDATE sessions SET title = ? WHERE session_id = ?",
                     (title, session_id),
@@ -522,6 +532,8 @@ class SessionManager:
             log_error(str(e), source="backend/agent/session.py")
             logger.exception("Failed to update title for '%s'", session_id)
             return make_error_response(message="Failed to update title.", usage=zero_usage())
+        finally:
+            conn.close()
 
     def update_message_tool_results(self, session_id: str, turn_number: int, tool_results: list) -> dict:
         """Update the assistant message's tool_results for a given turn.
@@ -534,9 +546,9 @@ class SessionManager:
         Returns:
             A contract response dict indicating success or failure.
         """
+        conn = self._get_connection()
         try:
             with self._lock:
-                conn = self._get_connection()
                 conn.execute(
                     "UPDATE messages SET tool_results = ? WHERE session_id = ? AND role = 'assistant' AND turn_number = ?",
                     (json.dumps(tool_results), session_id, turn_number),
@@ -547,6 +559,8 @@ class SessionManager:
             log_error(str(e), source="backend/agent/session.py")
             logger.exception("Failed to update tool results for session '%s' turn %d", session_id, turn_number)
             return make_error_response(message="Failed to update tool results.", usage=zero_usage())
+        finally:
+            conn.close()
 
     def get_all_titles(self) -> list[str]:
         """Return all existing session titles (non-empty).
@@ -554,8 +568,8 @@ class SessionManager:
         Returns:
             A list of title strings, or an empty list on failure.
         """
+        conn = self._get_connection()
         try:
-            conn = self._get_connection()
             rows = conn.execute(
                 "SELECT title FROM sessions WHERE title IS NOT NULL AND title != ''"
             ).fetchall()
@@ -564,13 +578,13 @@ class SessionManager:
             log_error(str(e), source="backend/agent/session.py")
             logger.exception("Failed to load existing titles")
             return []
+        finally:
+            conn.close()
 
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
 
     def close(self) -> None:
-        """Close the database connection if it is open."""
-        if self.conn is not None:
-            self.conn.close()
-            self.conn = None
+        """No-op: connections are now per-operation and closed automatically."""
+        pass

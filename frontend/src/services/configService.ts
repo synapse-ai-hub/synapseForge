@@ -104,6 +104,34 @@ export const configService = {
     }
   },
 
+  /** Get the current verbose-mode flag. */
+  async getVerbose(): Promise<boolean> {
+    const response = await fetch(`${API_BASE_URL}/api/config/verbose-mode`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const result = await response.json();
+    return result.verbose_mode === true;
+  },
+
+  /** Set the verbose-mode flag. */
+  async setVerbose(verboseMode: boolean): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/config/verbose-mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ verbose_mode: verboseMode }),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const result = await response.json();
+    if (result && result.status === "error") {
+      throw new Error(result.message || "Error al guardar verbose mode");
+    }
+  },
+
   /** List providers that are currently available (Groq, Ollama, …). */
   async getProviders(): Promise<ProvidersResponse> {
     const response = await fetch(`${API_BASE_URL}/api/config/providers`, {

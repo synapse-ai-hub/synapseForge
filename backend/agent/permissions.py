@@ -22,6 +22,7 @@ resolving the permissions.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -154,8 +155,12 @@ def _read_prompt_body(content: str) -> str:
 def get_tool_permissions(agent_name: str | None) -> dict[str, Any]:
     """Resolve an agent's **tool** permissions at runtime.
 
-    Reads ``agents/<agent_name>.md`` and returns only the top-level
-    ``permission`` entries (tool permissions) via the unified contract.
+    Reads ``agents/<agent_name>.md`` and returns the top-level
+    ``permission`` entries excluding the ``skill`` block (handled
+    separately by :func:`get_skill_permissions`).
+
+    Flat entries (``query: allow``) and nested entries
+    (``task: {explorer: allow}``) are both preserved.
 
     Args:
         agent_name: Agent name (without ``.md``). ``None``/empty → empty
@@ -176,7 +181,8 @@ def get_tool_permissions(agent_name: str | None) -> dict[str, Any]:
 
     fm = _parse_frontmatter(content)
     permission = fm.get("permission", {}) or {}
-    tools_perms = {k: v for k, v in permission.items() if not isinstance(v, dict)}
+    # Keep both flat and nested entries; only exclude "skill"
+    tools_perms = {k: v for k, v in permission.items() if k != "skill"}
 
     return make_success_response(
         message=f"Tool permissions for agent '{agent_name}'.",
@@ -256,7 +262,7 @@ def get_agent_parameters(agent_name: str | None) -> dict[str, Any]:
         Contract response. On success, ``data`` is a JSON string with
         ``{"temperature": float, "top_p": float, "model": str | None}``.
     """
-    defaults = {"temperature": 0.0, "top_p": 0.5, "model": None}
+    defaults = {"temperature": 0.0, "top_p": 0.5, "model": None, "seed": None}
 
     if not agent_name:
         return make_success_response(
@@ -421,8 +427,16 @@ def filter_tools(
 ) -> list[dict[str, Any]]:
     """Filter a tool registry by an agent's tool permissions.
 
-    Only tools whose name resolves to ``"allow"`` are kept. When
-    *tool_perms* is ``None`` or empty, the list is returned unchanged.
+    Supports two formats:
+
+    - **Flat** (e.g. ``"query": "allow"``): the tool is allowed without
+      restrictions on its arguments.
+    - **Nested** (e.g. ``"task": {"explorer": "allow"}``): the tool is
+      allowed, but its first ``string`` parameter is constrained to an
+      ``enum`` containing only the allowed sub-keys.
+
+    When *tool_perms* is ``None``, empty, or contains no entries that
+    resolve to ``"allow"``, no tools are returned (deny by default).
 
     Args:
         tools: List of tool schemas in API format.
@@ -432,21 +446,58 @@ def filter_tools(
         Filtered list of tool schemas.
     """
     if not tool_perms:
-        return tools
+        return []
 
-    ruleset = dict_to_ruleset(tool_perms)
-    if not ruleset:
-        return tools
+    # Separate flat (string values) from nested (dict values)
+    flat_perms: dict[str, Any] = {}
+    nested_perms: dict[str, Any] = {}
+    for k, v in tool_perms.items():
+        if isinstance(v, dict):
+            nested_perms[k] = v
+        else:
+            flat_perms[k] = v
+
+    ruleset = dict_to_ruleset(flat_perms)
 
     filtered: list[dict[str, Any]] = []
     for tool in tools:
         name = tool.get("function", {}).get("name", "")
         if not name:
             continue
-        if evaluate(name, "*", ruleset) == "allow":
-            filtered.append(tool)
-        else:
-            logger.debug("Tool '%s' filtered out by permission.", name)
+
+        # --- Nested permission (e.g. task: {explorer: allow}) ---
+        if name in nested_perms:
+            sub = nested_perms[name]
+            allowed = [key for key, val in sub.items()
+                       if isinstance(val, str) and val == "allow"]
+            if not allowed:
+                logger.debug("Tool '%s' denied by nested permission (no allow entries).", name)
+                continue
+
+            # Deep-copy to avoid mutating the cached registry
+            tool_copy = copy.deepcopy(tool)
+            func = tool_copy.get("function", {})
+            params = func.get("parameters", {})
+            props = params.get("properties", {})
+
+            # Apply enum to the first string parameter
+            for pname, pschema in props.items():
+                if pschema.get("type") == "string" and pname != "self":
+                    pschema["enum"] = allowed
+                    break
+
+            filtered.append(tool_copy)
+            logger.debug("Tool '%s' allowed with enum=%s", name, allowed)
+            continue
+
+        # --- Flat permission (e.g. query: allow) ---
+        if ruleset:
+            action = evaluate(name, "*", ruleset)
+            if action == "allow":
+                filtered.append(tool)
+            else:
+                logger.debug("Tool '%s' filtered out by flat permission (%s).", name, action)
+        # else: no flat rules and no nested rules → deny (deny-by-default)
 
     return filtered
 
@@ -459,7 +510,8 @@ def filter_skills(
 
     Parses the ``### <name>`` headers, keeps only blocks whose name
     resolves to ``"allow"``, and rebuilds the string. When *skill_perms*
-    is ``None`` or empty, the text is returned unchanged.
+    is ``None``, empty, or contains no flat string entries, no skills
+    are returned (deny by default).
 
     Args:
         skills_text: Output of ``format_skills_section`` (markdown).
@@ -468,12 +520,14 @@ def filter_skills(
     Returns:
         Filtered markdown skills section.
     """
-    if not skill_perms or not skills_text.strip():
+    if not skill_perms:
+        return ""
+    if not skills_text.strip():
         return skills_text
 
     ruleset = dict_to_ruleset(skill_perms)
     if not ruleset:
-        return skills_text
+        return ""
 
     blocks = skills_text.split("\n\n")
     kept: list[str] = []

@@ -34,8 +34,8 @@ async function getHistory(filters?: QuoteFilters, signal?: AbortSignal): Promise
   if (filters?.producto) params.append("producto", filters.producto);
 
   const queryString = params.toString();
-  const url = `${API_BASE_URL}/api/prices/history${queryString ? `?${queryString}` : ""}`;
-
+  const url = `${API_BASE_URL}/api/quotes/history?${queryString}`;
+  
   let response: Response;
   try {
     response = await fetch(url, { signal });

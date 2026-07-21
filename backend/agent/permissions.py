@@ -316,7 +316,7 @@ def list_agents() -> dict:
 
     result: list[dict[str, str]] = []
     for entry in sorted(os.listdir(agents_dir)):
-        if not entry.endswith(".md"):
+        if not entry.endswith(".md") or entry.upper() == "AGENT.MD":
             continue
         md_path = os.path.join(agents_dir, entry)
         try:

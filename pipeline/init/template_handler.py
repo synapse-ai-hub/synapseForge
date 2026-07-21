@@ -1,36 +1,48 @@
-"""Step 2 — Download (or locate) template.zip and extract into target."""
+"""Step 2 — Locate bundled (or download) template.zip and extract into target."""
 
 import sys
+import urllib.request
 import zipfile
 from pathlib import Path
+from importlib.resources import files as resources_files
 
 # ---------------------------------------------------------------------------
-# The template.zip is bundled inside the synapseForge package.
+# URL used as fallback when the bundled zip is not available.
 # ---------------------------------------------------------------------------
 TEMPLATE_URL = (
-    "https://github.com/synapse-ai-hub/synapseForge/raw/main/template.zip"
+    "https://github.com/synapse-ai-hub/synapseForge/raw/main/pipeline/template.zip"
 )
 
 
 def extract_template(target: Path) -> None:
     """Extract the template zip into *target*.
 
-    Looks for a local copy first (development mode), otherwise downloads
-    from the GitHub raw URL.
-    """
-    local_zip = _package_root() / "template.zip"
+    Looks for a bundled copy first (from pip install or development mode),
+    otherwise downloads from the GitHub raw URL.
 
-    if local_zip.is_file():
-        zip_path = local_zip
-        print(f"  Using local template: {zip_path}")
+    The bundled zip inside the installed package is **never** deleted so
+    that every invocation stays offline-capable.
+    """
+    bundled = _get_bundled_zip()
+    was_downloaded = False
+
+    if bundled is not None and bundled.is_file():
+        zip_path = bundled
+        print(f"  Using bundled template: {zip_path}")
     else:
         zip_path = _download_template(target)
         if zip_path is None:
             print("  ERROR: could not obtain template.zip")
             sys.exit(1)
+        was_downloaded = True
 
     _safe_extract(zip_path, target)
-    zip_path.unlink(missing_ok=True)
+
+    # Only delete the zip if it was the downloaded copy —
+    # never touch the bundled copy inside site-packages.
+    if was_downloaded:
+        zip_path.unlink(missing_ok=True)
+
     print(f"  Extracted to: {target}")
 
 
@@ -38,17 +50,24 @@ def extract_template(target: Path) -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _package_root() -> Path:
-    """Return the absolute path to the synapseForge package root."""
-    return Path(__file__).resolve().parent.parent.parent
+
+def _get_bundled_zip() -> Path | None:
+    """Locate the ``template.zip`` shipped inside the ``pipeline`` package.
+
+    Works both in development mode (``pip install -e .``) and when installed
+    from PyPI — the file lives in the ``pipeline`` directory of the package.
+    """
+    try:
+        return Path(resources_files("pipeline").joinpath("template.zip"))  # type: ignore[arg-type]
+    except (ModuleNotFoundError, TypeError):
+        return None
 
 
-def _download_template(target: Path) -> Path:
+def _download_template(target: Path) -> Path | None:
     """Download template.zip from GitHub into *target*."""
     try:
-        import urllib.request
         dest = target / "template.zip"
-        print(f"  Downloading template from GitHub …")
+        print("  Downloading template from GitHub …")
         urllib.request.urlretrieve(TEMPLATE_URL, dest)
         print(f"  Downloaded: {dest}")
         return dest

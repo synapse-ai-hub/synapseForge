@@ -30,6 +30,9 @@ requests>=2.31.0
 # --- Color Extraction ---
 colorthief>=1.0.0
 
+# --- Distribution ---
+pyinstaller>=6.0.0
+
 # --- Utilities ---
 python-dotenv>=1.2.0
 pyyaml>=6.0

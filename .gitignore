@@ -41,3 +41,6 @@ uploads/
 
 # Documentación interna
 docs/
+
+# Agente opencode
+.synapseAgents/

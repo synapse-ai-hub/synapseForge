@@ -11,5 +11,11 @@
   "cliente": "nombre_cliente",
   "logo_cliente": "path/to/logo_cliente/ubicación_original.png",
   "descripcion": "Nombre del proyecto",
-  "tarea": "Nombre de la tarea"
+  "tarea": "Nombre de la tarea",
+  "colors": {
+    "primary": "#color_primario",
+    "secondary": "#color_secundario",
+    "background": "#color_fondo",
+    "text": "#color_texto"
+  }
 }

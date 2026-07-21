@@ -35,13 +35,8 @@ import type { Message, SubagentEvent, ContentBlock } from "../App";
 export const WELCOME_MESSAGE: Message = {
   id: "welcome",
   type: "assistant",
-  content: `¡Hola! Soy el **asistente de cotización de <cliente>nombre_cliente</cliente> SRL**. 👋
+  content: `¡Hola! Soy el **asistente de <tarea>nombre_tarea</tarea> de <cliente>nombre_cliente</cliente>**. 👋
 
-Estoy aquí para ayudarte con:
-
-- 📋 **Consultas de precios** de productos industriales
-- 📦 **Búsqueda** de productos por grupo o código
-- 💰 **Cálculo de cotizaciones** con descuentos
 
 ¿En qué puedo ayudarte hoy?`,
 };
@@ -50,12 +45,7 @@ Estoy aquí para ayudarte con:
 /*  Constants                                                         */
 /* ------------------------------------------------------------------ */
 
-const SUGGESTIONS = [
-  "Consultar precio de un producto",
-  "Buscar productos por grupo",
-  "Calcular cotización con descuento",
-  "Mostrar productos disponibles",
-];
+
 
 const ALLOWED_FILE_TYPES = [
   "text/csv",
@@ -102,25 +92,6 @@ function TypingIndicator() {
   );
 }
 
-/** 2-column suggestions grid shown after the welcome message. */
-function SuggestionsGrid({ onSelect }: { onSelect: (text: string) => void }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 sm:mt-4 max-w-full sm:max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto w-full">
-      {SUGGESTIONS.map((text) => (
-        <button
-          key={text}
-          onClick={() => onSelect(text)}
-          className="px-4 py-3 text-sm text-left rounded-2xl border border-app-border bg-white
-                     hover:bg-app-bg-secondary hover:border-app-primary-light
-                     active:scale-[0.98] transition-all duration-150
-                     text-app-text shadow-sm"
-        >
-          {text}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /** Warning banner for rejected files. */
 function FileWarningBanner({
@@ -676,12 +647,6 @@ export function ChatInterface({
     chatService.cancelStream();
   }, []);
 
-  /* ---- suggestion click ---- */
-  const handleSuggestion = useCallback((text: string) => {
-    setInput(text);
-    textareaRef.current?.focus();
-  }, []);
-
   /* ---- keyboard ---- */
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -692,10 +657,6 @@ export function ChatInterface({
     },
     [handleSend],
   );
-
-  /* ---- derive state ---- */
-  const showSuggestions =
-    messages.length === 1 && messages[0]?.id === "welcome";
 
   /* ---- render ---- */
   return (
@@ -717,7 +678,7 @@ export function ChatInterface({
           </button>
           <img
             src={LogoImage}
-            alt="<cliente>nombre_cliente</cliente> SRL Logo"
+            alt="<cliente>nombre_cliente</cliente> Logo"
             className="h-7 sm:h-15 w-auto"
           />
           <h1 className="text-sm sm:text-lg font-semibold text-app-text">
@@ -725,18 +686,7 @@ export function ChatInterface({
           </h1>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2">
-          {/* Cotizaciones (historial de cotizaciones) */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onShowHistory}
-            className="gap-1 sm:gap-1.5 text-xs h-7 sm:h-8"
-          >
-            <Search size={14} />
-            <span className="hidden sm:inline">Cotizaciones</span>
-          </Button>
-
+        
           {/* Métricas */}
           <Button
             variant="outline"
@@ -760,7 +710,6 @@ export function ChatInterface({
             <span className="hidden sm:inline">Salir</span>
           </Button>
 
-        </div>
       </header>
 
       {/* ========== MESSAGES AREA ========== */}
@@ -797,11 +746,6 @@ export function ChatInterface({
             {messages.map((msg) => (
               <MessageRow key={msg.id} message={msg} verboseMode={verboseMode} />
             ))}
-
-            {/* Suggestions grid */}
-            {showSuggestions && (
-              <SuggestionsGrid onSelect={handleSuggestion} />
-            )}
 
             <div ref={messagesEndRef} />
           </div>

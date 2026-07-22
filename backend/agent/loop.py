@@ -286,11 +286,17 @@ class AgentLoop:
             if agent_name is not None:
                 skills_section = format_skills_section(skill_permissions=skill_permissions)
                 agents_result = list_agents()
-                agents = (
+                all_agents = (
                     json.loads(agents_result["data"])
                     if agents_result.get("status") == "success"
                     else []
                 )
+                # Filtrar agentes según task permissions (solo mostrar los que puede llamar)
+                task_perms = (tool_permissions or {}).get("task", {})
+                agents = [
+                    a for a in all_agents
+                    if a["name"] in task_perms and task_perms[a["name"]] == "allow"
+                ]
                 system_prompt = (
                     f"{system_prompt}\n\n"
                     f"## Skills Disponibles\n{skills_section}\n\n"

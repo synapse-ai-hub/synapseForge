@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synapseforge"
-version = "0.1.21"
+version = "0.1.22"
 description = "AI agent project scaffolding & distribution CLI"
 readme = "README_PYPI.md"
 license = {text = "Apache-2.0"}

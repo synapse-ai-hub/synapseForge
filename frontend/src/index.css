@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-@theme {
+/* Variables de color — se usan directo via var() en los componentes */
+:root {
   --color-app-primary: #D76F10;
   --color-app-primary-light: #F0A347;
   --color-app-bg: #FFFFFF;

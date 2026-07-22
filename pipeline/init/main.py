@@ -88,15 +88,14 @@ def _run_npm_install(target: Path) -> None:
         return
     try:
         subprocess.run(
-            ["npm", "install"],
+            "npm install",
             cwd=str(frontend_dir),
+            shell=True,
             check=True,
-            capture_output=True,
-            text=True,
         )
         print("  npm install completed")
     except subprocess.CalledProcessError as exc:
-        print(f"  WARNING: npm install failed:\n{exc.stderr}")
+        print(f"  WARNING: npm install failed (exit code {exc.returncode})")
     except FileNotFoundError:
         print("  WARNING: npm not found, skipping npm install")
 

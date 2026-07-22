@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synapseforge"
-version = "0.1.1-dev"
+version = "0.1.1"
 description = "AI agent project scaffolding & distribution CLI"
 readme = "README_PYPI.md"
 license = {text = "Apache-2.0"}
@@ -36,7 +36,7 @@ classifiers = [
 ]
 dependencies = [
     # Init — color extraction from logo
-    "colorthief>=1.0.0",
+    "colorthief>=0.2.0",
 
     # Init — .ico generation
     "Pillow>=10.0.0",

@@ -107,7 +107,7 @@ def format_skills_section(
 
     Args:
         skills_dir: Path to the ``skills/`` folder. If ``None``, uses
-            the config directory ``~/.config/synapseAgent/skills/``.
+            the config directory ``~/.config/synapseForge/skills/``.
         agent_name: Optional selected agent name. ``None`` means no
             filtering.
 
@@ -167,7 +167,7 @@ def format_skills_section(
 def find_skill_folder(skill_name: str) -> str | None:
     """Locate the folder for a given skill name.
 
-    Uses the config directory ``~/.config/synapseAgent/skills/``.
+    Uses the config directory ``~/.config/synapseForge/skills/``.
 
     Args:
         skill_name: Name of the skill folder to find.

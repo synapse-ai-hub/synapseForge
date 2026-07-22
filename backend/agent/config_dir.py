@@ -1,10 +1,10 @@
-"""Configuration directory management for synapseAgent.
+"""Configuration directory management for synapseForge.
 
 Provides a single source of truth for the user config directory:
-~/.config/synapseAgent/
+~/.config/synapseForge/
 
 Structure:
-~/.config/synapseAgent/
+~/.config/synapseForge/
 ├── skills/           # User skills (SKILL.md in subdirs)
 ├── tools/            # External tools (.py files)
 ├── agents/           # Agent definitions (.md files)
@@ -34,16 +34,16 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def get_config_dir() -> Path:
-    """Return the synapseAgent config directory path.
+    """Return the synapseForge config directory path.
 
     Creates the directory if it doesn't exist.
 
     Returns:
-        Path to ~/.config/synapseAgent/ (consistent across Windows, Linux, macOS)
+        Path to ~/.config/synapseForge/ (consistent across Windows, Linux, macOS)
     """
-    # Use ~/.config/synapseAgent on all platforms (like opencode)
+    # Use ~/.config/synapseForge on all platforms (like opencode)
     base = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config"))
-    config_dir = base / "synapseAgent"
+    config_dir = base / "synapseForge"
     config_dir.mkdir(parents=True, exist_ok=True)
 
     # Ensure subdirectories exist

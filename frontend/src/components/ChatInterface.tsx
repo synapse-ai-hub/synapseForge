@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import LogoImage from "../assets/logo_empresa.png";
+import LogoImage from "../assets/ logo_cliente.png";
 import chatService from "../services/chatService";
 import { Button } from "./ui/button";
 import type { Message, SubagentEvent, ContentBlock } from "../App";

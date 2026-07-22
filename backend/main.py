@@ -133,7 +133,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown hooks."""
     logger.info("Starting <descripcion>Nombre del proyecto</descripcion> API ...")
 
-    # Ensure config directory exists (~/.config/synapseAgent/)
+    # Ensure config directory exists (~/.config/synapseForge/)
     try:
         ensure_config_dir()
         logger.info("Config directory initialized.")

@@ -42,7 +42,7 @@ El usuario instala el paquete, ejecuta `synapseForge init`, completa los datos i
 
 - **`synapseForge init`**: Scaffolding completo desde template embebido — estructura de carpetas, venv, logo, .ico, placeholders, colores.
 - **`synapseForge launch`**: Build de distribución autocontenido con PyInstaller + frontend compilado.
-- **Pipeline de 9 pasos**: Input interactivo, template, venv, pip install, reemplazo de placeholders XML en todo el proyecto.
+- **Pipeline de 10 pasos**: Input interactivo, template, venv, pip install, npm install, reemplazo de placeholders XML en todo el proyecto.
 - **Extracción automática de colores**: Si no se ingresan colores, colorthief extrae la paleta desde el logo.
 - **Branding automatizado**: Copia del logo + generación de `.ico` (16×16 a 256×256).
 - **Framework de agentes completo**: AgentLoop, Tools Registry, MCP, Skills, Sessions, Permissions.
@@ -155,7 +155,7 @@ synapseForge/
 ```mermaid
 flowchart TD
     A[Usuario pip install synapseForge] --> B[CLI: synapseForge init]
-    B --> C[Input interactivo:\nlogo, empresa, owner, legal,\nrepo, cliente, colores]
+    B --> C[Input interactivo:\nlogo empresa, logo cliente,\nempresa, owner, legal,\nrepo, cliente, colores]
     C --> D[Busca template.zip en paquete]
     D --> E{¿Está empaquetado?}
     E -->|Sí| F[Extrae template.zip]
@@ -163,19 +163,20 @@ flowchart TD
     G --> F
     F --> H[Crea .venv con nombre del repo]
     H --> I[pip install -r requirements.txt]
-    I --> J[Guarda config/replace.json]
-    J --> K[Copia logo → frontend/src/assets/logo_empresa.png]
-    K --> L[Genera .ico con Pillow]
-    L --> M{¿Usuario ingresó colores?}
-    M -->|Sí| N[Usa colores ingresados]
-    M -->|No| O[Extrae paleta con colorthief]
-    O --> N
-    N --> P[Reemplaza placeholders XML\nen todos los archivos del proyecto]
-    P --> Q[Proyecto listo en directorio destino]
+    I --> J[npm install en frontend/]
+    J --> K[Guarda config/replace.json]
+    K --> L[Copia logo empresa → src/logo_empresa.png\nCopia logo cliente → frontend/src/assets/logo_cliente.png]
+    L --> M[Genera .ico con Pillow]
+    M --> N{¿Usuario ingresó colores?}
+    N -->|Sí| O[Usa colores ingresados]
+    N -->|No| P[Extrae paleta con colorthief]
+    P --> O
+    O --> Q[Reemplaza placeholders XML\nen todos los archivos del proyecto]
+    Q --> R[Proyecto listo en directorio destino]
 
-    R[CLI: synapseForge launch] --> S[PyInstaller compila backend.exe]
-    S --> T[npm run build en frontend/]
-    T --> U[Empaqueta backend + frontend + venv\n+ launcher + .env + LICENSE + README en zip]
+    S[CLI: synapseForge launch] --> T[PyInstaller compila backend.exe]
+    T --> U[npm run build en frontend/]
+    U --> V[Empaqueta backend + frontend + venv\n+ launcher + .env + LICENSE + README en zip]
 ```
 
 ---
@@ -192,17 +193,18 @@ pip install synapseForge
 | `synapseForge launch <path> <exe>` | Build de distribución autocontenido |
 | `synapseForge --help` | Ayuda global |
 
-### synapseForge init — Pipeline de 9 pasos
+### synapseForge init — Pipeline de 10 pasos
 
-1. **Input interactivo** — Pide logo (ruta absoluta), empresa, owner, legal, repo, cliente, colores (hex, opcionales).
+1. **Input interactivo** — Pide logo de la empresa (para README), logo del cliente (para la app, opcional), empresa, owner, legal, repo, cliente, colores (hex, opcionales).
 2. **Template** — Extrae `template.zip` empaquetado (o descarga desde GitHub si no está).
 3. **Venv** — Crea `./.{repo}/` con `python -m venv`.
-4. **Deps** — `pip install -r requirements.txt` en el venv.
-5. **Config** — Guarda input como `config/replace.json`.
-6. **Logo** — Copia el logo a `frontend/src/assets/logo_empresa.png`.
-7. **.ico** — Genera `logo_empresa.ico` con Pillow (16×16 a 256×256).
-8. **Colores** — Si no se ingresaron, extrae paleta con colorthief (máx 3 colores: primary, secondary, background).
-9. **Placeholders** — Reemplaza tags XML (`<empresa>`, `<cliente>`, `<color_primario>`, etc.) en todo el proyecto.
+4. **Deps Python** — `pip install -r requirements.txt` en el venv.
+5. **npm install** — Instala dependencias del frontend.
+6. **Config** — Guarda input como `config/replace.json`.
+7. **Logos** — Copia logo empresa a `src/logo_empresa.png` y logo cliente a `frontend/src/assets/logo_cliente.png`.
+8. **.ico** — Genera `logo_cliente.ico` con Pillow (16×16 a 256×256).
+9. **Colores** — Si no se ingresaron, extrae paleta con colorthief desde el logo del cliente (máx 3 colores: primary, secondary, background).
+10. **Placeholders** — Reemplaza tags XML (`<empresa>`, `<cliente>`, `<color_primario>`, etc.) en todo el proyecto.
 
 > **Comportamiento según el directorio destino:**
 > - Si **no existe** → el comando falla con error y no hace nada.

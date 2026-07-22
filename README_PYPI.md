@@ -40,7 +40,7 @@ pip install synapseForge
 
 **Package dependencies** (only these two — everything else is project-level):
 
-- `colorthief>=1.0.0` — Automatic color palette extraction from the logo
+- `colorthief>=0.2.0` — Automatic color palette extraction from the logo
 - `Pillow>=10.0.0` — .ico favicon generation
 
 ---
@@ -55,15 +55,16 @@ synapseForge init my-project
 
 Interactive pipeline:
 
-1. **Input** — Provide logo (absolute path), company name, owner, legal name, repo name, client name, and optional hex colors.
+1. **Input** — Provide company logo (for README), client logo (for the app, optional), company name, owner, legal name, repo name, client name, and optional hex colors.
 2. **Template** — Extracts the bundled `template.zip` (or downloads from GitHub if not available locally).
 3. **Venv** — Creates `./.{repo}/` virtual environment.
-4. **Deps** — Runs `pip install -r requirements.txt` inside the venv.
-5. **Config** — Saves all input as `config/replace.json`.
-6. **Logo** — Copies the logo to `frontend/src/assets/logo_empresa.png`.
-7. **.ico** — Generates `logo_empresa.ico` via Pillow (16×16 to 256×256).
-8. **Colors** — If no colors were entered, extracts up to 3 dominant colors from the logo using colorthief.
-9. **Placeholders** — Replaces all XML tags (`<empresa>`, `<cliente>`, `<color_primario>`, etc.) across every project file.
+4. **Python deps** — Runs `pip install -r requirements.txt` inside the venv.
+5. **npm install** — Installs frontend dependencies.
+6. **Config** — Saves all input as `config/replace.json`.
+7. **Logos** — Copies company logo to `src/logo_empresa.png` and client logo to `frontend/src/assets/logo_cliente.png`.
+8. **.ico** — Generates `logo_cliente.ico` via Pillow (16×16 to 256×256).
+9. **Colors** — If no colors were entered, extracts up to 3 dominant colors from the client logo using colorthief.
+10. **Placeholders** — Replaces all XML tags (`<empresa>`, `<cliente>`, `<color_primario>`, etc.) across every project file.
 
 ```bash
 cd my-project

@@ -1,5 +1,6 @@
-"""Orchestrates the full init pipeline (steps 1-9)."""
+"""Orchestrates the full init pipeline (steps 1-10)."""
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -27,40 +28,46 @@ def run(target_dir: str) -> None:
     print("=" * 60)
 
     # ── Step 1: User input ──────────────────────────────────────────────
-    print("\n[1/9] User input …")
+    print("\n[1/10] User input …")
     config = get_user_input()
 
     # ── Step 2: Download & extract template ─────────────────────────────
-    print("\n[2/9] Downloading & extracting template …")
+    print("\n[2/10] Downloading & extracting template …")
     extract_template(target)
 
     # ── Step 3: Create virtual environment ──────────────────────────────
-    print("\n[3/9] Creating virtual environment …")
+    print("\n[3/10] Creating virtual environment …")
     venv_path = setup_venv(target, config["repo"])
 
-    # ── Step 4: Install requirements ───────────────────────────────────
-    print("\n[4/9] Installing requirements …")
+    # ── Step 4: Install Python requirements ─────────────────────────────
+    print("\n[4/10] Installing Python requirements …")
     install_requirements(venv_path, target)
 
-    # ── Step 5: Save user config ────────────────────────────────────────
-    print("\n[5/9] Saving configuration …")
+    # ── Step 5: npm install ─────────────────────────────────────────────
+    print("\n[5/10] Installing npm dependencies …")
+    _run_npm_install(target)
+
+    # ── Step 6: Save user config ────────────────────────────────────────
+    print("\n[6/10] Saving configuration …")
     save_config(target, config)
 
-    # ── Step 6: Copy logo ───────────────────────────────────────────────
-    print("\n[6/9] Copying logo …")
-    logo_dest = target / "frontend" / "src" / "assets" / "logo_empresa.png"
-    handle_logo(config, logo_dest)
+    # ── Step 7: Copy logos ──────────────────────────────────────────────
+    print("\n[7/10] Copying logos …")
+    company_logo_dest = target / "src" / "logo_empresa.png"
+    handle_logo(config, company_logo_dest, config_key="logo.path")
+    client_logo_dest = target / "frontend" / "src" / "assets" / "logo_cliente.png"
+    handle_logo(config, client_logo_dest, config_key="logo_cliente")
 
-    # ── Step 7: Generate .ico ───────────────────────────────────────────
-    print("\n[7/9] Generating favicon (.ico) …")
-    _run_generate_ico(venv_path, logo_dest)
+    # ── Step 8: Generate .ico from client logo ──────────────────────────
+    print("\n[8/10] Generating favicon (.ico) …")
+    _run_generate_ico(venv_path, client_logo_dest)
 
-    # ── Step 8: Extract colors (if user didn't provide them) ────────────
-    print("\n[8/9] Resolving colors …")
-    _resolve_colors(config, logo_dest)
+    # ── Step 9: Extract colors from client logo ────────────────────────
+    print("\n[9/10] Resolving colors …")
+    _resolve_colors(config, client_logo_dest)
 
-    # ── Step 9: Replace placeholders ────────────────────────────────────
-    print("\n[9/9] Replacing placeholders …")
+    # ── Step 10: Replace placeholders ───────────────────────────────────
+    print("\n[10/10] Replacing placeholders …")
     replace_all_placeholders(target, config)
 
     print("\n" + "=" * 60)
@@ -71,6 +78,28 @@ def run(target_dir: str) -> None:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _run_npm_install(target: Path) -> None:
+    """Run ``npm install`` in the frontend directory."""
+    frontend_dir = target / "frontend"
+    if not (frontend_dir / "package.json").is_file():
+        print("  WARNING: package.json not found, skipping npm install")
+        return
+    try:
+        subprocess.run(
+            ["npm", "install"],
+            cwd=str(frontend_dir),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print("  npm install completed")
+    except subprocess.CalledProcessError as exc:
+        print(f"  WARNING: npm install failed:\n{exc.stderr}")
+    except FileNotFoundError:
+        print("  WARNING: npm not found, skipping npm install")
+
 
 def _run_generate_ico(venv_path: Path, logo_png: Path) -> None:
     """Generate ``.ico`` from the logo PNG using Pillow (inline)."""

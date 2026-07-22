@@ -5,16 +5,22 @@ from pathlib import Path
 from typing import Dict, Optional
 
 
-def handle_logo(config: dict, logo_dest: Path) -> None:
+def handle_logo(config: dict, logo_dest: Path, config_key: str = "logo.path") -> None:
     """Copy the user's logo to the template assets directory.
 
     Args:
-        config: User config dictionary (must contain ``logo.path``).
-        logo_dest: Destination path for the logo (``frontend/src/assets/logo_empresa.png``).
+        config: User config dictionary.
+        logo_dest: Destination path for the logo.
+        config_key: Dotted config key to read the source from
+            (``logo.path`` for company, ``logo_cliente`` for client).
     """
-    logo_src_raw: Optional[str] = config.get("logo", {}).get("path")
+    if config_key == "logo_cliente":
+        logo_src_raw: Optional[str] = config.get("logo_cliente")
+    else:
+        logo_src_raw = config.get("logo", {}).get("path")
+
     if not logo_src_raw:
-        print("  WARNING: no logo path in config, skipping")
+        print(f"  WARNING: no logo path in config, skipping")
         return
 
     logo_src = Path(logo_src_raw).resolve()

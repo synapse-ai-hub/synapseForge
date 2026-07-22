@@ -31,7 +31,7 @@ El módulo **Agent** es el núcleo del asistente conversacional. Implementa un b
 - **Contexto compactable**: Gestión inteligente de tokens con estrategias configurables (ask, cod, original) y límite de turnos.
 - **Soporte multi-proveedor**: Funciona con Groq (API) y Ollama (local) sin cambiar la lógica del loop.
 - **Permisos y prompts**: Resolución dinámica de herramientas y skills desde archivos markdown de agente.
-- **Configuración MCP centralizada**: `config.json` en `~/.config/synapseAgent/` para servidores MCP (Model Context Protocol).
+- **Configuración MCP centralizada**: `config.json` en `~/.config/synapseForge/` para servidores MCP (Model Context Protocol).
 
 ---
 
@@ -94,7 +94,7 @@ Centraliza la interacción con los proveedores LLM (Groq API u Ollama local):
 
 Define el catálogo completo de herramientas del agente:
 - Métodos nativos (parser, websearch, webfetch, etc.).
-- Carga dinámica de tools externas desde `~/.config/synapseAgent/tools/`.
+- Carga dinámica de tools externas desde `~/.config/synapseForge/tools/`.
 - Construcción del esquema function-calling para el LLM.
 - Validación y ejecución de tool calls.
 - Integración MCP: `execute_mcp_tool` expone herramientas de servidores MCP como tools nativas.
@@ -146,10 +146,10 @@ El agente utiliza **dos fuentes de configuración** separadas:
 ### 1. `config.json` — Solo MCP
 
 ```
-~/.config/synapseAgent/config.json
+~/.config/synapseForge/config.json
 ```
 
-En Windows: `%APPDATA%\synapseAgent\config.json`
+En Windows: `%APPDATA%\synapseForge\config.json`
 
 Este archivo **solo** almacena la configuración de servidores MCP (Model Context Protocol). Se gestiona mediante `backend/agent/config_dir.py`.
 
@@ -235,10 +235,10 @@ Se cargan automáticamente al inicio vía `load_persisted_config()` en `backend/
 Las skills se cargan desde el directorio de configuración del usuario:
 
 ```
-~/.config/synapseAgent/skills/
+~/.config/synapseForge/skills/
 ```
 
-En Windows: `%APPDATA%\synapseAgent\skills\`
+En Windows: `%APPDATA%\synapseForge\skills\`
 
 ### Estructura de una skill
 
@@ -276,7 +276,7 @@ Cuando el usuario consulte sobre instalaciones de agua, desagües, sanitarios o 
 
 ### Carga automática
 
-- Al iniciar el loop, `skill_loader.py` escanea `~/.config/synapseAgent/skills/`.
+- Al iniciar el loop, `skill_loader.py` escanea `~/.config/synapseForge/skills/`.
 - Lee el frontmatter YAML (`description`, `triggers`).
 - Filtra según permisos del agente activo (`permissions.py`).
 - Inyecta la sección formateada en el system prompt.
@@ -305,7 +305,7 @@ Definidas como métodos de la clase `Tools`. Incluyen:
 - `execute_mcp_tool` — Ejecución de herramientas MCP.
 - `task` — Delegación a sub-agentes.
 
-### 2. Tools externas (en `~/.config/synapseAgent/tools/`)
+### 2. Tools externas (en `~/.config/synapseForge/tools/`)
 
 Archivos `.py` sueltos que el agente descubre al inicio:
 
@@ -347,7 +347,7 @@ Los servidores MCP configurados en `config.json` exponen sus herramientas autom�
 
 ### Carga y registro
 
-- `tools.py` escanea `~/.config/synapseAgent/tools/` al instanciar `Tools`.
+- `tools.py` escanea `~/.config/synapseForge/tools/` al instanciar `Tools`.
 - Valida que cada archivo tenga los 4 atributos requeridos.
 - Construye el esquema function-calling para el LLM.
 - Las tools externas aparecen junto a las nativas y MCP en la lista disponible.
@@ -403,7 +403,7 @@ Los servidores MCP configurados en `config.json` exponen sus herramientas autom�
 
 **Notas:**
 - La base de datos SQLite se crea automáticamente en `backend/agent/agent_db/sessions.db` al iniciar el agente.
-- El directorio de configuración `~/.config/synapseAgent/` (skills, tools, agents, config.json) se crea automáticamente al arrancar.
+- El directorio de configuración `~/.config/synapseForge/` (skills, tools, agents, config.json) se crea automáticamente al arrancar.
 - Las variables de entorno se cargan desde `.env` en la raíz del proyecto.
 - No requiere servicios externos — SQLite es parte de la stdlib de Python.
 
@@ -423,7 +423,7 @@ backend/agent/
 ├─ permissions.py           # Resolución de permisos y prompts
 ├─ tools.py                 # Registro y ejecución de herramientas
 ├─ contract.py              # Contratos de respuesta
-├─ config_dir.py            # Gestión del directorio ~/.config/synapseAgent/
+├─ config_dir.py            # Gestión del directorio ~/.config/synapseForge/
 ├─ agent_db/                # Base de datos SQLite
 │   └─ sessions.db
 ├─ prompts/                 # Prompts del sistema

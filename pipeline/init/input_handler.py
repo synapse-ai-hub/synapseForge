@@ -15,7 +15,7 @@ def get_user_input() -> Dict[str, object]:
     print("\nIngresá los datos del proyecto (dejá vacío para omitir):\n")
 
     # ── Logo ────────────────────────────────────────────────────────────
-    logo_path: Optional[str] = _prompt("Logo (ruta absoluta)", required=True)
+    logo_path: Optional[str] = _prompt("Logo de la empresa (para README, sin comillas)", required=True)
     logo_resolved = _resolve_logo(logo_path)
 
     width: Optional[str] = _prompt("Logo — ancho (px, opcional)", default="")
@@ -23,11 +23,11 @@ def get_user_input() -> Dict[str, object]:
 
     # ── Project info ────────────────────────────────────────────────────
     empresa: str = _prompt("Nombre de la empresa desarrolladora", required=True)
-    owner: str = _prompt("Nombre del owner", required=True)
+    owner: str = _prompt("Owner del repo (usuario de GitHub)", required=True)
     legal: str = _prompt("Nombre legal / razón social", required=True)
     repo: str = _prompt("Nombre del repo", required=True)
     cliente: str = _prompt("Nombre del cliente", required=True)
-    logo_cliente: str = _prompt("Ruta del logo del cliente (opcional)", default="")
+    logo_cliente: str = _prompt("Logo del cliente (para la app, opcional)", default="")
     descripcion: str = _prompt("Descripción del proyecto", required=True)
     tarea: str = _prompt("Nombre de la tarea / rubro", required=True)
 

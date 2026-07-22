@@ -53,8 +53,8 @@ frontend/
 ├─ public/                     # Assets estáticos
 ├─ src/
 │  ├─ assets/                  # Logo, imágenes
-│  │  └─ logo_empresa.png      # Logo de la empresa
-│  │  └─ logo_empresa.ico      # Favicon generado
+│  │  └─  logo_cliente.png      # Logo de la empresa
+│  │  └─  logo_cliente.ico      # Favicon generado
 │  ├─ components/              # Componentes React
 │  │  ├─ Chat/                 # Área de chat principal
 │  │  │  ├─ ChatArea.tsx       # Contenedor de mensajes

@@ -27,8 +27,6 @@ html2text>=2024.2.26
 httpx>=0.28.0
 requests>=2.31.0
 
-# --- Color Extraction ---
-colorthief>=1.0.0
 
 # --- Distribution ---
 pyinstaller>=6.0.0

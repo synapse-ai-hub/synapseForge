@@ -133,6 +133,11 @@ _TEXT_EXTENSIONS = frozenset({
     ".html", ".css", ".md", ".json", ".txt",
     ".yaml", ".yml", ".toml", ".ini", ".cfg",
     ".env", ".env.example", ".gitignore",
+    ".ps1", ".bat", ".cmd", ".sh",
+})
+
+_NOEXT_NAMES = frozenset({
+    "LICENSE", "CHANGELOG", "CONTRIBUTORS",
 })
 
 _SKIP_DIRS = frozenset({
@@ -143,7 +148,11 @@ _SKIP_DIRS = frozenset({
 
 def _is_text_file(path: Path) -> bool:
     """Check extension against known text types."""
-    return path.suffix in _TEXT_EXTENSIONS or path.name == ".gitignore"
+    return (
+        path.suffix in _TEXT_EXTENSIONS
+        or path.name == ".gitignore"
+        or path.name in _NOEXT_NAMES
+    )
 
 
 def _should_skip(path: Path) -> bool:

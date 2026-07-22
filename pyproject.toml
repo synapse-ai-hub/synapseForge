@@ -6,14 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "synapseforge"
 version = "0.1.0"
 description = "AI agent project scaffolding & distribution CLI"
-readme = "README.md"
+readme = "README_PYPI.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.12"
 authors = [
-    {name = "SYNAPSE AI SAS", email = "dev@synapse-ai.com"}
+    {name = "SYNAPSE AI SAS", email = "developer@synapseaihub.com.ar"}
 ]
 maintainers = [
-    {name = "SYNAPSE AI SAS", email = "dev@synapse-ai.com"}
+    {name = "SYNAPSE AI SAS", email = "developer@synapseaihub.com.ar"}
 ]
 keywords = [
     "ai-agents",

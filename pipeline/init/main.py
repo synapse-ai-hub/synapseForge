@@ -47,24 +47,24 @@ def run(target_dir: str) -> None:
     print("\n[5/10] Installing npm dependencies …")
     _run_npm_install(target)
 
-    # ── Step 6: Save user config ────────────────────────────────────────
-    print("\n[6/10] Saving configuration …")
-    save_config(target, config)
-
-    # ── Step 7: Copy logos ──────────────────────────────────────────────
-    print("\n[7/10] Copying logos …")
+    # ── Step 6: Copy logos ──────────────────────────────────────────────
+    print("\n[6/10] Copying logos …")
     company_logo_dest = target / "src" / "logo_empresa.png"
     handle_logo(config, company_logo_dest, config_key="logo.path")
     client_logo_dest = target / "frontend" / "src" / "assets" / "logo_cliente.png"
     handle_logo(config, client_logo_dest, config_key="logo_cliente")
 
-    # ── Step 8: Generate .ico from client logo ──────────────────────────
-    print("\n[8/10] Generating favicon (.ico) …")
+    # ── Step 7: Generate .ico from client logo ──────────────────────────
+    print("\n[7/10] Generating favicon (.ico) …")
     _run_generate_ico(venv_path, client_logo_dest)
 
-    # ── Step 9: Extract colors from client logo ────────────────────────
-    print("\n[9/10] Resolving colors …")
+    # ── Step 8: Extract colors from client logo ────────────────────────
+    print("\n[8/10] Resolving colors …")
     _resolve_colors(config, client_logo_dest)
+
+    # ── Step 9: Save user config (colors already in dict) ─────────────
+    print("\n[9/10] Saving configuration …")
+    save_config(target, config)
 
     # ── Step 10: Replace placeholders ───────────────────────────────────
     print("\n[10/10] Replacing placeholders …")
@@ -122,9 +122,21 @@ def _run_generate_ico(venv_path: Path, logo_png: Path) -> None:
 
 
 def _resolve_colors(config: dict, logo_png: Path) -> None:
-    """If user did not provide colors, extract them from the logo with colorthief."""
+    """Extract up to 4 colors from logo, then derive the rest.
+
+    Derivation rules:
+      - ``primary_light`` → lighten(primary, 35%)
+      - ``bg_secondary`` → lighten(background, 10%)
+      - ``bg_tertiary``  → lighten(background, 20%)
+      - ``text_secondary`` → mix(text, bg, 50%)
+      - ``border`` → mix(text, bg, 15%)
+      - ``accent`` → secondary (or primary if no secondary)
+      - ``avatar`` → primary
+      - success/warning/error → fixed defaults
+    """
     if _user_provided_colors(config):
         print("  Using user-provided colors")
+        _derive_all_colors(config)
         return
 
     try:
@@ -135,22 +147,85 @@ def _resolve_colors(config: dict, logo_png: Path) -> None:
             return
 
         ct = ColorThief(str(logo_png))
-        palette = ct.get_palette(color_count=3)
 
-        names = ["primary", "secondary", "background"]
-        for i, (name, rgb) in enumerate(zip(names, palette)):
+        # Try to get up to 4 colors from the palette
+        palette = ct.get_palette(color_count=4)
+        names = ["primary", "secondary", "background", "additional"]
+
+        for name, rgb in zip(names, palette):
             hex_color = "#{:02x}{:02x}{:02x}".format(*rgb)
             config.setdefault("colors", {})[name] = hex_color
             print(f"  {name}: {hex_color}")
 
         # Derive text color from background luminance
-        bg_rgb = palette[2] if len(palette) > 2 else palette[0]
+        bg_key = "background" if "background" in config.get("colors", {}) else "primary"
+        bg_rgb = palette[names.index(bg_key)]
         luminance = (0.299 * bg_rgb[0] + 0.587 * bg_rgb[1] + 0.114 * bg_rgb[2]) / 255
         config.setdefault("colors", {})["text"] = "#151515" if luminance > 0.5 else "#F5F5F5"
-        print(f"  text: {config['colors']['text']} (derived)")
+        print(f"  text: {config['colors']['text']} (derived from luminance)")
+
+        # Derive all secondary colors
+        _derive_all_colors(config)
 
     except ImportError:
         print("  WARNING: colorthief not available, skipping color extraction")
+
+
+def _derive_all_colors(config: dict) -> None:
+    """Derive secondary colors from primary / background / text."""
+    colors = config.setdefault("colors", {})
+
+    primary = colors.get("primary", "#D76F10")
+    bg = colors.get("background", "#FFFFFF")
+    text = colors.get("text", "#151515")
+
+    colors.setdefault("primary_light", _lighten_hex(primary, 0.35))
+    colors.setdefault("bg_secondary", _lighten_hex(bg, 0.10))
+    colors.setdefault("bg_tertiary", _lighten_hex(bg, 0.20))
+    colors.setdefault("text_secondary", _mix_hex(text, colors["bg_secondary"], 0.50))
+    colors.setdefault("border", _mix_hex(text, bg, 0.15))
+    colors.setdefault("accent", colors.get("secondary", primary))
+    colors.setdefault("avatar", primary)
+    colors.setdefault("success", "#2B7D5B")
+    colors.setdefault("warning", "#C4903A")
+    colors.setdefault("error", "#C2413D")
+
+    print("  Derived colors:")
+    for key in ("primary_light", "bg_secondary", "bg_tertiary", "text_secondary",
+                "border", "accent", "avatar"):
+        print(f"    {key}: {colors[key]}")
+
+
+# ---------------------------------------------------------------------------
+# Hex color helpers
+# ---------------------------------------------------------------------------
+
+def _lighten_hex(hex_color: str, factor: float) -> str:
+    """Lighten a hex color by *factor* (0-1)."""
+    r, g, b = int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16)
+    r = min(255, int(r + (255 - r) * factor))
+    g = min(255, int(g + (255 - g) * factor))
+    b = min(255, int(b + (255 - b) * factor))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _darken_hex(hex_color: str, factor: float) -> str:
+    """Darken a hex color by *factor* (0-1)."""
+    r, g, b = int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16)
+    r = max(0, int(r * (1 - factor)))
+    g = max(0, int(g * (1 - factor)))
+    b = max(0, int(b * (1 - factor)))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _mix_hex(hex1: str, hex2: str, ratio: float) -> str:
+    """Mix two hex colors. ``ratio=1`` → all *hex1*, ``ratio=0`` → all *hex2*."""
+    r1, g1, b1 = int(hex1[1:3], 16), int(hex1[3:5], 16), int(hex1[5:7], 16)
+    r2, g2, b2 = int(hex2[1:3], 16), int(hex2[3:5], 16), int(hex2[5:7], 16)
+    r = int(r1 * ratio + r2 * (1 - ratio))
+    g = int(g1 * ratio + g2 * (1 - ratio))
+    b = int(b1 * ratio + b2 * (1 - ratio))
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 def _user_provided_colors(config: dict) -> bool:

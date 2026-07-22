@@ -15,7 +15,7 @@ from typing import Dict, Pattern
 # Tag → config key mapping
 # ---------------------------------------------------------------------------
 TAG_MAP: Dict[str, str] = {
-    "logo": "logo.path",               # kept as the user-supplied path string
+    "logo": "logo.path",
     "width": "logo.width",
     "height": "logo.height",
     "empresa": "empresa",
@@ -26,10 +26,21 @@ TAG_MAP: Dict[str, str] = {
     "logo_cliente": "logo_cliente",
     "descripcion": "descripcion",
     "tarea": "tarea",
+    # Colors extracted from logo
     "color_primario": "colors.primary",
+    "color_primario_light": "colors.primary_light",
     "color_secundario": "colors.secondary",
     "color_fondo": "colors.background",
+    "color_fondo_secondary": "colors.bg_secondary",
+    "color_fondo_tertiary": "colors.bg_tertiary",
     "color_texto": "colors.text",
+    "color_texto_secondary": "colors.text_secondary",
+    "color_borde": "colors.border",
+    "color_acento": "colors.accent",
+    "color_avatar": "colors.avatar",
+    "color_exito": "colors.success",
+    "color_advertencia": "colors.warning",
+    "color_error": "colors.error",
 }
 
 # Regex that matches <tag>anything</tag>.  Tag names must be [a-z_]+.

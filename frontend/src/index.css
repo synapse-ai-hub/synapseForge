@@ -1,19 +1,20 @@
 @import "tailwindcss";
 
-/* Variables de color — se usan directo via var() en los componentes */
+/* Variables de color — se reemplazan via pipeline init */
 :root {
-  --color-app-primary: #D76F10;
-  --color-app-primary-light: #F0A347;
-  --color-app-bg: #FFFFFF;
-  --color-app-bg-secondary: #F5F5F5;
-  --color-app-bg-tertiary: #EBEBEB;
-  --color-app-text: #151515;
-  --color-app-text-secondary: #5C5C5C;
-  --color-app-border: #D4D4D4;
-  --color-app-accent: #D76F10;
-  --color-app-success: #2B7D5B;
-  --color-app-warning: #C4903A;
-  --color-app-error: #C2413D;
+  --color-app-primary: <color_primario>#D76F10</color_primario>;
+  --color-app-primary-light: <color_primario_light>#F0A347</color_primario_light>;
+  --color-app-bg: <color_fondo>#FFFFFF</color_fondo>;
+  --color-app-bg-secondary: <color_fondo_secondary>#F5F5F5</color_fondo_secondary>;
+  --color-app-bg-tertiary: <color_fondo_tertiary>#EBEBEB</color_fondo_tertiary>;
+  --color-app-text: <color_texto>#151515</color_texto>;
+  --color-app-text-secondary: <color_texto_secondary>#5C5C5C</color_texto_secondary>;
+  --color-app-border: <color_borde>#D4D4D4</color_borde>;
+  --color-app-accent: <color_acento>#D76F10</color_acento>;
+  --color-app-avatar: <color_avatar>#D76F10</color_avatar>;
+  --color-app-success: <color_exito>#2B7D5B</color_exito>;
+  --color-app-warning: <color_advertencia>#C4903A</color_advertencia>;
+  --color-app-error: <color_error>#C2413D</color_error>;
 }
 
 /* Base styles */

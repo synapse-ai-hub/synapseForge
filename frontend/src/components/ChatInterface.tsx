@@ -186,7 +186,6 @@ interface ChatInterfaceProps {
   sessionId: string | null;
   onSessionStart: (id: string) => void;
   onNewChat: () => void;
-  onToggleSidebar: () => void;
   onSessionEnd?: () => void;
   onShowMetrics: () => void;
   onSessionTitleUpdate?: (sessionId: string, title: string) => void;
@@ -202,7 +201,6 @@ export function ChatInterface({
   sessionId,
   onSessionStart,
   onNewChat,
-  onToggleSidebar,
   onSessionEnd,
   onShowMetrics,
   onSessionTitleUpdate,

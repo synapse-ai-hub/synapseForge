@@ -101,7 +101,6 @@ function App() {
   const [showHistory, setShowHistory] = useState(false);
 
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showMetrics, setShowMetrics] = useState(false);
   const [verboseMode, setVerboseMode] = useState<boolean>(
@@ -148,7 +147,6 @@ function App() {
     setCurrentSessionId(id);
     setMessages([WELCOME_MESSAGE]);
     setIsStreaming(false);
-    setSidebarOpen(true);
     setRefreshTrigger((t) => t + 1);
   }, []);
 
@@ -169,10 +167,6 @@ function App() {
     }
   }, [currentSessionId]);
 
-  const handleToggleSidebar = useCallback(() => {
-    setSidebarOpen((open) => !open);
-  }, []);
-
   const handleSessionEnd = useCallback(() => {
     setRefreshTrigger((t) => t + 1);
   }, []);
@@ -184,8 +178,6 @@ function App() {
   return (
     <div className="h-screen bg-app-bg flex">
       <Sidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
         activeSessionId={currentSessionId}
         onSelectSession={handleSelectSession}
         onNewChat={handleNewChat}
@@ -204,7 +196,6 @@ function App() {
           sessionId={currentSessionId}
           onSessionStart={handleSessionStart}
           onNewChat={handleNewChat}
-          onToggleSidebar={handleToggleSidebar}
           onSessionEnd={handleSessionEnd}
           onShowMetrics={() => setShowMetrics(true)}
           onSessionTitleUpdate={handleSessionTitleUpdate}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, MessageSquare, Settings, Server, Cpu, Database, Upload, Wrench, Puzzle, Robot, Trash2 } from "lucide-react";
+import { Plus, MessageSquare, Settings, Server, Cpu, Database, Upload, Wrench, Puzzle, Bot, Trash2, Globe } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import sessionService, { type ChatSession } from "../services/sessionService";
@@ -180,15 +180,15 @@ export function Sidebar({
     }
   };
 
+  const isDevOnly = import.meta.env.VITE_MODE === "dev";
+
   // Menu items
   const menuItems: Array<{ key: SidebarTab; label: string; icon: React.ReactNode; devOnly?: boolean }> = [
     { key: "sessions", label: "Conversaciones", icon: <MessageSquare size={14} /> },
     { key: "config", label: "Configuración", icon: <Settings size={14} /> },
-    { key: "agent", label: "Agente", icon: <Robot size={14} /> },
-    ...(isDevOnly ? [{ key: "create", label: "Crear", icon: <Wrench size={14} /> }] : []),
+    { key: "agent", label: "Agente", icon: <Bot size={14} /> },
+    ...(isDevOnly ? [{ key: "create" as SidebarTab, label: "Crear", icon: <Wrench size={14} /> }] : []),
   ];
-
-  const isDevOnly = import.meta.env.VITE_MODE === "dev";
 
   return (
     <aside className="w-64 shrink-0 h-full flex flex-col border-r border-app-border bg-app-bg-secondary">
@@ -768,7 +768,7 @@ function AgentInfoTab({ agentInfo, loading }: { agentInfo: { tools: string[]; sk
           <div className="space-y-1">
             {agentInfo.agents.map((agent) => (
               <div key={agent} className="flex items-center gap-2 text-xs text-app-text">
-                <Robot size={12} className="text-app-primary shrink-0" />
+                <Bot size={12} className="text-app-primary shrink-0" />
                 <span className="truncate">{agent}</span>
               </div>
             ))}
@@ -802,7 +802,7 @@ function CreateTab() {
           Crear Skill
         </Button>
         <Button className="w-full justify-start gap-2" variant="outline">
-          <Robot size={14} />
+          <Bot size={14} />
           Crear Agente
         </Button>
       </div>

@@ -16,8 +16,12 @@
             "alias": "push",
             "command": "python .commands/commands/quick_push.py",
             "description": "Commit + push con rebase (-m mensaje -b rama)."
+        },
+        {
+            "alias": "template",
+            "command": "python .commands/commands/template.py",
+            "description": "Regenera pipeline/template.zip desde template/."
         }
-        
         
     ]
 }

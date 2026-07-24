@@ -49,7 +49,7 @@ function mapSessionMessages(raw: SessionMessage[]): Message[] {
     id: m.id,
     type: m.type,
     content: m.type === "user" ? m.content : "",
-    files: m.files,
+    files: m.files ?? undefined,
     blocks: m.blocks ?? (
       // Fallback for old sessions without blocks: build from toolCalls + toolResults
       m.type === "assistant" && (m.toolCalls || m.content)
@@ -99,6 +99,7 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSidebarMenu, setShowSidebarMenu] = useState(false);
 
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -175,6 +176,10 @@ function App() {
     setRefreshTrigger((t) => t + 1);
   }, []);
 
+  const handleToggleSidebarMenu = useCallback(() => {
+    setShowSidebarMenu((prev) => !prev);
+  }, []);
+
   return (
     <div className="h-screen bg-app-bg flex">
       <Sidebar
@@ -193,6 +198,7 @@ function App() {
           isStreaming={isStreaming}
           setIsStreaming={setIsStreaming}
           onShowHistory={() => setShowHistory(true)}
+          onToggleSidebar={handleToggleSidebarMenu}
           sessionId={currentSessionId}
           onSessionStart={handleSessionStart}
           onNewChat={handleNewChat}

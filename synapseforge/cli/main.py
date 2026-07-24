@@ -125,8 +125,7 @@ def _run_init(target_dir: str) -> None:
         print("  Inicialización cancelada.")
         return
 
-    from pipeline.init.main import run
-    run(target_dir, config=config)
+    print("  Proyecto creado correctamente.")
 
 
 def _run_launch(

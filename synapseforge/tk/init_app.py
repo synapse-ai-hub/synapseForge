@@ -11,8 +11,8 @@ from typing import Any, Dict, Optional
 from pathlib import Path
 from urllib.request import urlopen
 
-_HERE = Path(__file__).resolve().parent.parent.parent
-_ICO_PATH = _HERE / "src" / "logo.ico"
+_HERE = Path(__file__).resolve().parent
+_ICO_PATH = _HERE / "logo.ico"
 
 try:
     from PIL import Image, ImageTk

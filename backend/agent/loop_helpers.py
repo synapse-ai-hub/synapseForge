@@ -117,22 +117,22 @@ def build_system_prompt(agent_name: str | None = None) -> str:
     from backend.agent.config_dir import get_agents_dir
 
     agent_md_path = get_agents_dir() / "AGENT.md"
-    # print(f"[DEBUG_DE_LA VERGA QUE HICE] AGENT.md path: {agent_md_path}, exists: {agent_md_path.is_file()}")
+    
     if agent_md_path.is_file():
         try:
             base_prompt = agent_md_path.read_text(encoding="utf-8")
-            # print(f"[DEBUG_DE_LA VERGA QUE HICE] AGENT.md loaded, length: {len(base_prompt)}")
+            
             logger.info("Usando AGENT.md como system prompt del router.")
         except (OSError, UnicodeDecodeError) as exc:
-            # print(f"[DEBUG_DE_LA VERGA QUE HICE] Error reading AGENT.md: {exc}")
+            
             logger.warning("Error al leer AGENT.md: %s; usando system_prompt.md.", exc)
             log_error(str(exc), source="loop_helpers.py:build_system_prompt")
             base_prompt = agent.prompt("system_prompt")
     else:
-        # print(f"[DEBUG_DE_LA VERGA QUE HICE] AGENT.md not found, using system_prompt.md")
+        
         base_prompt = agent.prompt("system_prompt")
 
-    # print(f"[DEBUG_DE_LA VERGA QUE HICE] base_prompt length: {len(base_prompt)}, preview: {base_prompt[:200]}")
+    
 
     # Date
     fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -164,7 +164,7 @@ def build_system_prompt(agent_name: str | None = None) -> str:
         parts.append(f"## Contexto\n{context_text}")
 
     final_prompt = "\n\n".join(parts)
-    # print(f"[DEBUG_DE_LA VERGA QUE HICE] build_system_prompt final length: {len(final_prompt)}, preview: {final_prompt[:300]}")
+    
     return final_prompt
 
 

@@ -284,7 +284,7 @@ class AgentLoop:
             temp_dir = get_config_dir() / "temp"
             temp_dir.mkdir(parents=True, exist_ok=True)
             temp_path = str(temp_dir)
-            # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] Temp dir created: {temp_path}")
+            
 
             # --- 2. Build system prompt ---
             if system_prompt is None:
@@ -314,9 +314,7 @@ class AgentLoop:
 
             # Append temp directory path to system prompt (concatenation, no .format)
             system_prompt = f"{system_prompt}\n\n## Directorio temporal\n{temp_path}"
-            # print(f"[DEBUG_DE_LA VERGA QUE HICE] System prompt built, length: {len(system_prompt)}, temp_path: {temp_path}")
-            # print(f"[DEBUG_DE_LA VERGA QUE HICE] System prompt preview: {system_prompt[:300]}")
-
+            
             # --- 3. Resolve tools ---
             if agent_name is None:
                 # Router puro: no consulta registry, no pasa por permisos.
@@ -329,12 +327,7 @@ class AgentLoop:
                     log_error(str(e), source="loop.py:run(tools)")
                     tools = []
             logger.info("Tools available: %d", len(tools))
-            if agent_name is None:
-                # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] Router — tools={[t['function']['name'] for t in tools]}, skill_permissions={skill_permissions}")
-                pass
-            else:
-                # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] Agent '{agent_name}' — tools={len(tools)}, tool_permissions={tool_permissions}, skill_permissions={skill_permissions}")
-                pass
+          
 
             # --- 4. Build initial messages array (history does NOT include current message) ---
             # Append attached files (if any) to the user message
@@ -361,9 +354,7 @@ class AgentLoop:
                 effective_message,
                 max_turns=await asyncio.to_thread(fetch_context_window_turns),
             )
-            # print(f"[DEBUG_DE_LA VERGA QUE HICE] Messages built: {len(messages)} msgs, system_prompt_len={len(messages[0].get('content', '')) if messages else 0}")
-            # print(f"[DEBUG_DE_LA VERGA QUE HICE] System prompt preview: {messages[0].get('content', '')[:200] if messages else 'EMPTY'}")
-
+            
             # --- 5. Save user message to DB (after building messages so history is clean) ---
             session_manager.save_message(
                 session_id, "user", content=user_message, turn_number=turn_number,
@@ -458,8 +449,7 @@ class AgentLoop:
                     "LLM response — tool_calls: %s, content_length: %d",
                     len(tool_calls) if tool_calls else 0, len(collected_content),
                 )
-                # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] LLM response — tool_calls: {len(tool_calls) if tool_calls else 0}, content_len: {len(collected_content)}")
-
+                
                 # ---- 6b. Process tool_calls (LLM wants to continue) ----
                 if tool_calls:
                     # Save assistant message with tool_calls (collected_content may be empty)
@@ -483,13 +473,11 @@ class AgentLoop:
 
                     for tc in tool_calls:
                         is_subagent = tc.get("name") == "task"
-                        # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] Tool call: {tc.get('name')}, is_subagent: {is_subagent}")
-
+                        
                         if is_subagent:
                             agent_name_sub = tc.get("args", {}).get("agent_name", "")
                             prompt_sub = tc.get("args", {}).get("prompt", "")
-                            # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] Subagent call: agent={agent_name_sub}, prompt_len={len(prompt_sub)}")
-
+                           
                             # Resolve permissions ONCE and cache on tools instance so
                             # tools.py:task() can reuse them (avoids re-reading agent .md).
                             tool_perms_sub: dict = {}
@@ -540,8 +528,7 @@ class AgentLoop:
                                 parameters_sub,
                             )
 
-                            # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] Subagent delegated: {agent_name_sub}")
-
+                            
                             yield f"data: {json.dumps({'type': 'tool_call', 'content': {'name': 'task', 'args': {'agent_name': agent_name_sub, 'prompt': prompt_sub}}}, ensure_ascii=False)}\n\n"
 
                             # Create queue for real-time sub-agent event forwarding
@@ -735,7 +722,7 @@ class AgentLoop:
                 try:
                     from backend.agent.config_dir import get_config_dir
                     temp_md = get_config_dir() / f"{agent_name}_temp.md"
-                    # print(f"[DEBUG_DE_LA_VERGA_QUE_HICE] Cleanup temp md: {temp_md}, exists: {temp_md.exists()}")
+                    
                     if temp_md.exists():
                         temp_md.unlink()
                         logger.info("Cleaned up agent temp markdown: %s", temp_md)

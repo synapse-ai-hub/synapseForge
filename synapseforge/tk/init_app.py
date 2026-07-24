@@ -27,8 +27,8 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 COLOR_TAB_FIELDS = [
     ("avatar_asistente", "Avatar asistente"),
     ("avatar_usuario", "Avatar usuario"),
-    ("btn_nuevo_chat_bg", "Botón Nuevo Chat / header MCP — fondo"),
-    ("btn_nuevo_chat_text", "Botón Nuevo Chat / header MCP — texto"),
+    ("btn_nuevo_chat_bg", "Botón Nuevo Chat — fondo"),
+    ("btn_nuevo_chat_text", "Botón Nuevo Chat — texto"),
     ("btn_adjuntar", "Botón adjuntar"),
     ("btn_enviar", "Botón enviar"),
     ("btn_detener", "Botón detener"),

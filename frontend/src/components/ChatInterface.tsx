@@ -183,7 +183,6 @@ interface ChatInterfaceProps {
   isStreaming: boolean;
   setIsStreaming: React.Dispatch<React.SetStateAction<boolean>>;
   onShowHistory: () => void;
-  onToggleSidebar: () => void;
   sessionId: string | null;
   onSessionStart: (id: string) => void;
   onNewChat: () => void;
@@ -199,7 +198,6 @@ export function ChatInterface({
   isStreaming,
   setIsStreaming,
   onShowHistory,
-  onToggleSidebar,
   sessionId,
   onSessionStart,
   onNewChat,

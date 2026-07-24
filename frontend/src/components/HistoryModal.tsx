@@ -104,13 +104,7 @@ export function HistoryModal({ open, onClose }: HistoryModalProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Historial de Cotizaciones</DialogTitle>
-          <DialogDescription>
-            Consultá las cotizaciones realizadas. Usá los filtros para
-            encontrar resultados específicos.
-          </DialogDescription>
-        </DialogHeader>
+        
 
         {/* Filters */}
         <div className="flex flex-wrap gap-2 py-4">
@@ -153,70 +147,7 @@ export function HistoryModal({ open, onClose }: HistoryModalProps) {
           </div>
         )}
 
-        {/* Results table */}
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="text-center py-8 text-app-text-secondary">
-              Cargando...
-            </div>
-          ) : quotes.length === 0 && !error ? (
-            <div className="text-center py-8 text-app-text-secondary">
-              No hay cotizaciones registradas.
-            </div>
-          ) : quotes.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-white">
-                <tr className="border-b border-app-border">
-                  <th className="text-left py-2 px-3 font-medium text-app-text-secondary">
-                    Fecha
-                  </th>
-                  <th className="text-left py-2 px-3 font-medium text-app-text-secondary">
-                    Cliente
-                  </th>
-                  <th className="text-left py-2 px-3 font-medium text-app-text-secondary">
-                    Producto
-                  </th>
-                  <th className="text-right py-2 px-3 font-medium text-app-text-secondary">
-                    Cant.
-                  </th>
-                  <th className="text-right py-2 px-3 font-medium text-app-text-secondary">
-                    P. Unit.
-                  </th>
-                  <th className="text-right py-2 px-3 font-medium text-app-text-secondary">
-                    Desc.
-                  </th>
-                  <th className="text-right py-2 px-3 font-medium text-app-text-secondary">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {quotes.map((q, idx) => (
-                  <tr
-                    key={q.id || `quote-${idx}`}
-                    className="border-b border-app-border hover:bg-app-bg-secondary transition-colors"
-                  >
-                    <td className="py-2 px-3 text-app-text-secondary">
-                      {formatDate(q.fecha)}
-                    </td>
-                    <td className="py-2 px-3">{q.cliente}</td>
-                    <td className="py-2 px-3 max-w-[200px] truncate">
-                      {q.producto}
-                    </td>
-                    <td className="py-2 px-3 text-right">{q.cantidad}</td>
-                    <td className="py-2 px-3 text-right">
-                      {formatCurrency(q.precio_unitario)}
-                    </td>
-                    <td className="py-2 px-3 text-right">{q.descuento}%</td>
-                    <td className="py-2 px-3 text-right font-semibold">
-                      {formatCurrency(q.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-        </div>
+        
       </DialogContent>
     </Dialog>
   );

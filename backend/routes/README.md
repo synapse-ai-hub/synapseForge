@@ -22,13 +22,15 @@
 
 ## Descripción
 
-Documentación de los endpoints HTTP expuestos por `backend/routes`. Se documentan los módulos **`chat`**, **`sessions`** y **`config`**.
+Documentación de los endpoints HTTP expuestos por `backend/routes`. Se documentan los módulos **`chat`**, **`sessions`**, **`config`**, **`context_files`** y **`metrics`**.
 
 ### ✨ Rutas documentadas
 
 - **`chat`**: conversación streaming vía Server-Sent Events (SSE).
 - **`sessions`**: listado, obtención y eliminación de sesiones de chat.
 - **`config`**: gestión de proveedores, modelos y ventana de contexto.
+- **`context_files`**: gestión de archivos de contexto (instrucciones y documentos).
+- **`metrics`**: métricas de uso y rendimiento del agente.
 
 ---
 
@@ -142,6 +144,63 @@ Lista los servidores MCP configurados en `config.json`.
 Verifica la salud de todos los servidores MCP configurados.
 
 **Respuesta:** `JSONResponse` `{status, results: McpServerStatus[]}`.
+
+---
+
+### 4. Context Files (`backend/routes/context_files.py`)
+
+#### `GET /api/context-files`
+
+Lista todos los archivos de contexto subidos.
+
+**Respuesta:** `JSONResponse` `{status, data: ContextFile[]}` donde `ContextFile` incluye `id`, `filename`, `size`, `content_type`, `created_at`.
+
+#### `POST /api/context-files`
+
+Sube un archivo de contexto (instrucciones o documentos).
+
+**Parámetros (FormData):**
+- `file` (File, **requerido**): archivo a subir. Formatos: PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY.
+
+**Respuesta:** `JSONResponse` `{status, message, data: ContextFile}`.
+
+#### `DELETE /api/context-files/{file_id}`
+
+Elimina un archivo de contexto por ID.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+---
+
+### 5. Metrics (`backend/routes/metrics.py`)
+
+#### `GET /api/metrics`
+
+Devuelve métricas agregadas de uso del agente.
+
+**Parámetros (Query):**
+- `days` (int, opcional, default=7): días hacia atrás para filtrar.
+
+**Respuesta:** `JSONResponse` `{status, data: MetricsSummary}` donde `MetricsSummary` incluye `total_sessions`, `total_messages`, `total_tokens`, `avg_tokens_per_message`, `top_models`, `provider_usage`.
+
+#### `GET /api/metrics/sessions`
+
+Devuelve métricas por sesión.
+
+**Parámetros (Query):**
+- `days` (int, opcional, default=7): días hacia atrás.
+- `limit` (int, opcional, default=50): máximo de sesiones a retornar.
+
+**Respuesta:** `JSONResponse` `{status, data: SessionMetrics[]}` donde `SessionMetrics` incluye `session_id`, `title`, `message_count`, `total_tokens`, `created_at`, `updated_at`.
+
+#### `GET /api/metrics/tokens`
+
+Devuelve desglose de tokens por modelo/proveedor.
+
+**Parámetros (Query):**
+- `days` (int, opcional, default=7): días hacia atrás.
+
+**Respuesta:** `JSONResponse` `{status, data: TokenMetrics[]}` donde `TokenMetrics` incluye `model`, `provider`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `request_count`.
 
 ---
 

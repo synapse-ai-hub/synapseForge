@@ -1,20 +1,43 @@
 @import "tailwindcss";
 
-/* Variables de color — se reemplazan via pipeline init */
-:root {
-  --color-app-primary: <color_primario>#D76F10</color_primario>;
-  --color-app-primary-light: <color_primario_light>#F0A347</color_primario_light>;
-  --color-app-bg: <color_fondo>#FFFFFF</color_fondo>;
-  --color-app-bg-secondary: <color_fondo_secondary>#F5F5F5</color_fondo_secondary>;
-  --color-app-bg-tertiary: <color_fondo_tertiary>#EBEBEB</color_fondo_tertiary>;
-  --color-app-text: <color_texto>#151515</color_texto>;
-  --color-app-text-secondary: <color_texto_secondary>#5C5C5C</color_texto_secondary>;
-  --color-app-border: <color_borde>#D4D4D4</color_borde>;
-  --color-app-accent: <color_acento>#D76F10</color_acento>;
-  --color-app-avatar: <color_avatar>#D76F10</color_avatar>;
-  --color-app-success: <color_exito>#2B7D5B</color_exito>;
-  --color-app-warning: <color_advertencia>#C4903A</color_advertencia>;
-  --color-app-error: <color_error>#C2413D</color_error>;
+@theme {
+  /* ── Fijos (valores base, nunca cambian) ── */
+  --color-app-bg: #FFFFFF;
+  --color-app-bg-secondary: #F5F5F5;
+  --color-app-bg-tertiary: #EBEBEB;
+  --color-app-text: #151515;
+  --color-app-text-secondary: #5C5C5C;
+  --color-app-border: #D4D4D4;
+  --color-app-success: #2B7D5B;
+  --color-app-warning: #C4903A;
+  --color-app-error: #C2413D;
+
+  /* ── Configurables (build-time: placeholders XML; runtime: colors.json) ── */
+  --color-app-primary: <color_primario></color_primario>;
+  --color-app-primary-light: <color_primario_light></color_primario_light>;
+  --color-app-avatar-asistente: <color_avatar_asistente></color_avatar_asistente>;
+  --color-app-avatar-usuario: <color_avatar_usuario></color_avatar_usuario>;
+  --color-app-btn-nuevo-chat-bg: <color_btn_nuevo_chat_bg></color_btn_nuevo_chat_bg>;
+  --color-app-btn-nuevo-chat-text: <color_btn_nuevo_chat_text></color_btn_nuevo_chat_text>;
+  --color-app-btn-adjuntar: <color_btn_adjuntar></color_btn_adjuntar>;
+  --color-app-btn-enviar: <color_btn_enviar></color_btn_enviar>;
+  --color-app-btn-detener: <color_btn_detener></color_btn_detener>;
+  --color-app-flecha-autoscroll: <color_flecha_autoscroll></color_flecha_autoscroll>;
+}
+
+/* Scrollbar — thumb = #d9d7d9, track = transparent */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d9d7d9;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c5c3c3;
 }
 
 /* Base styles */
@@ -27,24 +50,6 @@ body {
   color: var(--color-app-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar {
-  width: 8px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-app-primary);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-app-primary-light);
 }
 
 /* Markdown styling for chat messages */

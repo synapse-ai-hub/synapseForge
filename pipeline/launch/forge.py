@@ -221,7 +221,9 @@ def _build_frontend(repo_path: str) -> None:
         shell=True,
     )
 
-    _log("Running npm run build...")
+    _log("Running npm run build (MODE=prod)...")
+    env = os.environ.copy()
+    env["VITE_MODE"] = "prod"
     subprocess.run(
         "npm run build",
         cwd=str(frontend_dir),
@@ -229,6 +231,7 @@ def _build_frontend(repo_path: str) -> None:
         capture_output=True,
         text=True,
         shell=True,
+        env=env,
     )
 
     if not dist_dir.is_dir():

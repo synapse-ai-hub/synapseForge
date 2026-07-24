@@ -1,4 +1,7 @@
-const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
+const MODE = import.meta.env.VITE_MODE || "dev";
+const API_BASE_URL = MODE === "prod"
+  ? (import.meta.env.VITE_URL_PROD || "http://localhost:8000")
+  : (import.meta.env.VITE_URL_DEV || "http://localhost:8000");
 
 export interface ChatSession {
   session_id: string;
@@ -30,6 +33,8 @@ export interface SessionMessage {
   toolCalls?: Array<{ id?: string; name: string; args: Record<string, any> }> | null;
   toolResults?: Array<{ tool_call_id?: string; tool_name: string; result: any }> | null;
   blocks?: ContentBlock[] | null;
+  /** Attached files for user messages (shown as chips) */
+  files?: Array<{ name: string; size?: number }> | null;
 }
 
 export interface SessionMessages {

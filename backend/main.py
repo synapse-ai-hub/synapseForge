@@ -32,7 +32,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.config_dir import ensure_config_dir
-from backend.instances import agent, session_manager, context_manager
+from backend.instances import agent, session_manager
 from backend.routes import config as config_module
 from backend.agent.utils.error_logger import log_error
 
@@ -60,6 +60,20 @@ except ImportError as e:
     log_error(str(e), source="main.py:config_import")
     config_router = None
     logging.warning("backend.routes.config could not be imported.")
+
+try:
+    from backend.routes.context_files import router as context_files_router
+except ImportError as e:
+    log_error(str(e), source="main.py:context_files_import")
+    context_files_router = None
+    logging.warning("backend.routes.context_files could not be imported.")
+
+try:
+    from backend.routes.metrics import router as metrics_router
+except ImportError as e:
+    log_error(str(e), source="main.py:metrics_import")
+    metrics_router = None
+    logging.warning("backend.routes.metrics could not be imported.")
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -192,6 +206,12 @@ if sessions_router is not None:
 
 if config_router is not None:
     app.include_router(config_router, prefix="/api")
+
+if context_files_router is not None:
+    app.include_router(context_files_router)
+
+if metrics_router is not None:
+    app.include_router(metrics_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

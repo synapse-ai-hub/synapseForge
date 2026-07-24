@@ -20,6 +20,7 @@ import {
   ChevronDown,
   Loader2,
   LogOut,
+  BookOpen,
 } from "lucide-react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -60,7 +61,9 @@ const ALLOWED_FILE_TYPES = [
   "application/xml",
   "text/xml",
 ];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (~300 000 caracteres de texto plano)
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
+const MAX_FILES = 3;
+const MAX_TOTAL_SIZE = 25 * 1024 * 1024; // 25 MB total
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -134,13 +137,13 @@ function FileChip({
   return (
     <div
       className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs
-                 bg-[rgba(215,111,16,0.08)] border border-[rgba(215,111,16,0.2)] text-app-text"
+                 bg-app-primary/10 border border-app-primary/20 text-app-text"
     >
       <span className="truncate max-w-[120px] sm:max-w-[200px]">{file.name}</span>
       <span className="text-app-text-secondary shrink-0">{sizeLabel}</span>
       <button
         onClick={onRemove}
-        className="shrink-0 rounded-full p-0.5 hover:bg-[rgba(215,111,16,0.15)] transition-colors"
+        className="shrink-0 rounded-full p-0.5 hover:bg-app-primary/15 transition-colors"
         aria-label={`Remove ${file.name}`}
       >
         <X size={12} />
@@ -284,6 +287,12 @@ export function ChatInterface({
     window.close();
   }, []);
 
+  /* ---- open docs in new tab ---- */
+  const handleOpenDocs = useCallback(() => {
+    const base = window.location.origin;
+    window.open(`${base}/docs.html`, "_blank", "noopener,noreferrer");
+  }, []);
+
   /* ---- auto-resize textarea ---- */
   useEffect(() => {
     const ta = textareaRef.current;
@@ -299,6 +308,8 @@ export function ChatInterface({
       const selected = Array.from(e.target.files || []);
       const valid: File[] = [];
       let warning: string | null = null;
+      let currentTotalSize = files.reduce((sum, f) => sum + f.size, 0);
+
       for (const f of selected) {
         if (!ALLOWED_FILE_TYPES.includes(f.type) && !f.name.match(/\.(csv|xlsx|xls)$/i)) {
           warning = `Tipo de archivo no soportado: ${f.name}. Permitidos: PDF, DOCX, XLSX, TXT, CSV, JSON, XML.`;
@@ -308,14 +319,23 @@ export function ChatInterface({
           warning = `Archivo demasiado grande: ${f.name} (máx 10 MB).`;
           continue;
         }
+        if (valid.length + files.length >= MAX_FILES) {
+          warning = `Máximo ${MAX_FILES} archivos permitidos.`;
+          break;
+        }
+        if (currentTotalSize + f.size > MAX_TOTAL_SIZE) {
+          warning = `Tamaño total excede ${MAX_TOTAL_SIZE / (1024 * 1024)} MB.`;
+          break;
+        }
         valid.push(f);
+        currentTotalSize += f.size;
       }
       if (warning) setFileWarning(warning);
       setFiles((prev) => [...prev, ...valid]);
       // Reset input so same file can be picked again
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    [],
+    [files],
   );
 
   const removeFile = useCallback((index: number) => {
@@ -357,11 +377,12 @@ export function ChatInterface({
     const currentFiles = [...files];
     setFiles([]);
 
-    // Add user message
+    // Add user message with attached files
     const userMessage: Message = {
       id: generateId(),
       type: "user",
       content: text,
+      files: currentFiles.map((f) => ({ name: f.name, size: f.size })),
     };
     setMessages((prev) => [...prev, userMessage]);
 
@@ -661,35 +682,50 @@ export function ChatInterface({
   /* ---- render ---- */
   return (
     <div className="flex flex-col h-full bg-app-bg transition-colors">
-      {/* ========== HEADER (60px) ========== */}
+      {/* ========== HEADER (95px) ========== */}
       <header
-        className="flex items-center justify-between px-4 sm:px-6 shrink-0 border-b border-app-border
+        className="flex items-center px-6 sm:px-8 shrink-0 border-b border-app-border
                    bg-white"
-        style={{ height: "60px" }}
+        style={{ height: "95px" }}
       >
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            className="rounded-full p-1.5 text-app-text-secondary hover:bg-app-bg-secondary hover:text-app-text transition-colors"
-            aria-label="Mostrar conversaciones"
-          >
-            <Menu size={18} />
-          </button>
+        {/* Left: hamburger */}
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          className="rounded-full p-1.5 text-app-text-secondary hover:bg-app-bg-secondary hover:text-app-text transition-colors shrink-0"
+          aria-label="Mostrar conversaciones"
+        >
+          <Menu size={18} />
+        </button>
+
+        {/* Center: logo + title */}
+        <div className="flex-1 flex items-center justify-center gap-2 sm:gap-3">
           <img
             src={LogoImage}
-            alt="<cliente>nombre_cliente</cliente> Logo"
-            className="h-7 sm:h-15 w-auto"
+            alt={"<cliente>nombre_cliente</cliente> Logo"}
+            className="h-9 sm:h-[95px] w-auto"
           />
-          <h1 className="text-sm sm:text-lg font-semibold text-app-text">
+          <h1 className="text-lg sm:text-2xl font-semibold text-app-text">
+            {/* @ts-ignore */}
             <descripcion>Nombre del proyecto</descripcion>
           </h1>
         </div>
 
-        
-          {/* Métricas */}
+        {/* Right: docs + métricas + salir */}
+        <div className="flex items-center gap-1 shrink-0">
           <Button
-            variant="outline"
+            variant="ghost"
+            size="sm"
+            onClick={handleOpenDocs}
+            className="gap-1 sm:gap-1.5 text-xs h-7 sm:h-8"
+            title="Documentación"
+          >
+            <BookOpen size={14} />
+            <span className="hidden sm:inline">Docs</span>
+          </Button>
+
+          <Button
+            variant="ghost"
             size="sm"
             onClick={onShowMetrics}
             className="gap-1 sm:gap-1.5 text-xs h-7 sm:h-8"
@@ -698,7 +734,6 @@ export function ChatInterface({
             <span className="hidden sm:inline">Métricas</span>
           </Button>
 
-          {/* Salir - cerrar app completa */}
           <Button
             variant="ghost"
             size="sm"
@@ -709,6 +744,7 @@ export function ChatInterface({
             <LogOut size={14} />
             <span className="hidden sm:inline">Salir</span>
           </Button>
+        </div>
 
       </header>
 
@@ -722,7 +758,7 @@ export function ChatInterface({
                 setAutoScrollEnabled(true);
                 scrollToBottom("smooth");
               }}
-              className="w-10 h-10 rounded-full transition-all duration-200 flex items-center justify-center border border-app-border bg-app-bg-secondary text-app-text-secondary hover:bg-app-bg hover:text-app-primary shadow-sm"
+              className="w-10 h-10 rounded-full transition-all duration-200 flex items-center justify-center border border-app-primary/20 bg-app-primary/10 text-app-primary hover:bg-app-primary/20 hover:text-app-primary shadow-sm"
               title="Ir al final"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -739,7 +775,7 @@ export function ChatInterface({
           className="h-full overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 pr-3 sm:pr-5"
           style={{
             scrollbarWidth: "thin",
-            scrollbarColor: "var(--color-app-accent) transparent",
+            scrollbarColor: "#d9d7d9 transparent",
           }}
         >
           <div className="relative max-w-full sm:max-w-3xl lg:max-w-4xl mx-auto space-y-4 sm:space-y-6">
@@ -797,7 +833,7 @@ export function ChatInterface({
               className="w-full resize-none rounded-2xl border border-app-border
                          bg-white
                          text-app-text placeholder:text-app-text-secondary
-                         focus:outline-none focus:ring-2 focus:ring-[#D76F10]/30 focus:border-[#D76F10]
+                         focus:outline-none focus:ring-2 focus:ring-app-primary/30 focus:border-app-primary
                          transition-colors
                          pt-3 sm:pt-4 pb-[52px] sm:pb-[64px] pr-12 sm:pr-12 pl-12 sm:pl-12
                          min-h-[80px] sm:min-h-[100px]"
@@ -806,14 +842,14 @@ export function ChatInterface({
               }}
             />
 
-            {/* Attach button - bottom left */}
+{/* Attach button - bottom left */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="absolute bottom-3 left-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
-                         flex items-center justify-center
-                         bg-[rgba(215,111,16,0.1)] hover:bg-[rgba(215,111,16,0.2)]
-                         text-[#D76F10] transition-all duration-150"
+               className="absolute bottom-3 left-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
+                          flex items-center justify-center
+                          bg-app-primary/10 hover:bg-app-primary/20
+                          text-app-primary transition-all duration-150"
               aria-label="Adjuntar archivos"
             >
               <Paperclip size={16} />
@@ -826,12 +862,13 @@ export function ChatInterface({
                 onClick={handleCancel}
                 className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
                            flex items-center justify-center
-                           bg-gradient-to-r from-[#ef4444] to-[#f97316]
+                           bg-app-primary/20 hover:bg-app-primary/30
+                           text-app-primary
                            hover:opacity-90 active:scale-95
                            transition-all duration-150 shadow-sm"
                 aria-label="Detener generación"
               >
-                <Square size={14} className="text-white" />
+                <Square size={14} />
               </button>
             ) : (
               <button
@@ -840,10 +877,10 @@ export function ChatInterface({
                 disabled={!input.trim()}
                 className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
                            flex items-center justify-center
-                           bg-gradient-to-r from-[#D76F10] to-[#F0A347]
-                            hover:opacity-90 active:scale-95
-                            transition-all duration-150 shadow-sm
-                            disabled:opacity-40 disabled:cursor-not-allowed"
+                           bg-gradient-to-r from-app-primary to-app-primary-light
+                           hover:opacity-90 active:scale-95
+                           transition-all duration-150 shadow-sm
+                           disabled:opacity-40 disabled:cursor-not-allowed"
                  aria-label="Enviar mensaje"
               >
                 <Send size={14} className="text-white" />
@@ -1136,7 +1173,7 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
         <div className="shrink-0">
           <div
             className="h-4 w-4 sm:h-10 sm:w-10 rounded-xl flex items-center justify-center
-                        bg-gradient-to-br from-[#D76F10] to-[#F0A347] border border-[rgba(215,111,16,0.3)]"
+                        bg-app-avatar-asistente text-white"
           >
             <Bot size={20} className="text-white" />
           </div>
@@ -1239,7 +1276,7 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
                     : message.content || "";
                   navigator.clipboard?.writeText(text);
                 }}
-                className="mt-2 inline-flex items-center gap-1 rounded-full border border-[rgba(215,111,16,0.2)] bg-[rgba(215,111,16,0.08)] px-2 py-1 text-[11px] text-app-primary transition-colors hover:bg-[rgba(215,111,16,0.15)]"
+                className="mt-2 inline-flex items-center gap-1 rounded-full border border-app-primary/20 bg-app-primary/10 px-2 py-1 text-[11px] text-app-primary transition-colors hover:bg-app-primary/15"
               >
                 <Copy size={12} />
                 Copiar
@@ -1274,7 +1311,7 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
       {/* Avatar gradient */}
       <div
         className="w-10 h-10 sm:w-10 sm:h-10 rounded-full shrink-0 flex items-center justify-center
-                   bg-gradient-to-br from-[#D76F10] to-[#F0A347] text-white"
+                   bg-app-avatar-usuario text-white"
       >
         <User size={14} />
       </div>

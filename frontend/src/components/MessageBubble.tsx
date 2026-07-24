@@ -3,7 +3,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { Message } from "../App";
 import { Avatar, AvatarFallback } from "./ui/avatar";
-import { User, Bot, ChevronDown, ChevronRight, Terminal } from "lucide-react";
+import { User, Bot, ChevronDown, ChevronRight, Terminal, Paperclip } from "lucide-react";
 
 interface MessageBubbleProps {
   message: Message;
@@ -44,8 +44,8 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
         <AvatarFallback
           className={
             isAssistant
-              ? "bg-app-primary-light text-white"
-              : "bg-app-primary text-white"
+              ? "bg-app-avatar-asistente text-white"
+              : "bg-app-avatar-usuario text-white"
           }
         >
           {isAssistant ? (
@@ -147,6 +147,29 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
             __html: renderedHtml,
           }}
         />
+
+        {/* File attachments chips (user messages only) */}
+        {!isAssistant && message.files && message.files.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {message.files.map((file, idx) => (
+              <div
+                key={`${file.name}-${idx}`}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs
+                           bg-white/20 border border-white/30 text-white"
+              >
+                <Paperclip className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+                <span className="truncate max-w-[150px] font-medium">{file.name}</span>
+                {file.size && (
+                  <span className="text-white/70 shrink-0">
+                    {(file.size < 1024 * 1024
+                      ? `${(file.size / 1024).toFixed(0)} KB`
+                      : `${(file.size / (1024 * 1024)).toFixed(1)} MB`)}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Streaming indicator (assistant only) */}
         {isAssistant && message.isStreaming && (

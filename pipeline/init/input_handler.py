@@ -33,20 +33,37 @@ def get_user_input() -> Dict[str, object]:
 
     # ── Colors (opcionales) ─────────────────────────────────────────────
     print("\nColores (opcionales — dejá vacío para extraer del logo):")
-    color_primary: Optional[str] = _prompt_hex("Color primary (ej: #D76F10)")
-    color_secondary: Optional[str] = _prompt_hex("Color secondary (ej: #F0A347)")
-    color_background: Optional[str] = _prompt_hex("Color background (ej: #FFFFFF)")
-    color_text: Optional[str] = _prompt_hex("Color texto (ej: #151515)")
+    print("  Avatar asistente: 2do color más fuerte")
+    print("  Avatar usuario: 3er color más fuerte")
+    print("  Botón Nuevo Chat / header MCP: color más fuerte - 20% (degradé 1ro-2do)")
+    print("  Texto Nuevo Chat / header MCP: color más claro detectado")
+    print("  Botones adjuntar/enviar/detener/flecha autoscroll: color más fuerte con transparencia\n")
 
     colors: Dict[str, str] = {}
-    if color_primary:
-        colors["primary"] = color_primary
-    if color_secondary:
-        colors["secondary"] = color_secondary
-    if color_background:
-        colors["background"] = color_background
-    if color_text:
-        colors["text"] = color_text
+
+    c = _prompt_hex("Avatar asistente (ej: #658665)")
+    if c: colors["avatar_asistente"] = c
+
+    c = _prompt_hex("Avatar usuario (ej: #928c8c)")
+    if c: colors["avatar_usuario"] = c
+
+    c = _prompt_hex("Botón Nuevo Chat / header MCP — fondo (ej: #452913)")
+    if c: colors["btn_nuevo_chat_bg"] = c
+
+    c = _prompt_hex("Botón Nuevo Chat / header MCP — texto (ej: #e0c097)")
+    if c: colors["btn_nuevo_chat_text"] = c
+
+    c = _prompt_hex("Botón adjuntar (ej: #452913)")
+    if c: colors["btn_adjuntar"] = c
+
+    c = _prompt_hex("Botón enviar (ej: #452913)")
+    if c: colors["btn_enviar"] = c
+
+    c = _prompt_hex("Botón detener (ej: #452913)")
+    if c: colors["btn_detener"] = c
+
+    c = _prompt_hex("Flecha autoscroll (ej: #452913)")
+    if c: colors["flecha_autoscroll"] = c
 
     return {
         "logo": {

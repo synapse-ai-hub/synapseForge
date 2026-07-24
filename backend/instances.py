@@ -25,7 +25,6 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.session import SessionManager
-from backend.agent.context import ContextManager
 from backend.agent.agent import Agent
 from backend.agent.tools import Tools
 
@@ -33,7 +32,6 @@ __all__ = [
     "agent",
     "tools",
     "session_manager",
-    "context_manager",
 ]
 
 _logger = logging.getLogger(__name__)
@@ -51,7 +49,6 @@ tools = Tools()
 
 
 session_manager = SessionManager()
-context_manager = ContextManager()
 
 _logger.info("Agent and Tools initialized successfully")
 _logger.info("  Provider: %s", os.getenv("PROVIDER", "API").strip().upper())

@@ -952,7 +952,7 @@ class Tools:
         system_prompt = prompt_result.get("data", "") or ""
 
         # 2. Create an integrated child session (parent_id = current session)
-        from backend.instances import agent, session_manager, context_manager
+        from backend.instances import agent, session_manager
 
         parent_id = getattr(self, "_current_session_id", None)
         depth = getattr(self, "_current_depth", 0)
@@ -976,7 +976,6 @@ class Tools:
         loop = AgentLoop(
             agent=agent,
             session_manager=session_manager,
-            context_manager=context_manager,
         )
         final_text = ""
         state = "completed"
@@ -1224,6 +1223,42 @@ class Tools:
             log_error(str(e), source="tools.py:reference")
             return make_error_response(
                 message=f"Error loading reference: {e}",
+                usage=zero_usage(),
+            )
+
+    async def help(self) -> dict:
+        """Lee la documentación interna del agente sobre su funcionamiento.
+
+        Devuelve el contenido del archivo ``help.md`` que explica cómo
+        crear herramientas, skills, agentes, cambiar modelos, configurar
+        la ventana de contexto, el modo verbose, etc.
+
+        Returns:
+            dict con ``{status, message, data, usage}``.
+        """
+        try:
+            help_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "prompts",
+                "help.md",
+            )
+            if not os.path.isfile(help_path):
+                return make_error_response(
+                    message="No se encontró el archivo de documentación interna (help.md).",
+                    usage=zero_usage(),
+                )
+            with open(help_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return make_success_response(
+                message="Documentación interna cargada.",
+                data=content,
+                usage=zero_usage(),
+            )
+        except Exception as e:
+            logger.exception("Error in help: %s", e)
+            log_error(str(e), source="tools.py:help")
+            return make_error_response(
+                message=f"Error cargando documentación interna: {e}",
                 usage=zero_usage(),
             )
 

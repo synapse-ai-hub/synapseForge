@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
-import { Plus, MessageSquare, Trash2, X, Bot, Settings, Server, Cpu, Database, Globe } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Plus, MessageSquare, Trash2, X, Bot, Settings, Server, Cpu, Database, Globe, Upload, History } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import sessionService, { type ChatSession } from "../services/sessionService";
 import configService, { type McpServer, type McpServerHealth } from "../services/configService";
+import contextFilesService, { type ContextFile } from "../services/contextFilesService";
 
 type SidebarTab = "sessions" | "config";
 
@@ -154,7 +155,7 @@ export function Sidebar({
           {tab === "config" ? (
             <Settings size={18} className="text-app-primary" />
           ) : (
-            <Bot size={18} className="text-app-primary" />
+            <History size={18} className="text-app-primary" />
           )}
           <span className="text-sm font-semibold text-app-text">
             {tab === "config" ? "Configuración" : "Conversaciones"}
@@ -195,7 +196,7 @@ export function Sidebar({
       >
         {/* New chat */}
         <div className="p-3 border-b border-app-border bg-white">
-          <Button onClick={onNewChat} className="w-full gap-2">
+          <Button onClick={onNewChat} className="w-full gap-2 bg-app-btn-nuevo-chat-bg text-app-btn-nuevo-chat-text hover:bg-app-btn-nuevo-chat-bg/90">
             <Plus size={16} />
             Nuevo Chat
           </Button>
@@ -284,9 +285,9 @@ export function Sidebar({
           {/* MCP Panel - 30% */}
           <div className="border-t border-app-border bg-app-bg-secondary flex-shrink-0" style={{ height: "30%" }}>
             <div className="p-3 border-b border-app-border bg-white">
-              <div className="w-full max-w-[calc(100%-1.5rem)] mx-auto rounded-md bg-app-primary px-3 py-2 text-center">
-                <div className="flex justify-center items-center gap-2 text-xs font-medium text-white">
-                  <Server size={12} className="text-white" />
+              <div className="w-full max-w-[calc(100%-1.5rem)] mx-auto rounded-md bg-app-btn-nuevo-chat-bg px-3 py-2 text-center">
+                <div className="flex justify-center items-center gap-2 text-xs font-medium text-app-btn-nuevo-chat-text">
+                  <Server size={12} />
                   Servidores MCP
                 </div>
               </div>
@@ -404,6 +405,9 @@ function ConfigTab({ verboseMode, onVerboseModeChange }: { verboseMode: boolean;
   const [loading, setLoading] = useState(true);
   const [savingModel, setSavingModel] = useState(false);
   const [savingContext, setSavingContext] = useState(false);
+  const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
+  const [uploadingContext, setUploadingContext] = useState(false);
+  const contextFileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async (prov?: string) => {
     let label: string | undefined;
@@ -442,6 +446,13 @@ function ConfigTab({ verboseMode, onVerboseModeChange }: { verboseMode: boolean;
     load();
   }, [load]);
 
+  // Cargar archivos de contexto al montar
+  useEffect(() => {
+    contextFilesService.list()
+      .then((files) => setContextFiles(files || []))
+      .catch((err) => console.error("Error cargando archivos de contexto:", err));
+  }, []);
+
   const handleProviderChange = (value: string) => {
     setSelectedProvider(value);
     load(value);
@@ -467,6 +478,31 @@ function ConfigTab({ verboseMode, onVerboseModeChange }: { verboseMode: boolean;
       console.error("Error guardando contexto:", err);
     } finally {
       setSavingContext(false);
+    }
+  };
+
+  const handleUploadContextFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingContext(true);
+      await contextFilesService.upload(file);
+      const files = await contextFilesService.list();
+      setContextFiles(files || []);
+    } catch (err) {
+      console.error("Error subiendo archivo de contexto:", err);
+    } finally {
+      setUploadingContext(false);
+      if (e.target) e.target.value = "";
+    }
+  };
+
+  const handleDeleteContextFile = async (id: number) => {
+    try {
+      await contextFilesService.delete(id);
+      setContextFiles((prev) => prev.filter((f) => f.id !== id));
+    } catch (err) {
+      console.error("Error eliminando archivo de contexto:", err);
     }
   };
 
@@ -523,10 +559,10 @@ function ConfigTab({ verboseMode, onVerboseModeChange }: { verboseMode: boolean;
 
       <div>
         <div className="text-xs font-medium text-app-text-secondary">
-          Contexto (turnos)
+          Ventana de contexto
         </div>
         <p className="text-[11px] text-app-text-secondary mt-1">
-          Cantidad de turnos a mantener en el contexto. -1 = todo el historial.
+          Controla cuántos turnos de la conversación se recuerdan al responder. -1 = todo el historial.
         </p>
         <div className="flex gap-2 mt-2">
           <Input
@@ -569,6 +605,56 @@ function ConfigTab({ verboseMode, onVerboseModeChange }: { verboseMode: boolean;
             }`}
           />
         </button>
+      </div>
+
+      {/* Instrucciones y documentos */}
+      <div className="pt-2">
+        <div className="text-xs font-medium text-app-text-secondary">
+          Instrucciones y documentos
+        </div>
+        <p className="text-[11px] text-app-text-secondary mt-1">
+          Archivos con instrucciones, reglas de comportamiento, reglas de negocio o información que el agente debe conocer al responder.
+        </p>
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => contextFileInputRef.current?.click()}
+            disabled={uploadingContext}
+            className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-app-border bg-white px-3 py-4 text-xs text-app-text-secondary hover:border-app-primary/50 hover:text-app-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Upload size={16} />
+            <span>{uploadingContext ? "Subiendo..." : "Subir archivos (PDF, Word, TXT)"}</span>
+          </button>
+          <input
+            ref={contextFileInputRef}
+            type="file"
+            accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,.yaml,.yml,.xml,.py"
+            className="hidden"
+            onChange={handleUploadContextFile}
+          />
+        </div>
+
+        {/* Lista de archivos subidos */}
+        {contextFiles.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {contextFiles.map((f) => (
+              <div
+                key={f.id}
+                className="flex items-center justify-between rounded-md bg-white px-2 py-1.5 text-xs"
+              >
+                <span className="truncate text-app-text flex-1 min-w-0">{f.filename}</span>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteContextFile(f.id)}
+                  className="ml-2 shrink-0 rounded p-0.5 text-app-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors"
+                  aria-label="Eliminar archivo de contexto"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -61,7 +61,7 @@ from backend.agent.permissions import (
     get_agent_parameters,
 )
 from backend.agent.utils.clean_memory import liberar_modelo
-from backend.instances import agent, session_manager, context_manager
+from backend.instances import agent, session_manager
 from backend.agent.loop_helpers import (
     build_initial_messages,
     build_system_prompt,
@@ -106,9 +106,20 @@ _ROUTER_TOOLS = [
                 "required": ["agent_name", "prompt"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "help",
+            "description": "Lee la documentación interna del agente sobre su funcionamiento.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
     }
 ]
-"""Tool schema list for the router agent (only ``task``)."""
+"""Tool schema list for the router agent (``task`` + ``help``)."""
 
 
 class AgentLoop:
@@ -126,7 +137,6 @@ class AgentLoop:
         self,
         agent: Any,
         session_manager: Any,
-        context_manager: Any,
         max_iterations: int = MAX_ITERATIONS,
     ) -> None:
         """Initialise the agent loop.
@@ -134,7 +144,6 @@ class AgentLoop:
         Args:
             agent: ``Agent`` instance.
             session_manager: ``SessionManager`` for SQLite.
-            context_manager: ``ContextManager`` for context control.
             max_iterations: Max tool-calling iterations.
         """
         self.max_iterations = max_iterations
@@ -749,7 +758,7 @@ class AgentLoop:
 
 if __name__ == "__main__":
     async def _main() -> None:
-        from backend.instances import agent, session_manager, context_manager
+        from backend.instances import agent, session_manager
 
         session_id = sys.argv[1] if len(sys.argv) > 1 else "test-session"
         message = sys.argv[2] if len(sys.argv) > 2 else "Hola, ¿qué podés hacer?"
@@ -757,7 +766,6 @@ if __name__ == "__main__":
         loop = AgentLoop(
             agent=agent,
             session_manager=session_manager,
-            context_manager=context_manager,
         )
         async for event in loop.run(session_id=session_id, user_message=message):
             print(event, flush=True)

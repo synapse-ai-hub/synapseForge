@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>synapseForge — Documentación</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; }
+    article h2 { font-size: 1.875rem; font-weight: 700; margin-top: 3rem; margin-bottom: 1.25rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; color: #111827; scroll-margin-top: 1rem; }
+    article h2:first-child { margin-top: 0; }
+    article h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.75rem; margin-bottom: 0.75rem; color: #111827; }
+    article h4 { font-size: 1rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #111827; }
+    article p { margin-bottom: 0.9rem; }
+    article ul, article ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+    article ul li, article ol li { margin-bottom: 0.4rem; }
+    article strong { color: #111827; font-weight: 600; }
+    article code { background: #f3f4f6; padding: 0.125rem 0.4rem; border-radius: 0.25rem; font-size: 0.875em; color: #1f2937; font-family: 'Fira Code', 'Courier New', monospace; }
+    article pre { background: #1f2937; color: #e5e7eb; padding: 1rem 1.25rem; border-radius: 0.5rem; overflow-x: auto; margin: 1rem 0; font-size: 0.85rem; line-height: 1.5; }
+    article pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+    article table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; }
+    article th, article td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; text-align: left; }
+    article th { background: #f9fafb; font-weight: 600; color: #111827; }
+    article a { color: #2563eb; text-decoration: none; }
+    article a:hover { text-decoration: underline; }
+    article hr { border: none; border-top: 1px solid #e5e7eb; margin: 2rem 0; }
+    article blockquote { border-left: 3px solid #d1d5db; padding-left: 1rem; color: #6b7280; font-style: italic; margin: 1rem 0; }
+    .sidebar-link { transition: all 0.15s ease; display: block; padding: 0.4rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; color: #111827; cursor: pointer; font-weight: 600; }
+    .sidebar-link.active { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+    .sidebar-link:hover:not(.active) { background: #f3f4f6; color: #111827; }
+    .sidebar-sub { padding-left: 1.5rem; font-size: 0.8rem; font-weight: 400; }
+    .github-icon { width: 1.25rem; height: 1.25rem; fill: currentColor; }
+    @media (max-width: 1023px) {
+      .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; width: 18rem; }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+      .sidebar-overlay.open { display: block; }
+      .mobile-header { display: flex !important; }
+      main { padding-top: 5rem !important; }
+    }
+    @media (min-width: 1024px) {
+      .mobile-header { display: none !important; }
+      .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 30; width: 18rem; overflow-y: auto; }
+      main { margin-left: 18rem !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Mobile Header -->
+  <header class="mobile-header" style="position: fixed; top: 0; left: 0; right: 0; z-index: 40; background: white; border-bottom: 1px solid #e5e7eb; align-items: center; justify-content: space-between; padding: 0.75rem 1rem;">
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <button onclick="toggleSidebar()" style="padding: 0.5rem; border-radius: 0.5rem; border: none; background: transparent; cursor: pointer;" aria-label="Menú">
+        <svg style="width: 1.5rem; height: 1.5rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" style="height: 2.5rem; width: auto;" onerror="this.style.display='none'">
+      <span style="font-size: 1.125rem; font-weight: 700; color: #111827;">synapseForge</span>
+    </div>
+    <a href="https://github.com/synapse-ai-hub/synapseForge" target="_blank" rel="noopener noreferrer" style="display: flex; align-items: center; gap: 0.375rem; font-size: 0.875rem; color: #374151; text-decoration: none;" title="GitHub">
+      <svg class="github-icon" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.305-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+      <span style="font-weight: 500;">GitHub</span>
+    </a>
+  </header>
+
+  <div style="display: flex;">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar lg-sidebar" style="width: 18rem; flex-shrink: 0; border-right: 1px solid #e5e7eb; background: white; overflow-y: auto;">
+      <div style="padding: 1.25rem; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem;">
+        <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
+        <span style="font-size: 1.25rem; font-weight: 700; color: #111827;">synapseForge</span>
+      </div>
+      <nav style="padding: 1rem;">
+        <h3 style="font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; padding-left: 0.5rem;">Contenido</h3>
+        <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25rem;" id="toc"></ul>
+      </nav>
+    </aside>
+
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <!-- Main Content -->
+    <main style="flex: 1; min-width: 0; padding: 2.5rem 2.5rem;">
+      <article style="max-width: 56rem; margin: 0 auto;">
+
+        <section id="overview">
+          <h2>Overview</h2>
+          <p><strong>synapseForge</strong> es un paquete de Python (distribuido en PyPI) que te permite crear proyectos completos de agentes de IA desde cero. Con un solo comando, generás un proyecto full-stack con backend, frontend, branding, dependencias y todo lo necesario para empezar a trabajar.</p>
+          <p>El foco está puesto en que puedas dedicarte a definir el comportamiento del agente — sus skills, tools, sub-agentes y reglas de negocio — sin tener que armar la infraestructura técnica cada vez.</p>
+          <h3>¿Qué obtenés al usar synapseForge?</h3>
+          <ul>
+            <li>Una <strong>CLI</strong> con comandos claros para crear, personalizar, ejecutar y empaquetar proyectos.</li>
+            <li>Un <strong>backend</strong> robusto listo para producción con FastAPI, streaming en tiempo real, persistencia y motor de agentes.</li>
+            <li>Un <strong>frontend</strong> moderno con chat, historial, adjuntos y panel de configuración.</li>
+            <li>Un <strong>sistema de agentes extensible</strong> basado en archivos Markdown: skills, tools externas y sub-agentes se cargan dinámicamente.</li>
+            <li>Un <strong>build distribuible</strong>: con un comando compilás todo a un .exe + frontend estático, empaquetado en un zip.</li>
+          </ul>
+        </section>
+
+        <section id="quickstart">
+          <h2>Quickstart</h2>
+          <p>Crear un proyecto nuevo toma menos de un minuto. Asumiendo que ya tenés synapseForge instalado:</p>
+          <pre><code># Inicializar un proyecto en el directorio actual
+synapseForge init .
+
+# O especificar una ruta (la crea si no existe)
+synapseForge init mi-proyecto
+
+# Levantar el proyecto en modo desarrollo
+synapseForge run .
+
+# Abrir el navegador en http://localhost:5173</code></pre>
+          <p>El comando <code>init</code> abre una interfaz gráfica donde cargás tu logo, definís el nombre de la empresa, los colores y demás datos. Una vez completado, tenés un proyecto listo para correr con <code>run</code>.</p>
+          <h3>Comandos principales</h3>
+          <table>
+            <thead>
+              <tr><th>Comando</th><th>Qué hace</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>synapseForge init [directorio]</code></td><td>Crea un proyecto nuevo desde la plantilla (con GUI)</td></tr>
+              <tr><td><code>synapseForge colors [directorio]</code></td><td>Edita solo la paleta de colores de un proyecto existente</td></tr>
+              <tr><td><code>synapseForge run [directorio]</code></td><td>Levanta el proyecto en modo desarrollo</td></tr>
+              <tr><td><code>synapseForge launch &lt;directorio&gt; &lt;nombre&gt;</code></td><td>Compila todo a un .exe + zip distribuible</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="instalacion">
+          <h2>Instalación</h2>
+          <h3>Requisitos</h3>
+          <table>
+            <thead>
+              <tr><th>Herramienta</th><th>Versión</th><th>Para qué se usa</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Python</td><td>3.12 o superior</td><td>Todos los comandos de la CLI</td></tr>
+              <tr><td>Node.js</td><td>20 o superior</td><td>Build del frontend y modo desarrollo</td></tr>
+            </tbody>
+          </table>
+          <h3>Instalación desde PyPI</h3>
+          <p>La forma más rápida:</p>
+          <pre><code>pip install synapseForge</code></pre>
+          <p>El paquete trae solo dos dependencias propias; el resto se resuelve a nivel de proyecto.</p>
+          <h3>Instalación desde el código fuente</h3>
+          <p>Si querés contribuir o usar la última versión de desarrollo:</p>
+          <pre><code>git clone https://github.com/synapse-ai-hub/synapseForge.git
+cd synapseForge
+python -m venv .venv
+source .venv/bin/activate     # En Windows: .venv\Scripts\activate
+pip install -e .</code></pre>
+          <h3>Verificar que todo está bien</h3>
+          <pre><code>synapseForge --help</code></pre>
+          <p>Si ves la lista de comandos, la instalación fue exitosa.</p>
+        </section>
+
+        <section id="crear-proyecto">
+          <h2>Crear proyecto</h2>
+          <p>El comando <code>init</code> arma un proyecto completo. Por defecto usa el directorio actual; si le pasás una ruta, la crea si no existe.</p>
+          <pre><code>synapseForge init                       # usa el directorio actual
+synapseForge init ./mi-proyecto         # ruta explícita
+synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code></pre>
+          <h3>El proceso paso a paso</h3>
+          <p>Cuando ejecutás <code>init</code>, se abre una ventana con los siguientes pasos:</p>
+          <ol>
+            <li><strong>Datos del proyecto</strong> — Cargás el logo de la empresa, el logo del cliente (opcional), nombre de empresa, owner, legal, nombre del repositorio, nombre del cliente y colores hexadecimales (opcional).</li>
+            <li><strong>Extracción de la plantilla</strong> — Se toma la plantilla base (incluida en el paquete o descargada desde GitHub) y se copia al directorio destino.</li>
+            <li><strong>Entorno virtual</strong> — Se crea un <code>venv</code> aislado dentro del proyecto.</li>
+            <li><strong>Dependencias de Python</strong> — Se instalan las dependencias del backend dentro del venv.</li>
+            <li><strong>Dependencias de Node</strong> — Se corre <code>npm install</code> en el frontend.</li>
+            <li><strong>Configuración</strong> — Se guardan todos los datos ingresados en un archivo de configuración.</li>
+            <li><strong>Logos</strong> — Se copia el logo de empresa a la carpeta <code>src/</code> y el logo de cliente al frontend.</li>
+            <li><strong>Favicon</strong> — Se genera automáticamente un <code>.ico</code> a partir del logo del cliente.</li>
+            <li><strong>Colores</strong> — Si no ingresaste colores manualmente, se extraen del logo del cliente los tres colores dominantes.</li>
+            <li><strong>Reemplazo de placeholders</strong> — Se reemplazan todos los placeholders (nombre de empresa, colores, etc.) en cada archivo del proyecto.</li>
+          </ol>
+          <h3>¿Qué pasa con el directorio destino?</h3>
+          <ul>
+            <li>Si <strong>no existe</strong> → se crea y se extrae la plantilla limpia.</li>
+            <li>Si <strong>existe y está vacío</strong> → se extrae la plantilla sin conflictos.</li>
+            <li>Si <strong>existe con archivos</strong> → se extrae encima; los archivos del template sobrescriben los existentes, y los que no están en el template quedan tal cual.</li>
+          </ul>
+          <h3>Estructura del proyecto generado</h3>
+          <pre><code>mi-proyecto/
+├── backend/             # Backend FastAPI
+├── frontend/            # Frontend React + Vite + TypeScript
+├── config/              # Configuración del proyecto
+├── docs/                # Documentación incluida
+├── .env.example
+├── .gitignore
+├── LICENSE
+└── README.md</code></pre>
+        </section>
+
+        <section id="configuracion-externa">
+          <h2>Configuración externa del usuario</h2>
+          <p>Además de los archivos del proyecto, synapseForge lee archivos del usuario desde una carpeta de configuración personal. Acá viven tus tools personalizadas, tus agentes definidos a medida, tus skills y la configuración de servidores MCP.</p>
+          <h3>¿Dónde está esa carpeta?</h3>
+          <ul>
+            <li><strong>En Linux o macOS:</strong> <code>~/.config/synapseForge/</code></li>
+            <li><strong>En Windows:</strong> <code>%USERPROFILE%\.config\synapseForge\</code></li>
+          </ul>
+          <p>El sistema crea esta carpeta automáticamente al iniciar si no existe. No tenés que preocuparte por prepararla.</p>
+          <h3>¿Qué hay adentro?</h3>
+          <table>
+            <thead>
+              <tr><th>Carpeta</th><th>Contenido</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>skills/</code></td><td>Subcarpetas, cada una con un <code>SKILL.md</code> que define una skill</td></tr>
+              <tr><td><code>tools/</code></td><td>Archivos <code>.py</code> individuales, cada uno una tool externa</td></tr>
+              <tr><td><code>agents/</code></td><td>Archivos <code>.md</code> con la definición de agentes y sus permisos</td></tr>
+              <tr><td><code>config.json</code></td><td>Configuración JSON de los servidores MCP disponibles</td></tr>
+            </tbody>
+          </table>
+          <p>Todo esto se lee en tiempo de ejecución, así que podés agregar, modificar o quitar archivos sin reinstalar nada. Solo necesitás reiniciar el backend para que los cambios tomen efecto.</p>
+        </section>
+
+        <section id="skills">
+          <h2>Skills</h2>
+          <p>Una <strong>skill</strong> es un paquete de conocimiento o procedimiento que el agente puede usar cuando la tarea lo requiera. A diferencia de las tools (que ejecutan código), las skills proveen instrucciones, plantillas y convenciones que guían al modelo sobre cómo responder.</p>
+          <h3>¿Cómo está organizada una skill?</h3>
+          <p>Cada skill vive en su propia subcarpeta dentro de <code>~/.config/synapseForge/skills/</code>. El nombre de la carpeta es el nombre exacto de la skill:</p>
+          <pre><code>skills/
+├── analisis/
+│   ├── SKILL.md
+│   └── references/       # (opcional) archivos de referencia
+│       ├── productos.md
+│       └── api.md
+└── websearch/
+    └── SKILL.md</code></pre>
+          <p>El archivo <code>SKILL.md</code> es el corazón de la skill: contiene una sección de metadatos al inicio (frontmatter YAML) y el cuerpo con las instrucciones que el modelo va a leer. Dentro del cuerpo, podés incluir una sección <code>## Reference Guide</code> para documentación de referencia.</p>
+          <h3>Control de acceso</h3>
+          <p><strong>Deny by default</strong>: si un agente no declara explícitamente qué skills puede usar, <strong>no tiene ninguna skill disponible</strong>. Cada agente debe especificar en su archivo qué skills puede usar mediante el bloque <code>permission.skill:</code> en el frontmatter. Esto te permite mantener un repositorio grande de skills y darle a cada agente solo las que necesita.</p>
+          <blockquote>
+            <strong>Nota sobre contexto:</strong> tanto las skills como las tools disponibles consumen contexto de ventana. Se recomienda que cada agente declare solo las skills que realmente necesita para sus tareas específicas.
+          </blockquote>
+          <hr/>
+          <h3>Cómo crear una skill</h3>
+          <ol>
+            <li>Creá una subcarpeta dentro de <code>~/.config/synapseForge/skills/</code> con un nombre corto y descriptivo (en minúsculas, sin espacios). El nombre de la carpeta es el identificador de la skill.</li>
+            <li>Dentro, creá el archivo <code>SKILL.md</code>.</li>
+            <li>Al inicio del archivo, agregá los metadatos en frontmatter YAML: <code>name</code> y <code>description</code> (mínimo). La descripción es lo primero que ve el modelo: tiene que decir <strong>cuándo</strong> se usa la skill.</li>
+            <li>Debajo, escribí el cuerpo con las instrucciones, convenciones, formato de respuesta esperado y, si querés, una sección <code>## Reference Guide</code> con documentación de referencia.</li>
+            <li>(Opcional) Agregá una subcarpeta <code>references/</code> con archivos que la skill pueda cargar bajo demanda usando la tool <code>reference</code>.</li>
+            <li>En el agente que va a usar la skill, declará el permiso en el frontmatter: <code>permission.skill.{nombre_skill}: allow</code>.</li>
+            <li>Reiniciá el backend para que la nueva skill se cargue.</li>
+          </ol>
+          <h3>Buenas prácticas</h3>
+          <ul>
+            <li>El nombre de la carpeta es el identificador: usá nombres únicos y descriptivos.</li>
+            <li>La descripción es lo primero que ve el modelo: tiene que ser clara y específica sobre cuándo conviene usar la skill.</li>
+            <li>Mantené el cuerpo conciso. Si necesitás mucho detalle, mové las partes extensas a la sección <code>## Reference Guide</code> o a archivos en <code>references/</code>.</li>
+            <li>Recordá: las skills no ejecutan código. Si necesitás que el agente haga algo concreto (consultar una API, transformar datos), eso va en una tool.</li>
+          </ul>
+        </section>
+
+        <section id="tools">
+          <h2>Tools (herramientas externas)</h2>
+          <p>Las <strong>tools externas</strong> son funciones Python que el agente puede invocar para hacer cosas concretas: consultar una base de datos, hacer una búsqueda web, enviar un mail, leer un archivo, etc. Cada tool es un archivo Python autocontenido que el sistema descubre, carga y registra automáticamente.</p>
+          <h3>¿Cómo está organizada una tool?</h3>
+          <p>Cada tool es un archivo <code>.py</code> suelto dentro de <code>~/.config/synapseForge/tools/</code>:</p>
+          <pre><code>tools/
+├── consultar_clientes.py     # una tool por archivo
+├── enviar_mail.py
+├── lib/                       # (opcional) código compartido
+│   ├── .env                   # variables de entorno para uso standalone
+│   └── data/                  # datos estáticos compartidos
+└── ...</code></pre>
+          <h3>Tools nativas (built-in)</h3>
+          <p>Además de las tools externas, el sistema incluye <strong>tools nativas</strong> escritas en Python que están incorporadas en el core. Estas tools también deben ser habilitadas explícitamente por cada agente. Las tools nativas incluyen:</p>
+          <table>
+            <thead>
+              <tr><th>Tool</th><th>Qué hace</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>read</code></td><td>Lee un archivo o directorio del sistema de archivos local.</td></tr>
+              <tr><td><code>write</code></td><td>Escribe contenido a un archivo en el sistema de archivos local.</td></tr>
+              <tr><td><code>edit</code></td><td>Realiza reemplazos exactos de texto en un archivo.</td></tr>
+              <tr><td><code>glob</code></td><td>Búsqueda de archivos por patrón (ej: <code>**/*.py</code>).</td></tr>
+              <tr><td><code>grep</code></td><td>Búsqueda de contenido en archivos usando expresiones regulares.</td></tr>
+              <tr><td><code>webfetch</code></td><td>Descarga el contenido de una URL y lo convierte a markdown, texto o HTML.</td></tr>
+              <tr><td><code>websearch</code></td><td>Busca en la web usando DuckDuckGo.</td></tr>
+              <tr><td><code>shell</code></td><td>Ejecuta un comando en la terminal del sistema.</td></tr>
+              <tr><td><code>task</code></td><td>Delega una tarea a un sub-agente especializado.</td></tr>
+              <tr><td><code>skill</code></td><td>Carga el contenido de una skill por nombre.</td></tr>
+              <tr><td><code>reference</code></td><td>Carga un archivo de referencia específico de una skill.</td></tr>
+              <tr><td><code>check_email</code></td><td>Verifica correos no leídos en un buzón IMAP.</td></tr>
+            </tbody>
+          </table>
+          <h3>Características clave</h3>
+          <ul>
+            <li><strong>Auto-descubrimiento</strong>: el sistema escanea la carpeta y carga cada <code>.py</code> como una tool separada.</li>
+            <li><strong>Schema automático</strong>: el sistema genera la descripción y los parámetros de la tool a partir del código, sin que tengas que escribir nada extra.</li>
+            <li><strong>Aislamiento</strong>: cada tool es independiente. Si una falla al cargar, las demás siguen funcionando.</li>
+            <li><strong>Modo dual</strong>: podés probar la tool desde la línea de comandos sin tener que correr el agente entero.</li>
+            <li><strong>Tolerancia a fallos</strong>: las tools devuelven los errores como texto en vez de crashear.</li>
+          </ul>
+          <h3>Reglas importantes</h3>
+          <ul>
+            <li>La función principal debe ser <strong>async</strong>.</li>
+            <li>Todos los parámetros tienen que tener <strong>type hints</strong> (anotaciones de tipo).</li>
+            <li>La función tiene que devolver <strong>texto</strong> (lo que el modelo va a leer).</li>
+            <li>El nombre de la función principal tiene que coincidir con el nombre del archivo (sin la extensión).</li>
+            <li>Toda la lógica va dentro de un <strong>try/except</strong> que devuelve el error como string.</li>
+            <li>Las operaciones bloqueantes se ejecutan en un thread aparte para no trabar al agente.</li>
+            <li>Si la tool necesita credenciales, se leen de un <code>.env</code> propio dentro de la carpeta <code>lib/</code>.</li>
+          </ul>
+          <h3>Control de acceso</h3>
+          <p><strong>Deny by default</strong>: si un agente no declara explícitamente qué tools puede usar, <strong>no tiene ninguna tool disponible</strong> (ni las externas ni las nativas). Cada agente debe especificar en su archivo qué tools puede usar mediante el bloque <code>permission:</code> en el frontmatter. Esto te permite tener un repositorio grande de tools y darle a cada agente solo las que necesita.</p>
+          <blockquote>
+            <strong>Nota sobre contexto:</strong> tanto las tools como las skills disponibles consumen contexto de ventana. Se recomienda que cada agente declare solo las tools que realmente necesita para sus tareas específicas.
+          </blockquote>
+          <hr/>
+          <h3>Cómo crear una tool</h3>
+          <ol>
+            <li>Creá un archivo <code>nombre_tool.py</code> directamente en <code>~/.config/synapseForge/tools/</code>. No dentro de subcarpetas.</li>
+            <li>Al inicio del archivo, escribí una <strong>descripción corta de una línea</strong> (máximo 80 caracteres). Esa descripción es la primera cosa que ve el modelo cuando evalúa si la tool le sirve.</li>
+            <li>Definí la función principal como <code>async def nombre_tool(...)</code> con type hints y un docstring que explique qué hace cada parámetro.</li>
+            <li>Implementá la lógica dentro de un <strong>try/except</strong> que devuelva el error como string.</li>
+            <li>Si la tool hace operaciones bloqueantes (consultas a base de datos, llamadas HTTP), envolvélas para que se ejecuten en un thread aparte y no bloqueen al agente.</li>
+            <li>Agregá un bloque <code>if __name__ == "__main__"</code> al final para poder probar la tool desde la línea de comandos.</li>
+            <li>Si la tool necesita credenciales o configuración, creá un archivo <code>tools/lib/.env</code> con las variables necesarias.</li>
+            <li>Probalo de forma independiente: <code>python tools/nombre_tool.py argumento</code>.</li>
+            <li>Reiniciá el backend para que la nueva tool se cargue en el agente.</li>
+          </ol>
+          <h3>Buenas prácticas</h3>
+          <ul>
+            <li>Una tool = un archivo. Si querés compartir código entre tools, poné ese código en <code>tools/lib/</code>.</li>
+            <li>Elegí nombres descriptivos: el nombre del archivo (sin <code>.py</code>) es el que el modelo va a usar para invocarla.</li>
+            <li>Devolvé texto conciso. Si la tool genera mucho contenido, resumilo o apuntá a un archivo.</li>
+            <li>Validá los tipos de los parámetros por las dudas: a veces el modelo manda los valores en un formato distinto al esperado.</li>
+          </ul>
+        </section>
+
+        <section id="subagentes">
+          <h2>Sub-agentes</h2>
+          <p>El sistema permite que un agente delegue tareas a <strong>sub-agentes especializados</strong>. Cada sub-agente es una configuración completa con su propio prompt, sus propias tools permitidas, sus propias skills permitidas y sus propios parámetros del modelo.</p>
+          <p>Esto te permite construir sistemas complejos donde cada agente se enfoca en lo que sabe hacer, en lugar de tener un solo agente gigante que intenta hacer todo.</p>
+          <h3>¿Cómo se define un agente?</h3>
+          <p>Cada agente es un archivo <code>.md</code> dentro de <code>~/.config/synapseForge/agents/</code>. El archivo tiene dos partes: metadatos al inicio (en formato YAML) y el cuerpo con la instrucción del agente (en Markdown).</p>
+          <h3>Metadatos del agente</h3>
+          <p>Los metadatos se escriben al principio del archivo, entre líneas de guiones. Incluyen:</p>
+          <ul>
+            <li><strong>Nombre</strong> — Identificador del agente. Tiene que coincidir con el nombre del archivo (sin la extensión <code>.md</code>).</li>
+            <li><strong>Descripción</strong> — Una línea que describe qué hace el agente. Se usa en listados y búsquedas.</li>
+            <li><strong>Parámetros del modelo</strong> — Temperatura, top-p, modelo, semilla, etc.</li>
+            <li><strong>Permisos</strong> — Qué tools y skills puede usar este agente, y cuáles no.</li>
+          </ul>
+          <h3>Parámetros del modelo</h3>
+          <p>Podés ajustar cómo se comporta el modelo cuando ejecuta este agente:</p>
+          <table>
+            <thead>
+              <tr><th>Parámetro</th><th>Qué controla</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Temperatura</td><td>Qué tan creativas o deterministas son las respuestas (0 = muy determinista, 1 = muy creativo).</td></tr>
+              <tr><td>Top-p</td><td>Cuánta variedad de palabras se consideran al generar.</td></tr>
+              <tr><td>Modelo</td><td>Qué modelo usar. Si no se especifica, hereda el del agente padre.</td></tr>
+              <tr><td>Máximo de tokens</td><td>Límite de la longitud de la respuesta.</td></tr>
+              <tr><td>Semilla</td><td>Para generación reproducible (útil en testing).</td></tr>
+            </tbody>
+          </table>
+          <h3>Permisos</h3>
+          <p>El sistema de permisos te permite controlar qué tools y skills están disponibles para cada agente. <strong>Deny by default</strong>: si un agente no declara permisos, no tiene acceso a ninguna tool ni skill. Cada agente debe declarar explícitamente qué tools y skills puede usar.</p>
+          <blockquote>
+            <strong>Nota sobre contexto:</strong> tanto las tools como las skills disponibles consumen contexto de ventana. Se recomienda que cada agente declare solo las que realmente necesita para sus tareas específicas.
+          </blockquote>
+          <h3>El cuerpo del agente (system prompt)</h3>
+          <p>Todo el texto debajo de los metadatos es la instrucción del agente. Acá definís:</p>
+          <ul>
+            <li>El rol y la personalidad del agente.</li>
+            <li>Las reglas de negocio que tiene que seguir.</li>
+            <li>El formato esperado de las respuestas.</li>
+            <li>Las instrucciones sobre cómo usar las tools disponibles.</li>
+            <li>Cualquier contexto específico del dominio.</li>
+          </ul>
+          <p>No hay límite de extensión: escribí todo lo que haga falta para que el agente entienda qué tiene que hacer.</p>
+          <hr/>
+          <h3>Cómo crear un agente</h3>
+          <ol>
+            <li>Creá un archivo <code>nombre-agente.md</code> directamente en <code>~/.config/synapseForge/agents/</code>. El nombre del archivo (sin <code>.md</code>) es el identificador.</li>
+            <li>Al inicio del archivo, escribí los metadatos en frontmatter YAML: nombre (debe coincidir con el archivo), descripción, parámetros del modelo y permisos de tools/skills.</li>
+            <li>Debajo, escribí el cuerpo con la instrucción del agente: personalidad, reglas, formato de respuesta, etc.</li>
+            <li>El agente queda disponible para ser invocado por otros agentes (incluido el principal) usando el comando de delegación de tareas.</li>
+            <li>Reiniciá el backend para que el nuevo agente se cargue en el sistema.</li>
+          </ol>
+          <h3>AGENT.md — system prompt del router</h3>
+          <p>El archivo <code>AGENT.md</code> (si existe en <code>~/.config/synapseForge/agents/</code>) se usa como <strong>system prompt del agente principal (router)</strong>. Si no existe, se usa el system prompt por defecto incluido en el paquete. El router es el agente que recibe los mensajes del usuario y decide a qué sub-agente delegar.</p>
+          <p>El <code>AGENT.md</code> no es documentación — es el prompt que define el comportamiento del agente principal. Podés usarlo para personalizar el rol, las reglas y el estilo de respuesta del router.</p>
+        </section>
+
+        <section id="interfaz-usuario">
+          <h2>Interfaz de usuario</h2>
+          <p>La aplicación incluye una interfaz web moderna con chat, historial de conversaciones y un panel de configuración. La interfaz se abre automáticamente cuando ejecutás <code>synapseForge run</code>.</p>
+          <h3>Panel de configuración</h3>
+          <p>En el panel lateral derecho, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
+          <h4>Proveedor y modelo</h4>
+          <p>Podés seleccionar el proveedor de modelos (Ollama local o Groq API) y el modelo específico a utilizar. La selección se persiste entre sesiones.</p>
+          <h4>Contexto (turnos)</h4>
+          <p>Controla cuántos turnos de conversación se mantienen en el contexto del modelo. <code>-1</code> significa todo el historial. Reducir este número ayuda a controlar el uso de tokens y el costo.</p>
+          <h4>Modo verbose</h4>
+          <p>Activando el modo verbose, la interfaz muestra tarjetas visuales para las llamadas a tools y las delegaciones a sub-agentes, lo que facilita entender qué está haciendo el agente en cada momento.</p>
+          <h4>Contexto del agente</h4>
+          <p>Podés subir archivos (PDF, Word, TXT, Markdown, CSV, JSON, YAML, XML, Python) que se usarán como contexto adicional para el agente. Estos archivos se procesan y se inyectan en el system prompt del agente, proporcionando información de empresa, instrucciones o datos de referencia. Los archivos subidos aparecen en una lista con opción de eliminarlos individualmente.</p>
+          <h3>Chat</h3>
+          <p>La interfaz de chat muestra los mensajes de usuario y asistente en burbujas. Los mensajes del asistente pueden incluir:</p>
+          <ul>
+            <li><strong>Texto</strong> — Respuesta del modelo, con streaming en tiempo real.</li>
+            <li><strong>Tarjetas de tool</strong> — Cuando el modelo invoca una tool, se muestra el nombre y los argumentos.</li>
+            <li><strong>Tarjetas de sub-agente</strong> — Cuando se delega a un sub-agente, se muestra el nombre y el resultado.</li>
+            <li><strong>Adjuntos</strong> — Los archivos que el usuario sube aparecen como chips debajo del mensaje.</li>
+          </ul>
+          <h3>Historial</h3>
+          <p>En el panel lateral izquierdo, bajo la pestaña <strong>Conversaciones</strong>, se listan todas las sesiones de chat. Podés crear nuevas conversaciones, seleccionar sesiones anteriores y eliminar conversaciones existentes.</p>
+        </section>
+
+        <section id="api">
+          <h2>API Reference</h2>
+          <p>El backend expone una API HTTP con streaming para el chat, y endpoints REST para gestionar sesiones, configuración y otras operaciones.</p>
+          <h3>Endpoints principales</h3>
+          <table>
+            <thead>
+              <tr><th>Método</th><th>Ruta</th><th>Descripción</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>POST</td><td><code>/api/chat/stream</code></td><td>Enviar un mensaje al agente. La respuesta se recibe por streaming (SSE).</td></tr>
+              <tr><td>GET</td><td><code>/api/sessions</code></td><td>Listar todas las sesiones de chat.</td></tr>
+              <tr><td>GET</td><td><code>/api/sessions/{id}</code></td><td>Cargar una sesión completa con todos sus mensajes.</td></tr>
+              <tr><td>DELETE</td><td><code>/api/sessions/{id}</code></td><td>Eliminar una sesión y todos sus datos asociados.</td></tr>
+              <tr><td>POST</td><td><code>/api/heartbeat</code></td><td>Keep-alive del frontend (latido cada 10 segundos).</td></tr>
+              <tr><td>GET</td><td><code>/api/config/providers</code></td><td>Listar proveedores de modelos disponibles.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/models</code></td><td>Listar modelos del proveedor seleccionado.</td></tr>
+              <tr><td>POST</td><td><code>/api/config/models/select</code></td><td>Seleccionar modelo y proveedor.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/context-window</code></td><td>Obtener el límite de turnos en contexto.</td></tr>
+              <tr><td>POST</td><td><code>/api/config/context-window</code></td><td>Configurar el límite de turnos en contexto.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/verbose-mode</code></td><td>Obtener el estado del modo verbose.</td></tr>
+              <tr><td>POST</td><td><code>/api/config/verbose-mode</code></td><td>Activar o desactivar el modo verbose.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/mcp/servers</code></td><td>Listar servidores MCP configurados.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/mcp/health</code></td><td>Verificar salud de servidores MCP.</td></tr>
+              <tr><td>POST</td><td><code>/api/shutdown</code></td><td>Cerrar el backend de forma ordenada.</td></tr>
+            </tbody>
+          </table>
+          <h3>El endpoint de chat (streaming)</h3>
+          <p>El endpoint de chat devuelve los eventos en formato <strong>Server-Sent Events</strong>. Cada evento es un objeto JSON con un tipo y su contenido asociado. Los tipos principales son:</p>
+          <ul>
+            <li><strong>chunk</strong> — Fragmentos de la respuesta del modelo que se van acumulando en pantalla.</li>
+            <li><strong>tool_call</strong> — El modelo decidió usar una tool. Incluye el nombre y los argumentos.</li>
+            <li><strong>tool_result</strong> — La respuesta que devolvió la tool.</li>
+            <li><strong>subagent_event</strong> — El agente principal delegó a un sub-agente. Incluye el nombre del sub-agente y su contenido.</li>
+            <li><strong>done</strong> — Marca el final del stream e incluye el ID de la sesión.</li>
+          </ul>
+          <h3>Modelo de sesión</h3>
+          <ul>
+            <li>Cada sesión tiene un <strong>ID único</strong> que se crea al enviar el primer mensaje.</li>
+            <li>Los mensajes se numeran por <strong>turnos</strong> dentro de cada sesión.</li>
+            <li>Los <strong>adjuntos</strong> (archivos) se almacenan vinculados a la sesión y al turno correspondiente.</li>
+            <li><strong>Límite de adjuntos</strong>: hasta 3 archivos por mensaje, con un máximo total configurable. Esto se hace para cuidar el contexto del modelo.</li>
+          </ul>
+        </section>
+
+        <section id="deploy-local">
+          <h2>Deploy en local</h2>
+          <p>El flujo de desarrollo local está pensado para ser lo más simple posible: un solo comando levanta todo.</p>
+          <h3>Requisitos</h3>
+          <ul>
+            <li>Python 3.12 o superior.</li>
+            <li>Node.js 20 o superior.</li>
+            <li>Haber corrido <code>synapseForge init</code> al menos una vez en el directorio (para tener el venv y las dependencias instaladas).</li>
+          </ul>
+          <h3>Levantar el proyecto</h3>
+          <pre><code>cd mi-proyecto
+synapseForge run .</code></pre>
+          <p>Este comando:</p>
+          <ol>
+            <li>Activa el entorno virtual del proyecto.</li>
+            <li>Levanta el backend con autoreload (los cambios se reflejan automáticamente).</li>
+            <li>Levanta el frontend con Vite, que incluye hot-reload de los cambios.</li>
+            <li>Configura CORS entre ambos.</li>
+            <li>Abre el navegador automáticamente en la URL del frontend.</li>
+          </ol>
+          <h3>Configurar las claves de tu proveedor</h3>
+          <p>Antes de empezar a chatear, copiá el archivo de ejemplo de variables de entorno y completá las claves de tu proveedor de modelos:</p>
+          <pre><code>cp .env.example .env
+# Editar .env con PROVIDER, MODEL y API_KEY</code></pre>
+          <p>Las variables mínimas que necesitás configurar son:</p>
+          <ul>
+            <li><strong>Proveedor</strong> — El servicio que usás para los modelos (OpenAI, Anthropic, Ollama, Groq, etc.).</li>
+            <li><strong>Modelo</strong> — Qué modelo específico querés usar (por ejemplo, <code>gpt-4o-mini</code>).</li>
+            <li><strong>API Key</strong> — Tu clave del proveedor.</li>
+            <li><strong>URL del backend</strong> — Dónde está corriendo el backend (por defecto <code>http://localhost:8000</code>).</li>
+          </ul>
+          <h3>Probar en otra máquina de la red</h3>
+          <p>Si querés acceder desde otra computadora o dispositivo:</p>
+          <ol>
+            <li>Cambiá la URL del backend en el frontend para que apunte a la IP de la máquina que corre el servidor.</li>
+            <li>Asegurate de que el backend esté escuchando en todas las interfaces de red (no solo en localhost).</li>
+            <li>Abrí los puertos necesarios en el firewall.</li>
+            <li>Ajustá la configuración de CORS en el backend para permitir el origen desde donde vas a acceder.</li>
+          </ol>
+        </section>
+
+        <section id="deploy-cloud">
+          <h2>Deploy en cloud</h2>
+          <p>Para distribuir el agente como producto terminado, synapseForge incluye un comando que compila todo a un ejecutable standalone más el frontend, todo empaquetado en un zip listo para distribuir.</p>
+          <h3>Build con el comando launch</h3>
+          <pre><code>synapseForge launch ./mi-proyecto "MiApp"</code></pre>
+          <p>Este comando hace tres cosas:</p>
+          <ol>
+            <li><strong>Compila el backend</strong> en un ejecutable standalone que incluye todas las dependencias de Python.</li>
+            <li><strong>Compila el frontend</strong> en archivos estáticos optimizados para producción.</li>
+            <li><strong>Empaqueta todo</strong> en un zip distribuible: el ejecutable, el frontend compilado, el entorno virtual, el launcher, la configuración, la licencia, el README y la documentación.</li>
+          </ol>
+          <h3>Variables de entorno para producción</h3>
+          <p>Antes de generar el build, asegurate de que la configuración de producción esté lista:</p>
+          <ul>
+            <li>La URL del backend debe apuntar al dominio público donde se va a servir la app.</li>
+            <li>La configuración de CORS en el backend debe permitir ese dominio.</li>
+            <li>Las claves del proveedor de modelos deben estar en variables de entorno del sistema, nunca hardcodeadas en el código.</li>
+          </ul>
+          <h3>Despliegue en un servidor propio (VPS)</h3>
+          <ol>
+            <li>Subí el zip generado al servidor.</li>
+            <li>Descomprimilo en la ubicación que prefieras.</li>
+            <li>Configurá un reverse proxy (Nginx es lo más común) para redirigir el tráfico al puerto del backend.</li>
+            <li>El reverse proxy debe tener un timeout largo (varios minutos) para que el streaming funcione bien.</li>
+            <li>Configurá el ejecutable para que arranque automáticamente con el sistema (con <code>systemd</code> en Linux).</li>
+            <li>Activá HTTPS con Let's Encrypt.</li>
+          </ol>
+          <p>Un ejemplo de configuración de Nginx para este escenario:</p>
+          <pre><code>server {
+    listen 80;
+    server_name miagente.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 300s;
+    }
+}</code></pre>
+          <h3>Despliegue con Docker</h3>
+          <p>Si preferís usar contenedores, synapseForge incluye una configuración lista para usar:</p>
+          <pre><code>docker compose up -d --build</code></pre>
+          <p>El contenedor compila el frontend y lo sirve desde el backend en una sola aplicación. Solo necesitás exponer el puerto 8000.</p>
+          <h3>Plataformas cloud recomendadas</h3>
+          <ul>
+            <li><strong>VPS clásico</strong> (Hetzner, DigitalOcean, Vultr) — Más control y mejor precio. Ideal para proyectos que necesitan un servidor siempre encendido.</li>
+            <li><strong>Servicios de contenedores</strong> (AWS ECS, Google Cloud Run, Azure Container Apps) — Para escalar según demanda. Pagás solo por lo que usás.</li>
+            <li><strong>Plataformas de deploy simplificado</strong> (Fly.io, Railway) — Deploy directo desde el repositorio de Git. Ideales para iterar rápido.</li>
+          </ul>
+        </section>
+
+      </article>
+    </main>
+  </div>
+
+  <script>
+    // Build the table of contents from sections AND subsections
+    (function() {
+      var observerPaused = false;
+      var pauseTimer = null;
+
+      function pauseObserver() {
+        observerPaused = true;
+        if (pauseTimer) clearTimeout(pauseTimer);
+        pauseTimer = setTimeout(function() {
+          observerPaused = false;
+          pauseTimer = null;
+        }, 600);
+      }
+
+      function setActiveLink(href) {
+        allLinks.forEach(function(l) { l.classList.remove('active'); });
+        var link = document.querySelector('.sidebar-link[href="' + href + '"]');
+        if (link) link.classList.add('active');
+      }
+
+      var sections = document.querySelectorAll('article > section');
+      var toc = document.getElementById('toc');
+
+      sections.forEach(function(section) {
+        var id = section.id;
+        var h2 = section.querySelector('h2');
+        if (!id || !h2) return;
+
+        // Add section (h2) to TOC
+        var li = document.createElement('li');
+        var a = document.createElement('a');
+        a.href = '#' + id;
+        a.className = 'sidebar-link';
+        a.textContent = h2.textContent;
+        a.onclick = function(e) {
+          e.preventDefault();
+          pauseObserver();
+          setActiveLink('#' + id);
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          history.replaceState(null, '', '#' + id);
+          if (window.innerWidth < 1024) toggleSidebar(false);
+        };
+        li.appendChild(a);
+        toc.appendChild(li);
+
+        // Add subsections (h3) to TOC
+        var h3s = section.querySelectorAll('h3');
+        h3s.forEach(function(h3) {
+          // Generate an ID for the h3 if it doesn't have one
+          var subId = h3.id || (id + '-' + h3.textContent.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
+          if (!h3.id) {
+            h3.id = subId;
+          }
+
+          var subLi = document.createElement('li');
+          var subA = document.createElement('a');
+          subA.href = '#' + subId;
+          subA.className = 'sidebar-link sidebar-sub';
+          subA.textContent = h3.textContent;
+          subA.onclick = function(e) {
+            e.preventDefault();
+            pauseObserver();
+            setActiveLink('#' + subId);
+            h3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            history.replaceState(null, '', '#' + subId);
+            if (window.innerWidth < 1024) toggleSidebar(false);
+          };
+          subLi.appendChild(subA);
+          toc.appendChild(subLi);
+        });
+      });
+
+      // Scroll spy — only update active class, do NOT move the sidebar itself
+      var allLinks = document.querySelectorAll('.sidebar-link');
+      var allHeadings = [];
+      allLinks.forEach(function(link) {
+        var targetId = link.getAttribute('href').substring(1);
+        var target = document.getElementById(targetId);
+        if (target) {
+          allHeadings.push({ link: link, target: target });
+        }
+      });
+
+      var observer = new IntersectionObserver(function(entries) {
+        if (observerPaused) return;
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) {
+            allLinks.forEach(function(l) { l.classList.remove('active'); });
+            var link = document.querySelector('.sidebar-link[href="#' + entry.target.id + '"]');
+            if (link) {
+              link.classList.add('active');
+            }
+          }
+        });
+      }, { rootMargin: '0px 0px -60% 0px', threshold: 0.1 });
+
+      allHeadings.forEach(function(item) {
+        observer.observe(item.target);
+      });
+
+      // Open section from URL hash
+      if (window.location.hash) {
+        var hashId = window.location.hash.substring(1);
+        var hashEl = document.getElementById(hashId);
+        if (hashEl) {
+          setTimeout(function() { hashEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+        }
+      }
+    })();
+
+    function toggleSidebar(force) {
+      var sidebar = document.getElementById('sidebar');
+      var overlay = document.getElementById('sidebarOverlay');
+      if (!sidebar || !overlay) return;
+      var isOpen = force !== undefined ? force : !sidebar.classList.contains('open');
+      if (isOpen) {
+        sidebar.classList.add('open');
+        overlay.classList.add('open');
+      } else {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('open');
+      }
+    }
+  </script>
+</body>
+</html>

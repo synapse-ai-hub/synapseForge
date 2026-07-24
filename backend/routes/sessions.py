@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 import sys
 
 from backend.agent.utils.error_logger import log_error
@@ -37,6 +38,37 @@ from backend.agent.contract import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["sessions"])
+
+# Path to the SQLite database
+_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "sessions.db")
+
+
+def _fetch_attachments(session_id: str) -> dict[int, list[dict]]:
+    """Fetch attachment file names and sizes grouped by turn_number for a session.
+
+    Returns:
+        Dict mapping turn_number -> list of {"name": str, "size": int} dicts.
+    """
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT turn_number, file_name, size FROM attachments WHERE session_id = ? ORDER BY turn_number, id",
+                (session_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        attachments: dict[int, list[dict]] = {}
+        for row in rows:
+            tn = row["turn_number"]
+            attachments.setdefault(tn, []).append({"name": row["file_name"], "size": row["size"]})
+        return attachments
+    except Exception as exc:
+        log_error(str(exc), source="sessions.py:_fetch_attachments")
+        logger.warning("Failed to fetch attachments for session %s: %s", session_id, exc)
+        return {}
 
 
 @router.get("/sessions/titles")
@@ -174,6 +206,8 @@ async def get_session(session_id: str):
         return make_error_response(message="Session manager no disponible")
     try:
         raw_messages = session_manager.load_messages(session_id)
+        # Fetch attachments for this session
+        attachments = _fetch_attachments(session_id)
         # Group by turn_number
         turns: dict[int, list[dict]] = {}
         for msg in raw_messages:
@@ -193,6 +227,7 @@ async def get_session(session_id: str):
                     "type": "user",
                     "content": um.get("content") or "",
                     "turn_number": tn,
+                    "files": [{"name": fname} for fname in attachments.get(tn, [])],
                 })
 
             if non_user:
@@ -240,32 +275,3 @@ async def delete_session(session_id: str):
         return make_error_response(message="Error al eliminar la sesión")
 
 
-@router.delete("/conversations")
-async def delete_all_conversations():
-    """Delete ALL conversations (entire conversaciones table).
-
-    This is a destructive operation that removes all conversation documents.
-    Use with caution.
-
-    Returns:
-        A contract response indicating success or failure.
-    """
-    if session_manager is None:
-        return make_error_response(message="Session manager no disponible")
-    try:
-        from backend.agent.session import SessionManager
-        # Use the same DB path as SessionManager
-        db = SessionManager()
-        conn = db._get_connection()
-        conn.execute("DELETE FROM conversaciones")
-        conn.commit()
-        return validate_response(
-            make_success_response(
-                message="Todas las conversaciones eliminadas",
-                usage=zero_usage(),
-            )
-        )
-    except Exception as exc:
-        log_error(str(exc), source="sessions.py:delete_all_conversations")
-        logger.exception("Error deleting all conversations: %s", exc)
-        return make_error_response(message="Error al eliminar conversaciones")

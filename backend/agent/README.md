@@ -68,21 +68,13 @@ Maneja toda la interacción con la base de datos SQLite:
 - Almacenamiento de configuración clave/valor (`config_kv`): modelo seleccionado, proveedor, ventana de contexto.
 - Path de la DB: `backend/agent/agent_db/sessions.db` (relativo al project root).
 
-### 3. `context.py` — Gestor de contexto
-
-Administra el contexto de la conversación:
-- Límite de tokens configurable.
-- Compactación automática cuando se supera el umbral.
-- Estrategias de compactación: `ask` (resumen parcial), `cod` (resumen por turnos), `original` (sin compactar).
-- Tokens reservados para el prompt del sistema.
-
-### 4. `config.py` — Configuración del entorno
+### 3. `config.py` — Configuración del entorno
 
 Configuración del loop vía variables de entorno (`.env`):
 - `COMPACTION_TRIGGER_TOKENS`, `COMPACTION_STRATEGY`, `COMPACTION_TAIL_TURNS`, etc.
 - Dataclasses `CompactionConfig` y `SessionContext` para parámetros de compactación.
 
-### 5. `agent.py` — Clase principal del agente
+### 4. `agent.py` — Clase principal del agente
 
 Centraliza la interacción con los proveedores LLM (Groq API u Ollama local):
 - Selección automática del proveedor según variable de entorno `PROVIDER`.
@@ -90,7 +82,7 @@ Centraliza la interacción con los proveedores LLM (Groq API u Ollama local):
 - Gestión de la instancia de herramientas (`Tools`).
 - Atributos runtime: `provider` (LOCAL/API), `_resolved_model` (modelo activo).
 
-### 6. `tools.py` — Registro de herramientas
+### 5. `tools.py` — Registro de herramientas
 
 Define el catálogo completo de herramientas del agente:
 - Métodos nativos (parser, websearch, webfetch, etc.).
@@ -99,7 +91,7 @@ Define el catálogo completo de herramientas del agente:
 - Validación y ejecución de tool calls.
 - Integración MCP: `execute_mcp_tool` expone herramientas de servidores MCP como tools nativas.
 
-### 7. `permissions.py` — Permisos y prompts de agente
+### 6. `permissions.py` — Permisos y prompts de agente
 
 Resuelve en tiempo de ejecución:
 - Herramientas permitidas para el agente (`get_tool_permissions`).
@@ -107,14 +99,14 @@ Resuelve en tiempo de ejecución:
 - Contenido del system prompt (`get_agent_prompt`).
 - Filtrado de herramientas/skills según el agente activo.
 
-### 8. `contract.py` — Contratos de respuesta
+### 7. `contract.py` — Contratos de respuesta
 
 Define los formatos estándar de respuesta para todas las herramientas del agente:
 - `make_success_response` / `make_error_response` para respuestas unificadas.
 - Dataclasses `ContractResponse` y `UsageReport` para tipado estricto.
 - Validación de estructura de respuesta.
 
-### 9. `utils/` — Utilidades auxiliares
+### 8. `utils/` — Utilidades auxiliares
 
 Contiene módulos de soporte genéricos para el funcionamiento del agente:
 - `clean_memory.py` — Liberación de modelos de GPU/CPU.
@@ -124,12 +116,12 @@ Contiene módulos de soporte genéricos para el funcionamiento del agente:
 - `mcp_helper.py` — Integración con MCP (Model Context Protocol).
 - `generate_ico.py` — Generación de .ico desde logo PNG.
 
-### 10. `prompts/` — Prompts del sistema
+### 9. `prompts/` — Prompts del sistema
 
 Almacena el prompt base del agente en formato markdown:
 - `system_prompt.md` — Prompt del sistema que define el comportamiento, personalidad y reglas del agente.
 
-### 11. `agent_db/` — Base de datos SQLite
+### 10. `agent_db/` — Base de datos SQLite
 
 Directorio que contiene el archivo `sessions.db` con las tablas:
 - `sessions` — Metadatos de cada conversación.
@@ -418,7 +410,6 @@ backend/agent/
 ├─ agent.py                 # Clase principal del agente (LLM provider)
 ├─ loop.py                  # Bucle while(true) del agente
 ├─ session.py               # Persistencia SQLite
-├─ context.py               # Gestor de contexto y compactación
 ├─ config.py                # Configuración vía entorno
 ├─ permissions.py           # Resolución de permisos y prompts
 ├─ tools.py                 # Registro y ejecución de herramientas

@@ -26,21 +26,17 @@ TAG_MAP: Dict[str, str] = {
     "logo_cliente": "logo_cliente",
     "descripcion": "descripcion",
     "tarea": "tarea",
-    # Colors extracted from logo
+    # Colors extracted from logo (variable — set by pipeline init)
     "color_primario": "colors.primary",
     "color_primario_light": "colors.primary_light",
-    "color_secundario": "colors.secondary",
-    "color_fondo": "colors.background",
-    "color_fondo_secondary": "colors.bg_secondary",
-    "color_fondo_tertiary": "colors.bg_tertiary",
-    "color_texto": "colors.text",
-    "color_texto_secondary": "colors.text_secondary",
-    "color_borde": "colors.border",
-    "color_acento": "colors.accent",
-    "color_avatar": "colors.avatar",
-    "color_exito": "colors.success",
-    "color_advertencia": "colors.warning",
-    "color_error": "colors.error",
+    "color_avatar_asistente": "colors.avatar_asistente",
+    "color_avatar_usuario": "colors.avatar_usuario",
+    "color_btn_nuevo_chat_bg": "colors.btn_nuevo_chat_bg",
+    "color_btn_nuevo_chat_text": "colors.btn_nuevo_chat_text",
+    "color_btn_adjuntar": "colors.btn_adjuntar",
+    "color_btn_enviar": "colors.btn_enviar",
+    "color_btn_detener": "colors.btn_detener",
+    "color_flecha_autoscroll": "colors.flecha_autoscroll",
 }
 
 # Regex that matches <tag>anything</tag>.  Tag names must be [a-z_]+.
@@ -83,7 +79,7 @@ def replace_all_placeholders(target: Path, config: dict) -> None:
         new_text, count = _replace_tags(text, replacements)
 
         if count > 0 and new_text != text:
-            file_path.write_text(new_text, encoding="utf-8")
+            file_path.write_bytes(new_text.encode("utf-8"))
             modified_files += 1
             total_replacements += count
 

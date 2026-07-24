@@ -9,6 +9,8 @@ import time as _time
 import os
 import sys
 import uuid
+import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -26,7 +28,7 @@ if _project_root not in sys.path:
 
 from backend.agent.loop import AgentLoop
 from backend.agent.utils.error_logger import log_error, set_error_context, reset_error_context
-from backend.instances import agent, session_manager, context_manager
+from backend.instances import agent, session_manager
 from backend.routes.file_text_extractor import (
     ExtractionResult,
     extract_text_from_bytes,
@@ -35,6 +37,42 @@ from backend.routes.file_text_extractor import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
+
+# Path to the SQLite database
+_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "sessions.db")
+
+# Limits for attachments
+MAX_ATTACHMENTS = 3
+MAX_TOTAL_SIZE_MB = 25
+MAX_TOTAL_SIZE_BYTES = MAX_TOTAL_SIZE_MB * 1024 * 1024
+
+
+def _save_attachments(session_id: str, turn_number: int, files_data: list[tuple[str, bytes, str]]) -> None:
+    """Save file attachments to the database.
+
+    Args:
+        session_id: The session identifier.
+        turn_number: The turn number for this conversation turn.
+        files_data: List of (filename, binary_content, extracted_text) tuples.
+    """
+    if not files_data:
+        return
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            for filename, binary_content, _extracted_text in files_data:
+                conn.execute(
+                    "INSERT INTO attachments (session_id, turn_number, file_name, size, content, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (session_id, turn_number, filename, len(binary_content), binary_content, now),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/chat.py:_save_attachments")
+        logger.warning("Failed to save attachments: %s", exc)
 
 
 @router.post("/chat")
@@ -55,9 +93,15 @@ async def chat_endpoint(
     if session_id is None or not session_id.strip():
         session_id = uuid.uuid4().hex
 
-    # Process uploaded files (prospectingAgent pattern)
-    file_contents: list[tuple[str, str]] = []
+    # Process uploaded files with limits: max 3 files, max 25 MB total
+    file_contents: list[tuple[str, str]] = []  # (filename, extracted_text) for the loop
+    files_data: list[tuple[str, bytes, str]] = []  # (filename, binary_content, extracted_text) for DB
+    total_size = 0
     if files:
+        if len(files) > MAX_ATTACHMENTS:
+            logger.warning("Too many files: %d (max %d)", len(files), MAX_ATTACHMENTS)
+            # Only process first MAX_ATTACHMENTS files
+            files = files[:MAX_ATTACHMENTS]
         for i, file in enumerate(files):
             filename = file.filename or f"archivo_{i + 1}"
             try:
@@ -66,6 +110,13 @@ async def chat_endpoint(
                 log_error(str(exc), source="backend/routes/chat.py:file_read")
                 logger.warning("Error reading file %s: %s", filename, exc)
                 content = b""
+            
+            # Check total size limit
+            total_size += len(content)
+            if total_size > MAX_TOTAL_SIZE_BYTES:
+                logger.warning("Total size exceeds %d MB limit", MAX_TOTAL_SIZE_MB)
+                break
+            
             result: ExtractionResult = extract_text_from_bytes(filename, content)
             if not result.success:
                 if result.error_code in ("file_too_large", "unsupported_type", "missing_dependency"):
@@ -75,18 +126,27 @@ async def chat_endpoint(
                         result.error_code,
                         result.error_detail or "unknown",
                     )
+                    total_size -= len(content)  # don't count skipped files
                     continue
                 file_contents.append((filename, result.text or f"[Error al procesar {filename}]"))
+                files_data.append((filename, content, result.text or f"[Error al procesar {filename}]"))
                 continue
             text = (result.text or "").strip()
             if not text:
                 file_contents.append(
                     (filename, f"[Error al procesar {filename}: no se encontró texto legible en el archivo.]")
                 )
+                files_data.append((filename, content, f"[Error al procesar {filename}: no se encontró texto legible en el archivo.]"))
                 continue
             file_contents.append((filename, text))
+            files_data.append((filename, content, text))
 
-    logger.info("Processing chat request for session_id=%s", session_id)
+    # Get the next turn number and save attachments
+    turn_number = session_manager.get_last_turn_number(session_id) + 1
+    if files_data:
+        _save_attachments(session_id, turn_number, files_data)
+
+    logger.info("Processing chat request for session_id=%s, turn_number=%d", session_id, turn_number)
 
     # Create a cancellation event tied to the client disconnection
     stream_cancel_event = asyncio.Event()
@@ -95,12 +155,11 @@ async def chat_endpoint(
         _t0 = _time.time()
         # # logger.info("[DEBUG_TIEMPO_SSE] event_stream() started — t=%.3f", _t0)
         # Set error context for this request (inside event_stream so set/reset share same async context)
-        error_ctx_token = set_error_context(session_id=session_id, turn_number=0)
+        error_ctx_token = set_error_context(session_id=session_id, turn_number=turn_number)
         try:
             agent_loop = AgentLoop(
                 agent=agent,
                 session_manager=session_manager,
-                context_manager=context_manager,
             )
             async for sse_event in agent_loop.run(
                 session_id=session_id,

@@ -628,9 +628,19 @@ def _extract_pdf_bytes(data: bytes, filename: str) -> str:
     if len(cleaned) >= PDF_TEXT_THRESHOLD:
         return cleaned
 
-    ocr_text = _extract_pdf_via_ocr(data, filename)
-    combined = "\n".join(filter(None, [cleaned, ocr_text]))
-    return combined.strip() or cleaned
+    # Try OCR fallback, but don't fail if poppler/OCR deps are missing
+    try:
+        ocr_text = _extract_pdf_via_ocr(data, filename)
+        combined = "\n".join(filter(None, [cleaned, ocr_text]))
+        return combined.strip() or cleaned
+    except MissingDependencyError:
+        # OCR dependencies (pdf2image, pytesseract, Pillow) not available
+        logger.warning("OCR no disponible para %s (faltan dependencias), devolviendo texto extraído por pdfminer", filename)
+        return cleaned
+    except FileTextExtractionError as exc:
+        # OCR failed (e.g., poppler not installed) - return what we have
+        logger.warning("OCR falló para %s: %s, devolviendo texto extraído por pdfminer", filename, exc)
+        return cleaned
 
 
 def _extract_pdf_via_ocr(data: bytes, filename: str) -> str:
@@ -657,7 +667,8 @@ def _extract_pdf_via_ocr(data: bytes, filename: str) -> str:
     Raises
     ------
     MissingDependencyError
-        If any of ``pdf2image``, ``pytesseract`` or ``Pillow`` is missing.
+        If any of ``pdf2image``, ``pytesseract`` or ``Pillow`` is missing,
+        or if Tesseract executable is not found.
     FileTextExtractionError
         If PDF rendering fails or no text is extracted.
     '''
@@ -675,7 +686,7 @@ def _extract_pdf_via_ocr(data: bytes, filename: str) -> str:
     except (PDFInfoNotInstalledError, PDFPageCountError, PDF2ImageSyntaxError) as exc:
         log_error(str(exc), source="file_text_extractor.py")
         raise FileTextExtractionError(
-            f"No se pudo preparar el PDF {filename} para OCR: {exc}"
+            f"No se pudo preparar el PDF {filename} para OCR (poppler no instalado o error de PDF): {exc}"
         ) from exc
     except Exception as exc:  # pragma: no cover
         log_error(str(exc), source="file_text_extractor.py")

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 import sys
 import urllib.request
 from datetime import datetime
@@ -33,6 +34,40 @@ from backend.instances import agent
 logger = logging.getLogger(__name__)
 
 _CONFIG_BASE_URL = os.getenv("CONFIG_BASE_URL", "http://127.0.0.1:8000/api/config")
+_SESSION_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(_current_dir)), "agent", "agent_db", "sessions.db")
+
+
+def load_context_text() -> str:
+    """Load all context files from SQLite and return their content joined.
+
+    Reads every row from the ``context_files`` table and joins the file name
+    and extracted text with a visible separator.  Returns an empty string if
+    no context files exist or the table cannot be read.
+
+    Returns:
+        A formatted string ready to be appended to the system prompt.
+    """
+    db_dir = os.path.dirname(_SESSION_DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    try:
+        conn = sqlite3.connect(_SESSION_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT filename, content FROM context_files ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+        if not rows:
+            return ""
+        parts: list[str] = []
+        for row in rows:
+            parts.append(f"--- {row['filename']} ---\n{row['content']}")
+        return "==================================\n".join(parts)
+    except Exception as exc:
+        logger.warning("No se pudieron cargar archivos de contexto: %s", exc)
+        return ""
 
 
 def fetch_context_window_turns() -> int:
@@ -115,13 +150,18 @@ def build_system_prompt(agent_name: str | None = None) -> str:
             f"- {a['name']}: {a['description']}" for a in agents
         )
 
-    # Concatenate: base + date + agents (no .format())
+    # Concatenate: base + date + agents + context (no .format())
     parts = []
     if base_prompt:
         parts.append(base_prompt)
     parts.append(f"## Fecha\n{fecha}")
     if agents_str:
         parts.append(f"## Agentes\n{agents_str}")
+
+    # Append context files content (mini-RAG)
+    context_text = load_context_text()
+    if context_text:
+        parts.append(f"## Contexto\n{context_text}")
 
     final_prompt = "\n\n".join(parts)
     # print(f"[DEBUG_DE_LA VERGA QUE HICE] build_system_prompt final length: {len(final_prompt)}, preview: {final_prompt[:300]}")

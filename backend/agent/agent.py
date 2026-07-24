@@ -133,7 +133,6 @@ class Agent():
         else:
             _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             _base = _project_root
-        self._prompts_dir = os.path.join(_base, 'intelligence', 'prompts')
 
         self.tools = Tools()
 

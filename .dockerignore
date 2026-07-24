@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+env/
+venv/
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build artifacts
+frontend/dist/
+__forge_build__/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+
+# Database
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentation / large files
+*.pdf
+*.md
+!README.md
+
+# Logs
+*.log
+
+# Temp
+tmp/
+temp/

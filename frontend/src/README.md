@@ -78,7 +78,8 @@ frontend/
 │  │  ├─ api.ts                # Cliente fetch base + helpers
 │  │  ├─ chat.ts               # chatStream, deleteConversation
 │  │  ├─ sessions.ts           # listSessions, getSession, deleteSession
-│  │  └─ config.ts             # providers, models, selectModel, contextWindow, mcp
+│  │  ├─ config.ts             # providers, models, selectModel, contextWindow, mcp
+│  │  └─ contextFiles.ts       # listContextFiles, uploadContextFile, deleteContextFile
 │  ├─ hooks/                   # Custom hooks
 │  │  ├─ useChat.ts            # Lógica de chat streaming
 │  │  ├─ useSessions.ts        # Carga y gestión de sesiones
@@ -156,6 +157,7 @@ VITE_API_BASE_URL=http://localhost:8000/api
 4. **Chat** → `POST /api/chat` (SSE) → `useChat` parsea eventos → renderiza `Message` + `ToolCallCollapsible`.
 5. **Sesiones** → `GET /api/sessions` → `SessionList` en sidebar.
 6. **Contexto** → `POST /config/context-window` → ajusta `max_turns`.
+7. **Instrucciones y documentos** → `GET/POST/DELETE /api/context-files` → `ConfigPanel` gestiona subida/eliminación → archivos se inyectan en system prompt.
 
 ---
 
@@ -173,7 +175,7 @@ Colapsable por tool call. Muestra:
 - **Body**: JSON formateado de `args` (input) y `result` (output).
 
 ### `ConfigPanel.tsx`
-Agrupa `ProviderSelector`, `ModelSelector`, `ContextWindowInput`. Usa `useConfig` para estado reactivo.
+Agrupa `ProviderSelector`, `ModelSelector`, `ContextWindowInput`. Usa `useConfig` para estado reactivo. Incluye sección **Instrucciones y documentos** para subir/eliminar archivos de contexto (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) que se inyectan en el system prompt.
 
 ### `useChat.ts`
 Maneja la conexión SSE:
@@ -181,30 +183,43 @@ Maneja la conexión SSE:
 - Parsea eventos: `chunk`, `tool_calls_detected`, `tool_result`, `session_title`, `done`, `error`.
 - Actualiza estado local de mensajes en tiempo real.
 
-### `api.ts` + `chat.ts` / `sessions.ts` / `config.ts`
+### `api.ts` + `chat.ts` / `sessions.ts` / `config.ts` / `contextFiles.ts`
 Capa fina sobre `fetch`. Manejan errores, timeouts y tipado de respuestas.
 
 ---
 
 ## Estilos y tema
 
-Colores definidos en `src/index.css` dentro de `@theme {}`:
+Las variables de color se declaran en `src/index.css` dentro de `@theme {}`. El pipeline `synapseForge init` reemplaza automáticamente los placeholders `<tag>default</tag>` con los valores extraídos del logo.
+
+### Variables reemplazables (definidas por el pipeline)
 
 | Variable | Default | Uso |
 |----------|---------|-----|
-| `--color-app-primary` | `#D76F10` | Botones primary, enlaces, acentos |
-| `--color-app-primary-light` | `#F0A347` | Focus rings, hover bordes, typing dots |
-| `--color-app-bg` | `#FFFFFF` | Fondo principal |
-| `--color-app-bg-secondary` | `#F5F5F5` | Hover, filas tabla |
-| `--color-app-bg-tertiary` | `#EBEBEB` | Paneles, código, tool calls |
+| `--color-app-primary` | `#D76F10` | Botones, enlaces, acentos principales |
+| `--color-app-primary-light` | `#F0A347` | Avatar asistente, hover, typing dots |
+| `--color-app-bg` | `#F5F5F5` | Fondo general de la app (scrollbar thumb) |
+| `--color-app-bg-secondary` | `#F5F5F5` | Misma referencia que bg (unificado) |
+| `--color-app-avatar-usuario` | `#452913` | Avatar del usuario en el chat |
+| `--color-app-btn-bg` | `#D76F10` | Fondo "Nuevo Chat" y header MCP |
+| `--color-app-btn-text` | `#FFFFFF` | Texto "Nuevo Chat" y header MCP |
+| `--color-app-accent` | `#D76F10` | Acento general (misma ref. que primary) |
+
+### Variables fijas (no se modifican en el pipeline)
+
+| Variable | Valor | Uso |
+|----------|-------|-----|
+| `--color-app-bg-tertiary` | `#EBEBEB` | Paneles, tool calls, fondos terciarios |
 | `--color-app-text` | `#151515` | Texto principal |
 | `--color-app-text-secondary` | `#5C5C5C` | Texto secundario |
-| `--color-app-border` | `#D4D4D4` | Bordes |
-| `--color-app-success` | `#2B7D5B` | Estados éxito |
-| `--color-app-warning` | `#C4903A` | Estados warning |
-| `--color-app-error` | `#C2413D` | Estados error |
+| `--color-app-border` | `#D4D4D4` | Bordes generales |
+| `--color-app-success` | `#2B7D5B` | Estados de éxito |
+| `--color-app-warning` | `#C4903A` | Estados de advertencia |
+| `--color-app-error` | `#C2413D` | Estados de error |
 
-**Cambiar colores**: editar `src/index.css` → `@theme {}` → `Ctrl+F5` (hard refresh).
+**Para cambiar colores manualmente**: editar `src/index.css` → `@theme {}` → recargar.
+
+> **Nota**: los placeholders se reemplazan automáticamente al ejecutar `synapseForge init`. Para regenerar los colores desde el logo, ejecutar nuevamente el pipeline.
 
 ---
 

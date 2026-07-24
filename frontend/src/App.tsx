@@ -27,6 +27,8 @@ export interface Message {
   isStreaming?: boolean;
   reasoning?: string;
   blocks?: ContentBlock[];
+  /** Attached files for user messages (shown as chips) */
+  files?: Array<{ name: string; size?: number }>;
   /** Legacy – kept for backward compat during streaming */
   toolCalls?: Array<{ tool: string; parameters: Record<string, any> }>;
   toolResults?: Array<{ tool: string; result: any }>;
@@ -47,6 +49,7 @@ function mapSessionMessages(raw: SessionMessage[]): Message[] {
     id: m.id,
     type: m.type,
     content: m.type === "user" ? m.content : "",
+    files: m.files,
     blocks: m.blocks ?? (
       // Fallback for old sessions without blocks: build from toolCalls + toolResults
       m.type === "assistant" && (m.toolCalls || m.content)

@@ -14,12 +14,9 @@
 Ejecutar esto **cada vez** que abrís la terminal:
 
 ```powershell
-.\.\TU_VENV\Scripts\Activate.ps1
+.\.<repo>nombre_repo</repo>\Scripts\Activate.ps1
 . .\.commands\init.ps1
 ```
-
-Reemplazar `TU_VENV` por el nombre de tu entorno virtual.
-i¡sto! Ya podés usar: push, sync o tus comandos
 
 ---
 
@@ -49,7 +46,7 @@ if (Test-Path ".commands") {
 }
 ```
 
-Li¡sto! La próxima vez que abras la terminal se activa solo.
+¡Listo! La próxima vez que abras la terminal se activa solo.
 
 ---
 
@@ -63,9 +60,6 @@ Editar .commands/commands.json:
     "command": "python script.py",
     "description": "Descripción"
 }
-`powershell
-.\venv\Scripts\Activate.ps1
-. .\.commands\init.ps1
 ```
 
 ---

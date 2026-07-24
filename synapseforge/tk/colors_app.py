@@ -10,10 +10,11 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox, ttk
 from typing import Any, Dict, Optional
 from pathlib import Path
-from urllib.request import urlopen
+import ctypes
 
 _HERE = Path(__file__).resolve().parent
 _ICO_PATH = _HERE / "logo.ico"
+_LOGO_PNG_PATH = _HERE / "logo.png"   # <--- Logo local
 
 try:
     from PIL import Image, ImageTk
@@ -22,7 +23,6 @@ except ImportError:  # pragma: no cover
     ImageTk = None
 
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
-_LOGO_URL = "https://github.com/synapse-ai-hub/sources/raw/main/logo_transparente.png"
 
 COLOR_FIELDS = [
     ("avatar_asistente", "Avatar asistente"),
@@ -36,6 +36,22 @@ COLOR_FIELDS = [
 ]
 
 
+# ──────────────────────────────────────────────────────────────
+# Fijar el AppUserModelID ANTES de crear cualquier ventana
+# ──────────────────────────────────────────────────────────────
+def _set_app_user_model_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "synapseforge.colors.1"
+        )
+    except Exception:
+        pass
+
+_set_app_user_model_id()
+
+
 class ColorsApp:
     """GUI for editing runtime colors.json."""
 
@@ -47,14 +63,12 @@ class ColorsApp:
         self.root = tk.Tk()
         self.root.title("synapseForge — Colors")
         self.root.resizable(False, False)
-        if _ICO_PATH.is_file():
-            try:
-                self.root.iconbitmap(str(_ICO_PATH))
-            except Exception:
-                pass
 
-        # ── Logo header ──────────────────────────────────────────────
-        self._load_logo()
+        # ── Configurar el ícono (con retraso para asegurar que la ventana esté lista) ──
+        self.root.after(100, self._set_icon)
+
+        # ── Logo header (desde archivo local) ────────────────────────
+        self._load_logo_local()
 
         # ── Instruction ──────────────────────────────────────────────
         ttk.Label(
@@ -110,21 +124,57 @@ class ColorsApp:
         # ── Center ───────────────────────────────────────────────────
         self._center(660, 500)
 
+    # ──────────────────────────────────────────────────────────────────
+    # Configuración robusta del ícono usando ctypes
+    # ──────────────────────────────────────────────────────────────────
+    def _set_icon(self) -> None:
+        """Asigna el ícono de la ventana y de la barra de tareas usando ctypes."""
+        if not _ICO_PATH.is_file():
+            return
+
+        try:
+            # 1. iconbitmap (funciona para la ventana)
+            self.root.iconbitmap(str(_ICO_PATH.resolve()))
+
+            # 2. Forzar actualización de la barra de tareas con ctypes
+            hwnd = self.root.winfo_id()
+            user32 = ctypes.windll.user32
+            # Cargar el ícono desde el archivo
+            hicon = user32.LoadImageW(
+                0,
+                str(_ICO_PATH.resolve()),
+                1,  # IMAGE_ICON
+                0, 0,
+                0x00000010  # LR_LOADFROMFILE
+            )
+            if hicon:
+                # GCL_HICON = -14, GCL_HICONSM = -34
+                user32.SetClassLongW(hwnd, -14, hicon)
+                user32.SetClassLongW(hwnd, -34, hicon)
+                # WM_SETICON = 0x0080, ICON_BIG = 0, ICON_SMALL = 1
+                user32.SendMessageW(hwnd, 0x0080, 0, hicon)
+                user32.SendMessageW(hwnd, 0x0080, 1, hicon)
+
+        except Exception:
+            pass  # Silencioso si falla
+
     # ------------------------------------------------------------------
-    # Logo
+    # Logo (cargado desde archivo local)
     # ------------------------------------------------------------------
-    def _load_logo(self) -> None:
+    def _load_logo_local(self) -> None:
+        """Carga el logo desde logo.png (local) y lo muestra en la ventana."""
         if Image is None or ImageTk is None:
             return
+        if not _LOGO_PNG_PATH.is_file():
+            return
         try:
-            raw = urlopen(_LOGO_URL, timeout=5).read()
-            pil = Image.open(io.BytesIO(raw))
+            pil = Image.open(_LOGO_PNG_PATH)
             pil.thumbnail((150, 150), Image.LANCZOS)
             self._logo_img = ImageTk.PhotoImage(pil)
             lbl = tk.Label(self.root, image=self._logo_img)
             lbl.pack(pady=(10, 2))
         except Exception:
-            pass
+            pass  # silencioso si falla
 
     # ------------------------------------------------------------------
     # Color helpers

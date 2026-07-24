@@ -688,16 +688,6 @@ export function ChatInterface({
                    bg-white"
         style={{ height: "95px" }}
       >
-        {/* Left: hamburger */}
-        <button
-          type="button"
-          onClick={onToggleSidebar}
-          className="rounded-full p-1.5 text-app-text-secondary hover:bg-app-bg-secondary hover:text-app-text transition-colors shrink-0"
-          aria-label="Mostrar conversaciones"
-        >
-          <Menu size={18} />
-        </button>
-
         {/* Center: logo + title */}
         <div className="flex-1 flex items-center justify-center gap-2 sm:gap-3">
           <img

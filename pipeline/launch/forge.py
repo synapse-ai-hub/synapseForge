@@ -47,7 +47,7 @@ BACKEND_EXCLUDED_DIRS: set[str] = {
     "__pycache__",
 }
 BACKEND_EXCLUDED_FILES: set[str] = {
-    "sessions.db",
+    "agent.db",
 }
 # Only keep .md/.txt inside these relative paths
 BACKEND_KEEP_MD_TXT_PATHS: set[str] = {

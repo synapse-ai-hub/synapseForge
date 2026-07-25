@@ -3,7 +3,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type { Message } from "../App";
 import { Avatar, AvatarFallback } from "./ui/avatar";
-import { User, Bot, ChevronDown, ChevronRight, Terminal, Paperclip } from "lucide-react";
+import { User, Brain, ChevronDown, ChevronRight, Terminal, Paperclip } from "lucide-react";
 
 interface MessageBubbleProps {
   message: Message;
@@ -44,12 +44,12 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
         <AvatarFallback
           className={
             isAssistant
-              ? "bg-app-avatar-asistente text-white"
-              : "bg-app-avatar-usuario text-white"
+              ? "bg-app-primary text-app-primary-text"
+              : "bg-app-bg-tertiary text-app-text"
           }
         >
           {isAssistant ? (
-            <Bot className="h-5 w-5" aria-hidden="true" />
+            <Brain className="h-5 w-5" aria-hidden="true" />
           ) : (
             <User className="h-5 w-5" aria-hidden="true" />
           )}
@@ -61,7 +61,7 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
         className={`max-w-[75%] rounded-lg px-4 py-3 ${
           isAssistant
             ? "bg-app-bg-secondary text-app-text border border-app-border"
-            : "bg-app-primary text-white"
+            : "bg-app-primary text-app-primary-text"
         }`}
       >
         {/* Reasoning (assistant only) */}
@@ -141,7 +141,7 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
         {/* Message content with markdown */}
         <div
           className={`markdown-content text-sm leading-relaxed ${
-            isAssistant ? "" : "text-white"
+            isAssistant ? "" : "text-app-primary-text"
           }`}
           dangerouslySetInnerHTML={{
             __html: renderedHtml,
@@ -155,12 +155,12 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
               <div
                 key={`${file.name}-${idx}`}
                 className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs
-                           bg-white/20 border border-white/30 text-white"
+                           bg-app-primary-text/20 border border-app-primary-text/30 text-app-primary-text"
               >
                 <Paperclip className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
                 <span className="truncate max-w-[150px] font-medium">{file.name}</span>
                 {file.size && (
-                  <span className="text-white/70 shrink-0">
+                  <span className="text-app-primary-text/70 shrink-0">
                     {(file.size < 1024 * 1024
                       ? `${(file.size / 1024).toFixed(0)} KB`
                       : `${(file.size / (1024 * 1024)).toFixed(1)} MB`)}

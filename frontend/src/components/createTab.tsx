@@ -1,4 +1,4 @@
-import { Wrench, Puzzle, Bot } from "lucide-react";
+import { Wrench, Puzzle, Brain } from "lucide-react";
 import { Button } from "./ui/button";
 
 export function CreateTab() {
@@ -20,7 +20,7 @@ export function CreateTab() {
           Crear Skill
         </Button>
         <Button className="w-full justify-start gap-2" variant="outline">
-          <Bot size={14} />
+          <Brain size={14} />
           Crear Agente
         </Button>
       </div>

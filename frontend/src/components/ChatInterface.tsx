@@ -13,7 +13,7 @@ import {
   X,
   User,
   Search,
-  Bot,
+  Brain,
   Menu,
   BarChart3,
   Copy,
@@ -223,7 +223,7 @@ export function ChatInterface({
   const userInteractionRef = useRef(false);
   const userInteractionTimeoutRef = useRef<number | null>(null);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+  const scrollToBraintom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTo({
         top: messagesContainerRef.current.scrollHeight,
@@ -234,19 +234,19 @@ export function ChatInterface({
 
   useEffect(() => {
     if (autoScrollEnabled) {
-      scrollToBottom("smooth");
+      scrollToBraintom("smooth");
     }
-  }, [messages, autoScrollEnabled, scrollToBottom]);
+  }, [messages, autoScrollEnabled, scrollToBraintom]);
 
   const handleMessagesScroll = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-    setShowScrollButton(!nearBottom);
+    const nearBraintom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    setShowScrollButton(!nearBraintom);
 
     // Solo cambiar autoScroll si NO hay interacción de usuario reciente
     if (!userInteractionRef.current) {
-      setAutoScrollEnabled(nearBottom);
+      setAutoScrollEnabled(nearBraintom);
     }
   }, []);
 
@@ -705,10 +705,10 @@ export function ChatInterface({
             variant="ghost"
             size="sm"
             onClick={handleOpenDocs}
-            className="gap-1 sm:gap-1.5 text-xs h-7 sm:h-8"
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
             title="Documentación"
           >
-            <BookOpen size={14} />
+            <BookOpen size={16} />
             <span className="hidden sm:inline">Docs</span>
           </Button>
 
@@ -716,9 +716,9 @@ export function ChatInterface({
             variant="ghost"
             size="sm"
             onClick={onShowMetrics}
-            className="gap-1 sm:gap-1.5 text-xs h-7 sm:h-8"
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
           >
-            <BarChart3 size={14} />
+            <BarChart3 size={16} />
             <span className="hidden sm:inline">Métricas</span>
           </Button>
 
@@ -726,10 +726,10 @@ export function ChatInterface({
             variant="ghost"
             size="sm"
             onClick={handleShutdown}
-            className="gap-1 sm:gap-1.5 text-xs h-7 sm:h-8 text-app-error hover:bg-red-50 hover:text-app-error"
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10 text-app-error hover:bg-red-50 hover:text-app-error"
             title="Cerrar aplicación"
           >
-            <LogOut size={14} />
+            <LogOut size={16} />
             <span className="hidden sm:inline">Salir</span>
           </Button>
         </div>
@@ -744,7 +744,7 @@ export function ChatInterface({
               type="button"
               onClick={() => {
                 setAutoScrollEnabled(true);
-                scrollToBottom("smooth");
+                scrollToBraintom("smooth");
               }}
               className="w-10 h-10 rounded-full transition-all duration-200 flex items-center justify-center border border-app-primary/20 bg-app-primary/10 text-app-primary hover:bg-app-primary/20 hover:text-app-primary shadow-sm"
               title="Ir al final"
@@ -865,13 +865,13 @@ export function ChatInterface({
                 disabled={!input.trim()}
                 className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
                            flex items-center justify-center
-                           bg-gradient-to-r from-app-primary to-app-primary-light
+                           bg-gradient-to-r from-app-primary to-app-gradient-secondary
                            hover:opacity-90 active:scale-95
                            transition-all duration-150 shadow-sm
                            disabled:opacity-40 disabled:cursor-not-allowed"
                  aria-label="Enviar mensaje"
               >
-                <Send size={14} className="text-white" />
+                <Send size={14} className="text-app-primary-text" />
               </button>
             )}
           </div>
@@ -1161,9 +1161,9 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
         <div className="shrink-0">
           <div
             className="h-4 w-4 sm:h-10 sm:w-10 rounded-xl flex items-center justify-center
-                        bg-app-avatar-asistente text-white"
+                        bg-app-primary text-app-primary-text"
           >
-            <Bot size={20} className="text-white" />
+            <Brain size={20} className="text-app-primary-text" />
           </div>
         </div>
 
@@ -1299,7 +1299,7 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
       {/* Avatar gradient */}
       <div
         className="w-10 h-10 sm:w-10 sm:h-10 rounded-full shrink-0 flex items-center justify-center
-                   bg-app-avatar-usuario text-white"
+                   bg-app-bg-tertiary text-app-text"
       >
         <User size={14} />
       </div>

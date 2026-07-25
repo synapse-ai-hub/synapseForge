@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 import sys
+import traceback
 from typing import Any
 
 from fastapi import APIRouter
@@ -30,6 +31,8 @@ from backend.agent.utils.model_resolver import get_groq_models, get_ollama_model
 from backend.agent.utils.error_logger import log_error
 from backend.agent.config_dir import get_mcp_config
 from backend.agent.utils.mcp_helper import check_all_mcp_servers_health
+from backend.agent.permissions import list_agents
+from backend.agent.utils.skill_loader import format_skills_section
 
 logger = logging.getLogger(__name__)
 
@@ -528,4 +531,63 @@ async def mcp_health_check() -> JSONResponse:
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": "Error verificando salud MCP", "servers": []},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Agents listing
+# ---------------------------------------------------------------------------
+
+
+@router.get("/agents")
+async def list_agents_endpoint() -> JSONResponse:
+    """List all configured agents with name and description.
+
+    Delegates to ``backend.agent.permissions.list_agents()`` which scans
+    the ``agents/`` folder in the config directory.
+    """
+    try:
+        print("[DEBUG] list_agents_endpoint called")
+        result = await asyncio.to_thread(list_agents)
+        print(f"[DEBUG] list_agents result: {result}")
+        data = json.loads(result.get("data", "[]")) if result.get("status") == "success" else []
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "agents": data},
+        )
+    except Exception as exc:
+        print(f"[DEBUG] Agents endpoint EXCEPTION: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+        logger.exception("Agents endpoint failed: %s", exc)
+        log_error(f"{type(exc).__name__}: {exc}", source="backend/routes/config.py:list_agents")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error listando agentes", "agents": []},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Skills listing
+# ---------------------------------------------------------------------------
+
+
+@router.get("/skills")
+async def list_skills_endpoint() -> JSONResponse:
+    """List all available skills with description and triggers.
+
+    Delegates to ``backend.agent.utils.skill_loader.format_skills_section()``
+    which scans the ``skills/`` folder in the config directory.
+    Returns the formatted markdown string.
+    """
+    try:
+        skills_text = await asyncio.to_thread(format_skills_section)
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "skills_text": skills_text},
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:list_skills")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error listando skills", "skills_text": ""},
         )

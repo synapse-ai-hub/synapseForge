@@ -34,7 +34,7 @@ from backend.instances import agent
 logger = logging.getLogger(__name__)
 
 _CONFIG_BASE_URL = os.getenv("CONFIG_BASE_URL", "http://127.0.0.1:8000/api/config")
-_SESSION_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(_current_dir)), "agent", "agent_db", "sessions.db")
+_SESSION_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(_current_dir)), "backend", "agent", "agent_db", "agent.db")
 
 
 def load_context_text() -> str:

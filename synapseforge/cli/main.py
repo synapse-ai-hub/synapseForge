@@ -32,14 +32,10 @@ from pathlib import Path
 HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 COLOR_FIELDS = [
-    ("avatar_asistente", "Avatar asistente (2do color más fuerte)"),
-    ("avatar_usuario", "Avatar usuario (3er color más fuerte)"),
-    ("btn_nuevo_chat_bg", "Botón Nuevo Chat / header MCP — fondo (más fuerte - 20%)"),
-    ("btn_nuevo_chat_text", "Botón Nuevo Chat / header MCP — texto (color más claro)"),
-    ("btn_adjuntar", "Botón adjuntar (más fuerte con transparencia)"),
-    ("btn_enviar", "Botón enviar (más fuerte con transparencia)"),
-    ("btn_detener", "Botón detener (más fuerte con transparencia)"),
-    ("flecha_autoscroll", "Flecha autoscroll (más fuerte con transparencia)"),
+    ("primary", "Color principal (botones, headers, burbujas)"),
+    ("secondary", "Color secundario (hover, detalles light)"),
+    ("primary_text", "Color de texto (botones, headers)"),
+    ("gradient_secondary", "Color secundario del gradiente"),
 ]
 
 
@@ -66,9 +62,8 @@ def main() -> None:
 
 The GUI will prompt for:
   - Project name, description, client/task names
-  - Color palette (primary, backgrounds, buttons, avatars)
-  - Backend configuration (ports, URLs)
-  - Frontend configuration (Vite, React, TypeScript)
+  - Logo files (company + client)
+  - Primary, secondary, text color and gradient colors for the UI
 
 Output: Complete project structure with backend/, frontend/, config/, pipeline/, .commands/""",
     )
@@ -130,12 +125,10 @@ Output: pipeline/dist/<exe_name>.zip containing installer + portable version""",
   synapseforge colors ./mi-proyecto    # Edit colors in specific project
 
 The GUI allows editing:
-  - Primary color & variants (light, dark, muted)
-  - Background colors (primary, secondary, tertiary)
-  - Text colors (primary, secondary, muted)
-  - Border color
-  - Button colors (nuevo chat, adjuntar, enviar, detener, autoscroll)
-  - Avatar colors (asistente, usuario)
+  - Primary color (buttons, headers, bubbles)
+  - Secondary color (hover, details light)
+  - Text color for buttons and headers
+  - Gradient secondary color (with toggle to enable/disable gradients)
 
 Changes are saved to frontend/public/colors.json and take effect on browser refresh.""",
     )
@@ -255,33 +248,40 @@ def _run_run(project_dir: str) -> None:
         print(f"ERROR: No se encontró el directorio frontend en {project_path}", file=sys.stderr)
         sys.exit(1)
 
-    # Execute init.ps1 to set up environment (venv activation, aliases)
-    init_ps1 = project_path / ".commands" / "init.ps1"
-    if init_ps1.is_file():
-        print(f"  Cargando entorno desde {init_ps1} ...")
-        subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", f". '{init_ps1}'"],
-            cwd=str(project_path),
-            shell=True,
-        )
-
     print(f"Starting dev servers for {project_path} ...")
 
-    # Start uvicorn (backend)
+    # Start uvicorn (backend) — venv debe estar activo manualmente
+    print("  Iniciando backend (uvicorn)...")
     uvicorn_proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", backend_module, "--reload", "--port", "8000"],
+        ["python", "-m", "uvicorn", backend_module, "--reload", "--port", "8000"],
         cwd=str(project_path),
+        shell=True,
     )
 
+    # Wait a few seconds and check if backend is alive
+    time.sleep(5)
+    if uvicorn_proc.poll() is not None:
+        print("  ERROR: Backend falló al iniciar (¿olvidaste activar el venv?)", file=sys.stderr)
+        sys.exit(1)
+
+    print("  Backend iniciado correctamente")
+
     # Start npm run dev (frontend)
+    print("  Iniciando frontend (npm run dev)...")
     npm_proc = subprocess.Popen(
         ["npm", "run", "dev"],
         cwd=str(frontend_path),
         shell=True,
     )
 
-    # Wait a moment for servers to start
     time.sleep(3)
+    if npm_proc.poll() is not None:
+        print("  ERROR: Frontend falló al iniciar", file=sys.stderr)
+        uvicorn_proc.terminate()
+        uvicorn_proc.wait()
+        sys.exit(1)
+
+    print("  Frontend iniciado correctamente")
 
     print("\nPresioná Ctrl+C para detener ambos servidores.\n")
     try:

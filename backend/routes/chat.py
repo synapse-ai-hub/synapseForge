@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 # Path to the SQLite database
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "sessions.db")
+_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 # Limits for attachments
 MAX_ATTACHMENTS = 3

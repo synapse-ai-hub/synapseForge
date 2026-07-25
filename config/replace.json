@@ -13,13 +13,10 @@
   "descripcion": "Nombre del proyecto",
   "tarea": "Nombre de la tarea",
   "colors": {
-    "avatar_asistente": "<color_avatar_asistente>",
-    "avatar_usuario": "<color_avatar_usuario>",
-    "btn_nuevo_chat_bg": "<color_btn_nuevo_chat_bg>",
-    "btn_nuevo_chat_text": "<color_btn_nuevo_chat_text>",
-    "btn_adjuntar": "<color_btn_adjuntar>",
-    "btn_enviar": "<color_btn_enviar>",
-    "btn_detener": "<color_btn_detener>",
-    "flecha_autoscroll": "<color_flecha_autoscroll>"
+    "primary": "<color_primario>",
+    "secondary": "<color_secundario>",
+    "primary_text": "<color_texto_primario>",
+    "gradient_secondary": "<color_secundario_gradiente>",
+    "usar_gradiente": true
   }
 }

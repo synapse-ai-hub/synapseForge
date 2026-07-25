@@ -301,7 +301,7 @@ pip install synapseforge
 
 1. **Frontend** — `npm run build` con `VITE_MODE=prod` → `frontend/dist/`.
 2. **Backend compile** — `python -m compileall -b backend/` → `.pyc` legacy.
-3. **Backend limpio** — Copia compilado excluyendo: `.py` (solo `.pyc`), `__pycache__/`, `sessions.db`, `.md/.txt` fuera de `agent/prompts/`.
+3. **Backend limpio** — Copia compilado excluyendo: `.py` (solo `.pyc`), `__pycache__/`, `agent.db`, `.md/.txt` fuera de `agent/prompts/`.
 4. **Python embebido** — Descarga Python 3.12.0 embed amd64, configura `_pth`, instala pip, instala `requirements.txt` deps en `Lib/site-packages/`.
 5. **Launcher** — Genera `launcher.py` personalizado → PyInstaller `--onefile --noconsole` → `exe_name.exe`.
 6. **Zip** — Empaqueta: `exe_name.exe`, `backend/`, `frontend/dist/`, `python/`, `.env`, `LICENSE`, `README.md`.

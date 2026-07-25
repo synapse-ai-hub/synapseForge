@@ -1,7 +1,7 @@
 """Metrics endpoints for the agent.
 
 Provides REST endpoints that aggregate usage data from the SQLite
-``sessions.db`` database to power the frontend metrics panel.
+``agent.db`` database to power the frontend metrics panel.
 """
 
 from __future__ import annotations
@@ -39,14 +39,14 @@ router = APIRouter(tags=["metrics"])
 
 
 def _get_db_path() -> str | None:
-    """Return the path to sessions.db, or None if session_manager is unavailable."""
+    """Return the path to agent.db, or None if session_manager is unavailable."""
     if session_manager is None:
         return None
     return session_manager.db_path
 
 
 def _query_db(query: str, params: tuple = ()) -> list[dict]:
-    """Execute a SQL query against sessions.db and return rows as dicts.
+    """Execute a SQL query against agent.db and return rows as dicts.
 
     Args:
         query: SQL query string.
@@ -75,7 +75,7 @@ def _query_db(query: str, params: tuple = ()) -> list[dict]:
 
 @router.get("/metrics/sessions")
 async def get_session_metrics():
-    """Return session-level metrics aggregated from sessions.db.
+    """Return session-level metrics aggregated from agent.db.
 
     Returns:
         A contract response with ``data`` containing session metrics.
@@ -132,7 +132,7 @@ async def get_session_metrics():
 
 @router.get("/metrics/tools")
 async def get_tool_metrics():
-    """Return tool usage metrics aggregated from sessions.db.
+    """Return tool usage metrics aggregated from agent.db.
 
     Returns:
         A contract response with ``data`` containing tool metrics.

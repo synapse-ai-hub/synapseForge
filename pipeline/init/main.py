@@ -57,7 +57,7 @@ def run(target_dir: str, config: dict | None = None) -> None:
 
     # Step 6: Copy logos
     print("\n[6/10] Copying logos ...")
-    company_logo_dest = target / "src" / "logo_empresa.png"
+    company_logo_dest = target / "frontend" / "src" / "assets" / "logo_empresa.png"
     handle_logo(config, company_logo_dest, config_key="logo.path")
     client_logo_dest = target / "frontend" / "src" / "assets" / "logo_cliente.png"
     handle_logo(config, client_logo_dest, config_key="logo_cliente")
@@ -130,93 +130,14 @@ def _run_generate_ico(venv_path: Path, logo_png: Path) -> None:
 
 
 def _resolve_colors(config: dict, logo_png: Path) -> None:
-    """Extract 4 colors from logo and map them to the 8 configurable design variables.
-
-    Mapping rules (by luminance, 1=brightest):
-      - 1st (lightest) -> btn_nuevo_chat_text
-      - 2nd -> avatar_asistente
-      - 3rd -> avatar_usuario
-      - 4th (darkest/most dominant) -> primary -> btn_nuevo_chat_bg, btn_adjuntar, btn_enviar, btn_detener, flecha_autoscroll
-
-    Derived:
-      - primary_light = avatar_asistente (2nd color)
-    """
-    if _user_provided_colors(config):
-        print("  Using user-provided colors (skipping extraction)")
-        _map_to_configurable_colors(config)
-        return
-
-    try:
-        from colorthief import ColorThief
-
-        if not logo_png.is_file():
-            print("  WARNING: logo not found, skipping color extraction")
-            return
-
-        ct = ColorThief(str(logo_png))
-        palette = ct.get_palette(color_count=4)
-
-        # Sort by luminance ascending (darkest first = most dominant)
-        palette.sort(key=lambda rgb: 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2])
-
-        # palette[0] = darkest (primary), palette[3] = lightest
-        primary = "#{:02x}{:02x}{:02x}".format(*palette[0])
-        primary_light = "#{:02x}{:02x}{:02x}".format(*palette[1])
-        avatar_usuario = "#{:02x}{:02x}{:02x}".format(*palette[2])
-        lightest = "#{:02x}{:02x}{:02x}".format(*palette[3])
-
-        config.setdefault("colors", {})["primary"] = primary
-        config["colors"]["primary_light"] = primary_light
-        config["colors"]["avatar_usuario"] = avatar_usuario
-        config["colors"]["lightest"] = lightest
-
-        print(f"  primary: {primary}")
-        print(f"  primary_light: {primary_light}")
-        print(f"  avatar_usuario: {avatar_usuario}")
-        print(f"  lightest: {lightest}")
-
-        _map_to_configurable_colors(config)
-
-    except ImportError:
-        print("  WARNING: colorthief not available, skipping color extraction")
-
-
-def _map_to_configurable_colors(config: dict) -> None:
-    """Map extracted colors to the 8 configurable keys used by the template.
-
-    Direct mapping (no lightening/darkening):
-      - primary (darkest) -> btn_nuevo_chat_bg, btn_adjuntar, btn_enviar, btn_detener, flecha_autoscroll
-      - primary_light (2nd) -> avatar_asistente
-      - avatar_usuario (3rd) -> avatar_usuario
-      - lightest (4th) -> btn_nuevo_chat_text
-    """
+    """Validate that all 4 color fields exist in config."""
+    keys = ["primary", "secondary", "primary_text", "gradient_secondary"]
     colors = config.setdefault("colors", {})
-    primary = colors.get("primary", "#D76F10")
-    primary_light = colors.get("primary_light", "#F0A347")
-    avatar_usuario = colors.get("avatar_usuario", "#928c8c")
-    lightest = colors.get("lightest", "#FFFFFF")
-
-    # Direct mapping - no derivation
-    colors["avatar_asistente"] = primary_light
-    colors["avatar_usuario"] = avatar_usuario
-    colors["btn_nuevo_chat_bg"] = primary
-    colors["btn_nuevo_chat_text"] = lightest
-    colors["btn_adjuntar"] = primary
-    colors["btn_enviar"] = primary
-    colors["btn_detener"] = primary
-    colors["flecha_autoscroll"] = primary
-
-    print("  Mapped configurable colors:")
-    for key in ("avatar_asistente", "avatar_usuario", "btn_nuevo_chat_bg", "btn_nuevo_chat_text",
-                "btn_adjuntar", "btn_enviar", "btn_detener", "flecha_autoscroll"):
-        print(f"    {key}: {colors[key]}")
-
-
-def _user_provided_colors(config: dict) -> bool:
-    """Return True if any of the 8 configurable colors was explicitly provided."""
-    colors = config.get("colors", {})
-    configurable_keys = (
-        "avatar_asistente", "avatar_usuario", "btn_nuevo_chat_bg", "btn_nuevo_chat_text",
-        "btn_adjuntar", "btn_enviar", "btn_detener", "flecha_autoscroll"
-    )
-    return any(colors.get(k) for k in configurable_keys)
+    missing = [k for k in keys if not colors.get(k)]
+    if missing:
+        print(f"  WARNING: missing colors in config: {missing}")
+        return
+    for k in keys:
+        print(f"  {k}: {colors[k]}")
+    usar = colors.get("usar_gradiente", True)
+    print(f"  gradient: {'ON' if usar else 'OFF'}")

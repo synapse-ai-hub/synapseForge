@@ -32,7 +32,7 @@ _logger = logging.getLogger(__name__)
 
 # Same database as SessionManager
 _DB_PATH = os.path.join(
-    _project_root, "backend", "agent", "agent_db", "sessions.db"
+    _project_root, "backend", "agent", "agent_db", "agent.db"
 )
 
 _conn: sqlite3.Connection | None = None

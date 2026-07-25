@@ -112,7 +112,7 @@ flowchart LR
 3. **Limpiar copia** — copia `backend/` excluyendo:
    - `__pycache__/`
    - `build_launcher/`
-   - `sessions.db`
+   - `agent.db`
    - Todos los `.md` y `.txt` excepto en `agent/prompts/`
 4. **Generar launcher** — personaliza `templates/launcher.py` con los valores del repo (venv, puerto, módulo)
 5. **Compilar ejecutable** — PyInstaller `--onefile --noconsole` → `{exe_name}.exe`

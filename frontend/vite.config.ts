@@ -5,6 +5,7 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  envDir: "../",      // Lee .env desde la raíz del proyecto
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

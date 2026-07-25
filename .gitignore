@@ -47,3 +47,6 @@ docs/
 
 # Templates
 template/
+
+# Configuración
+config/

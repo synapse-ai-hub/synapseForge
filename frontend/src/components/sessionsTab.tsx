@@ -49,7 +49,7 @@ export function SessionsTab({
     <div className="flex-1 flex flex-col min-h-0">
       {/* New chat */}
       <div className="p-3 border-b border-app-border bg-white">
-        <Button onClick={onNewChat} className="w-full gap-2 bg-app-btn-nuevo-chat-bg text-app-btn-nuevo-chat-text hover:bg-app-btn-nuevo-chat-bg/90">
+        <Button onClick={onNewChat} className="w-full gap-2" variant="gradient">
           <Plus size={16} />
           Nuevo Chat
         </Button>

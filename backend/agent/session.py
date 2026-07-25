@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Ruta absoluta al archivo SQLite (basada en el project root, no en CWD)
 # Así funciona igual desde cualquier directorio (uvicorn, debugger, tests).
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "sessions.db")
+_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 
 class SessionManager:

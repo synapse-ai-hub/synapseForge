@@ -35,9 +35,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # Init — color extraction from logo
-    "colorthief>=0.2.0",
-
     # Init — .ico generation
     "Pillow>=10.0.0",
 ]

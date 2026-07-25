@@ -25,14 +25,10 @@ except ImportError:  # pragma: no cover
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 COLOR_FIELDS = [
-    ("avatar_asistente", "Avatar asistente"),
-    ("avatar_usuario", "Avatar usuario"),
-    ("btn_nuevo_chat_bg", "Botón Nuevo Chat / header MCP — fondo"),
-    ("btn_nuevo_chat_text", "Botón Nuevo Chat / header MCP — texto"),
-    ("btn_adjuntar", "Botón adjuntar"),
-    ("btn_enviar", "Botón enviar"),
-    ("btn_detener", "Botón detener"),
-    ("flecha_autoscroll", "Flecha autoscroll"),
+    ("primary", "Color principal (botones, headers, burbujas)"),
+    ("secondary", "Color secundario (hover, detalles light)"),
+    ("primary_text", "Color de texto (botones, headers)"),
+    ("gradient_secondary", "Color secundario del gradiente"),
 ]
 
 
@@ -73,7 +69,7 @@ class ColorsApp:
         # ── Instruction ──────────────────────────────────────────────
         ttk.Label(
             self.root,
-            text="Editá los colores (dejá vacío para mantener el actual):",
+            text="Colores del proyecto (dejá vacío para mantener el actual):",
             font=("", 10, ""),
         ).pack(pady=(5, 10))
 
@@ -112,6 +108,23 @@ class ColorsApp:
             # Initial preview
             self._update_preview(key)
 
+        # ── Gradient toggle ──────────────────────────────────────────
+        gradient_frame = ttk.Frame(self.root)
+        gradient_frame.pack(fill="x", padx=15, pady=(0, 5))
+
+        grad_default = current.get("usar_gradiente", True)
+        if isinstance(grad_default, str):
+            grad_default = grad_default.lower() in ("true", "1", "yes")
+        self._usar_gradiente_var = tk.BooleanVar(value=bool(grad_default))
+        ttk.Checkbutton(
+            gradient_frame,
+            text="Usar gradiente en botones y headers",
+            variable=self._usar_gradiente_var,
+            command=self._toggle_gradient_fields,
+        ).pack(anchor="w")
+
+        self._toggle_gradient_fields()
+
         # ── Bottom buttons ───────────────────────────────────────────
         bottom = ttk.Frame(self.root)
         bottom.pack(fill="x", padx=15, pady=(0, 12))
@@ -122,7 +135,7 @@ class ColorsApp:
         ttk.Button(bottom, text="Guardar", command=self._on_save).pack(side="right")
 
         # ── Center ───────────────────────────────────────────────────
-        self._center(660, 500)
+        self._center(660, 560)
 
     # ──────────────────────────────────────────────────────────────────
     # Configuración robusta del ícono usando ctypes
@@ -199,14 +212,29 @@ class ColorsApp:
         else:
             cv.config(bg="#ffffff")
 
+    def _toggle_gradient_fields(self) -> None:
+        """Enable/disable gradient_secondary picker based on checkbox."""
+        state = "normal" if self._usar_gradiente_var.get() else "disabled"
+        key = "gradient_secondary"
+        if key in self._entries:
+            self._entries[key].config(state=state)
+        if key in self._previews:
+            self._previews[key].config(highlightbackground="#ccc" if state == "normal" else "#eee")
+
     # ------------------------------------------------------------------
     # Save / Cancel
     # ------------------------------------------------------------------
     def _on_save(self) -> None:
         updated: Dict[str, str] = {}
         errors: list[str] = []
+        usar_gradiente = self._usar_gradiente_var.get()
+        updated["usar_gradiente"] = str(usar_gradiente).lower()
         for key, _desc in COLOR_FIELDS:
             raw = self._entries[key].get().strip()
+            if key == "gradient_secondary" and not usar_gradiente:
+                # If gradient off, set same as primary so gradient looks solid
+                updated[key] = updated.get("primary") or self.current.get("primary", "#000000")
+                continue
             if not raw:
                 updated[key] = self.current.get(key, "")
             elif _HEX_RE.match(raw):

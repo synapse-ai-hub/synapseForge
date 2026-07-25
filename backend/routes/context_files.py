@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/context-files", tags=["context-files"])
 
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "sessions.db")
+_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 
 def _get_connection() -> sqlite3.Connection:

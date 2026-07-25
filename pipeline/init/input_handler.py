@@ -31,39 +31,32 @@ def get_user_input() -> Dict[str, object]:
     descripcion: str = _prompt("Descripción del proyecto", required=True)
     tarea: str = _prompt("Nombre de la tarea / rubro", required=True)
 
-    # ── Colors (opcionales) ─────────────────────────────────────────────
-    print("\nColores (opcionales — dejá vacío para extraer del logo):")
-    print("  Avatar asistente: 2do color más fuerte")
-    print("  Avatar usuario: 3er color más fuerte")
-    print("  Botón Nuevo Chat / header MCP: color más fuerte - 20% (degradé 1ro-2do)")
-    print("  Texto Nuevo Chat / header MCP: color más claro detectado")
-    print("  Botones adjuntar/enviar/detener/flecha autoscroll: color más fuerte con transparencia\n")
+    # ── Colores (obligatorios) ──────────────────────────────────────────
+    print("\nColores del proyecto:")
+    print("  Primary: color principal (botones, headers, burbujas)")
+    print("  Secondary: color secundario (hover, detalles light)")
+    print("  Primary Text: color de texto (botones, headers)")
+    print("  Gradient Secondary: color secundario del gradiente (igual al primary si no usás gradiente)\n")
 
-    colors: Dict[str, str] = {}
+    colors: Dict[str, object] = {}
 
-    c = _prompt_hex("Avatar asistente (ej: #658665)")
-    if c: colors["avatar_asistente"] = c
+    c = _prompt_hex("Color principal (ej: #D76F10)", required=True)
+    colors["primary"] = c
 
-    c = _prompt_hex("Avatar usuario (ej: #928c8c)")
-    if c: colors["avatar_usuario"] = c
+    c = _prompt_hex("Color secundario (ej: #F0A347)", required=True)
+    colors["secondary"] = c
 
-    c = _prompt_hex("Botón Nuevo Chat / header MCP — fondo (ej: #452913)")
-    if c: colors["btn_nuevo_chat_bg"] = c
+    c = _prompt_hex("Color de texto (ej: #FFFFFF)", required=True)
+    colors["primary_text"] = c
 
-    c = _prompt_hex("Botón Nuevo Chat / header MCP — texto (ej: #e0c097)")
-    if c: colors["btn_nuevo_chat_text"] = c
-
-    c = _prompt_hex("Botón adjuntar (ej: #452913)")
-    if c: colors["btn_adjuntar"] = c
-
-    c = _prompt_hex("Botón enviar (ej: #452913)")
-    if c: colors["btn_enviar"] = c
-
-    c = _prompt_hex("Botón detener (ej: #452913)")
-    if c: colors["btn_detener"] = c
-
-    c = _prompt_hex("Flecha autoscroll (ej: #452913)")
-    if c: colors["flecha_autoscroll"] = c
+    # ── Gradient toggle ────────────────────────────────────────────────
+    usar = _prompt("¿Usar gradiente en botones/headers? (s/N)", default="n")
+    colors["usar_gradiente"] = usar.lower() in ("s", "si", "y", "yes", "1", "true")
+    if colors["usar_gradiente"]:
+        c = _prompt_hex("Color secundario del gradiente (ej: #F0A347)", required=True)
+        colors["gradient_secondary"] = c
+    else:
+        colors["gradient_secondary"] = colors["primary"]
 
     return {
         "logo": {
@@ -105,15 +98,26 @@ def _prompt(label: str, *, required: bool = False, default: str = "") -> str:
         print("    ⚠ Este campo es obligatorio.")
 
 
-def _prompt_hex(label: str) -> Optional[str]:
-    """Ask for an optional hex color. Return ``None`` if skipped."""
-    value = input(f"  {label}: ").strip()
-    if not value:
-        return None
-    if _HEX_RE.match(value):
-        return value
-    print("    ⚠ Formato inválido. Usá #RRGGBB (ej: #D76F10). Se ignora.")
-    return None
+def _prompt_hex(label: str, *, required: bool = False) -> str:
+    """Ask for a hex color. Return hex string if provided.
+
+    Args:
+        label: Prompt label.
+        required: When True, loop until a valid hex is entered.
+
+    Returns:
+        The hex color string, or ``""`` if not required and skipped.
+    """
+    while True:
+        value = input(f"  {label}: ").strip()
+        if not value and not required:
+            return ""
+        if not value:
+            print("    ⚠ Este campo es obligatorio.")
+            continue
+        if _HEX_RE.match(value):
+            return value
+        print("    ⚠ Formato inválido. Usá #RRGGBB (ej: #D76F10).")
 
 
 def _resolve_logo(raw: str) -> Path:

@@ -87,7 +87,7 @@ synapseforge launch ./my-project "MyApp"
 ```
 
 1. **Frontend** — `npm run build` with `VITE_MODE=prod` → `frontend/dist/`
-2. **Backend** — Compile to `.pyc`, clean copy (exclude `.py`, `__pycache__`, `sessions.db`, docs outside `agent/prompts/`)
+2. **Backend** — Compile to `.pyc`, clean copy (exclude `.py`, `__pycache__`, `agent.db`, docs outside `agent/prompts/`)
 3. **Embedded Python** — Downloads Python 3.12.0 embed amd64, configures `_pth`, installs pip, installs `requirements.txt` deps
 4. **Launcher** — Generates customized `launcher.py` → PyInstaller `--onefile --noconsole` → `MyApp.exe`
 5. **Package** — Bundles `MyApp.exe`, `backend/`, `frontend/dist/`, `python/`, `.env`, `LICENSE`, `README.md` into a timestamped zip

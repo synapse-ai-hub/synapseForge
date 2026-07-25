@@ -1227,7 +1227,7 @@ class Tools:
             )
 
     async def help(self) -> dict:
-        """Lee la documentación interna del agente sobre su funcionamiento.
+        """Lee la documentación interna del agente sobre su funcionamiento. Utiliza esta herramienta cuando el usuario te pida ayuda con el funcionamiento del agente, cuando te pida que le expliques cómo crear herramientas, subagentes, etc.
 
         Devuelve el contenido del archivo ``help.md`` que explica cómo
         crear herramientas, skills, agentes, cambiar modelos, configurar

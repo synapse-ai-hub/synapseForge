@@ -4,10 +4,7 @@ import json
 from pathlib import Path
 
 
-CONFIGURABLE_COLOR_KEYS = (
-    "avatar_asistente", "avatar_usuario", "btn_nuevo_chat_bg", "btn_nuevo_chat_text",
-    "btn_adjuntar", "btn_enviar", "btn_detener", "flecha_autoscroll"
-)
+CONFIGURABLE_COLOR_KEYS = ("primary", "secondary", "primary_text", "gradient_secondary", "usar_gradiente")
 
 
 def save_config(target: Path, config: dict) -> None:

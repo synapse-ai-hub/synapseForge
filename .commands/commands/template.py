@@ -3,7 +3,10 @@
 
 import zipfile
 import shutil
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+AR_TZ = timezone(timedelta(hours=-3))
 
 ROOT = Path(__file__).resolve().parents[2]  # synapseForge root
 TEMPLATE_DIR = ROOT / "template"
@@ -29,7 +32,7 @@ def main() -> None:
                 zf.write(file_path, arcname)
                 print(f"  + {arcname}")
 
-    print(f"\nOK template.zip regenerado en {ZIP_PATH}")
+    print(f"[{datetime.now(AR_TZ):%H:%M:%S}] OK template.zip regenerado en {ZIP_PATH}")
 
 
 if __name__ == "__main__":

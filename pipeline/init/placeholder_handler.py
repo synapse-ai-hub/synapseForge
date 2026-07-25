@@ -26,17 +26,11 @@ TAG_MAP: Dict[str, str] = {
     "logo_cliente": "logo_cliente",
     "descripcion": "descripcion",
     "tarea": "tarea",
-    # Colors extracted from logo (variable — set by pipeline init)
+    # Colors — 4 configurables + gradient toggle
     "color_primario": "colors.primary",
-    "color_primario_light": "colors.primary_light",
-    "color_avatar_asistente": "colors.avatar_asistente",
-    "color_avatar_usuario": "colors.avatar_usuario",
-    "color_btn_nuevo_chat_bg": "colors.btn_nuevo_chat_bg",
-    "color_btn_nuevo_chat_text": "colors.btn_nuevo_chat_text",
-    "color_btn_adjuntar": "colors.btn_adjuntar",
-    "color_btn_enviar": "colors.btn_enviar",
-    "color_btn_detener": "colors.btn_detener",
-    "color_flecha_autoscroll": "colors.flecha_autoscroll",
+    "color_secundario": "colors.secondary",
+    "color_texto_primario": "colors.primary_text",
+    "color_secundario_gradiente": "colors.gradient_secondary",
 }
 
 # Regex that matches <tag>anything</tag>.  Tag names must be [a-z_]+.

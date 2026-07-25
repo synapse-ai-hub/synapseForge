@@ -25,14 +25,10 @@ except ImportError:  # pragma: no cover
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 COLOR_TAB_FIELDS = [
-    ("avatar_asistente", "Avatar asistente"),
-    ("avatar_usuario", "Avatar usuario"),
-    ("btn_nuevo_chat_bg", "Botón Nuevo Chat — fondo"),
-    ("btn_nuevo_chat_text", "Botón Nuevo Chat — texto"),
-    ("btn_adjuntar", "Botón adjuntar"),
-    ("btn_enviar", "Botón enviar"),
-    ("btn_detener", "Botón detener"),
-    ("flecha_autoscroll", "Flecha autoscroll"),
+    ("primary", "Color principal (botones, headers, burbujas)"),
+    ("secondary", "Color secundario (hover, detalles light)"),
+    ("primary_text", "Color de texto (botones, headers)"),
+    ("gradient_secondary", "Color secundario del gradiente"),
 ]
 
 
@@ -240,7 +236,7 @@ class InitApp:
 
         ttk.Label(
             tab,
-            text="Colores opcionales — dejá vacío para extraer del logo:",
+            text="Colores del proyecto (obligatorios):",
             font=("", 10, "bold"),
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
@@ -269,6 +265,23 @@ class InitApp:
                 row=i, column=3, pady=2
             )
 
+        # ── Gradient toggle ──────────────────────────────────────────
+        self._usar_gradiente_var = tk.BooleanVar(value=True)
+        cb = ttk.Checkbutton(
+            tab,
+            text="Usar gradiente en botones y headers",
+            variable=self._usar_gradiente_var,
+            command=self._toggle_gradient_fields,
+        )
+        cb.grid(row=len(COLOR_TAB_FIELDS) + 1, column=0, columnspan=4, sticky="w", pady=(12, 0))
+
+        ttk.Label(
+            tab,
+            text="Si se desactiva, botones/headers usan el color principal sólido.",
+            font=("", 8, "italic"),
+            foreground="#888",
+        ).grid(row=len(COLOR_TAB_FIELDS) + 2, column=0, columnspan=4, sticky="w")
+
     def _pick_color(self, key: str) -> None:
         """Open OS color chooser, fill entry and update preview."""
         result = colorchooser.askcolor(
@@ -290,6 +303,15 @@ class InitApp:
             cv.config(bg=raw)
         else:
             cv.config(bg="#ffffff")
+
+    def _toggle_gradient_fields(self) -> None:
+        """Enable/disable gradient_secondary picker based on checkbox."""
+        state = "normal" if self._usar_gradiente_var.get() else "disabled"
+        key = "gradient_secondary"
+        if key in self._color_entries:
+            self._color_entries[key].config(state=state)
+        if key in self._color_previews:
+            self._color_previews[key].config(highlightbackground="#ccc" if state == "normal" else "#eee")
 
     # ------------------------------------------------------------------
     # Collect + validate
@@ -333,20 +355,31 @@ class InitApp:
         logo_cliente = self._logo_cliente_var.get().strip()
         config["logo_cliente"] = logo_cliente or None
 
-        # ── Colors ────────────────────────────────────────────────────
+        # ── Colors (required) ─────────────────────────────────────────
         colors: Dict[str, str] = {}
+        usar_gradiente = self._usar_gradiente_var.get()
+        colors["usar_gradiente"] = usar_gradiente
         for key, _desc in COLOR_TAB_FIELDS:
+            # Skip gradient_secondary if gradient toggle is off
+            if key == "gradient_secondary" and not usar_gradiente:
+                colors[key] = colors.get("primary", "#000000")
+                continue
             val = self._color_entries[key].get().strip()
-            if val:
-                if _HEX_RE.match(val):
-                    colors[key] = val
-                else:
-                    messagebox.showwarning(
-                        "Color inválido",
-                        f"{key}: '{val}' no es un color hex válido (#RRGGBB).",
-                        parent=self.root,
-                    )
-                    return None
+            if not val:
+                messagebox.showwarning(
+                    "Color requerido",
+                    f"'{_desc}' es obligatorio.",
+                    parent=self.root,
+                )
+                return None
+            if not _HEX_RE.match(val):
+                messagebox.showwarning(
+                    "Color inválido",
+                    f"{key}: '{val}' no es un color hex válido (#RRGGBB).",
+                    parent=self.root,
+                )
+                return None
+            colors[key] = val
         config["colors"] = colors
 
         return config

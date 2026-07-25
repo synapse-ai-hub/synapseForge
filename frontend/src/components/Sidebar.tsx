@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, MessageSquare, Settings, Bot, Trash2 } from "lucide-react";
+import { Plus, History, Settings, Brain, Trash2, Wrench } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import EmpresaLogo from "../assets/logo_empresa.png";
 import sessionService, { type ChatSession } from "../services/sessionService";
-import configService, { type McpServer, type McpServerHealth } from "../services/configService";
 import contextFilesService, { type ContextFile } from "../services/contextFilesService";
 import SessionsTab from "./sessionsTab";
 import ConfigTab from "./configTab";
@@ -56,17 +56,6 @@ export function Sidebar({
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [mcpHealth, setMcpHealth] = useState<Record<string, McpServerHealth>>({});
-  const [mcpLoading, setMcpLoading] = useState(true);
-  const [agentInfo, setAgentInfo] = useState<{
-    tools: string[];
-    skills: string[];
-    agents: string[];
-  } | null>(null);
-  const [agentInfoLoading, setAgentInfoLoading] = useState(true);
-
-  const isDevMode = import.meta.env.VITE_MODE !== "prod";
 
   const loadSessions = useCallback(async () => {
     try {
@@ -81,82 +70,10 @@ export function Sidebar({
     }
   }, []);
 
-  const loadMcpServers = useCallback(async () => {
-    try {
-      setMcpLoading(true);
-      const data = await configService.getMcpServers();
-      setMcpServers(data.servers || []);
-    } catch (err) {
-      console.error("Error cargando servidores MCP:", err);
-      setMcpServers([]);
-    } finally {
-      setMcpLoading(false);
-    }
-  }, []);
-
-  const loadMcpHealth = useCallback(async () => {
-    if (mcpServers.length === 0) return;
-    try {
-      const healthData = await configService.getMcpHealth();
-      const healthMap: Record<string, McpServerHealth> = {};
-      for (const h of healthData.servers || []) {
-        healthMap[h.label] = h;
-      }
-      setMcpHealth(healthMap);
-    } catch (err) {
-      console.error("Error cargando salud MCP:", err);
-    }
-  }, [mcpServers]);
-
-  const loadAgentInfo = useCallback(async () => {
-    try {
-      setAgentInfoLoading(true);
-      // Load tools, skills, and agents from the backend config endpoint
-      const [providersResp, mcpResp] = await Promise.all([
-        configService.getProviders(),
-        configService.getMcpServers(),
-      ]);
-      const tools: string[] = [];
-      const skills: string[] = [];
-      const agents: string[] = [];
-
-      // Tools come from MCP servers
-      for (const server of mcpResp.servers || []) {
-        if (server.label) tools.push(server.label);
-      }
-
-      // Skills and agents would be loaded from their respective endpoints
-      // For now, we show what's available from the config
-      setAgentInfo({ tools, skills, agents });
-    } catch (err) {
-      console.error("Error cargando información del agente:", err);
-      setAgentInfo({ tools: [], skills: [], agents: [] });
-    } finally {
-      setAgentInfoLoading(false);
-    }
-  }, []);
-
   // Load sessions on mount
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
-
-  // Load MCP servers on mount
-  useEffect(() => {
-    loadMcpServers();
-  }, [loadMcpServers]);
-
-  // Load MCP health when servers change
-  useEffect(() => {
-    loadMcpHealth();
-  }, [loadMcpHealth]);
-
-  // Load agent info when switching to agent tab
-  useEffect(() => {
-    if (tab === "agent") {
-      loadAgentInfo();
-    }
-  }, [tab, loadAgentInfo]);
 
   // Recargar en silencio cuando se abre el sidebar, cambia el tab o refreshTrigger
   useEffect(() => {
@@ -185,25 +102,35 @@ export function Sidebar({
   };
 
   const isDevOnly = import.meta.env.VITE_MODE === "dev";
+  console.log("[Sidebar] VITE_MODE =", import.meta.env.VITE_MODE, "→ isDevOnly =", isDevOnly);
 
   // Menu items
   const menuItems: Array<{ key: SidebarTab; label: string; icon: React.ReactNode; devOnly?: boolean }> = [
-    { key: "sessions", label: "Conversaciones", icon: <MessageSquare size={14} /> },
+    { key: "sessions", label: "Conversaciones", icon: <History size={14} /> },
     { key: "config", label: "Configuración", icon: <Settings size={14} /> },
-    { key: "agent", label: "Agente", icon: <Bot size={14} /> },
+    { key: "agent", label: "Agente", icon: <Brain size={14} /> },
     ...(isDevOnly ? [{ key: "create" as SidebarTab, label: "Crear", icon: <Wrench size={14} /> }] : []),
   ];
 
   return (
     <aside className="w-64 shrink-0 h-full flex flex-col border-r border-app-border bg-app-bg-secondary">
       {/* Menu header */}
-      <div
-        className="flex items-center gap-2 px-4 border-b border-app-border bg-white"
-        style={{ height: "52px" }}
+      <header
+        className="flex items-center gap-3 px-4 shrink-0 border-b border-app-border bg-white"
+        style={{ height: "95px" }}
       >
-        <MessageSquare size={16} className="text-app-primary" />
-        <span className="text-sm font-semibold text-app-text">synapseForge</span>
-      </div>
+        <img
+          src={EmpresaLogo}
+          alt="Logo empresa"
+          className="h-14 sm:h-[75px] w-auto"
+        />
+        <div className="flex flex-col min-w-0">
+          <span className="text-base font-semibold text-app-text truncate">
+            <empresa>nombre_empresa</empresa>
+          </span>
+          <span className="text-xs text-app-text-secondary truncate leading-tight">synapseForge</span>
+        </div>
+      </header>
 
       {/* Menu items */}
       <nav className="flex flex-col py-2 border-b border-app-border">
@@ -214,7 +141,7 @@ export function Sidebar({
             onClick={() => setTab(item.key)}
             className={`flex items-center gap-2 px-3 py-2.5 text-xs font-medium transition-colors border-l-2 ${
               tab === item.key
-                ? "border-app-primary text-app-primary bg-app-btn-nuevo-chat-bg/10"
+                ? "border-app-primary text-app-primary bg-app-primary/10"
                 : "border-transparent text-app-text-secondary hover:text-app-text hover:bg-app-bg-tertiary"
             }`}
           >
@@ -256,10 +183,7 @@ export function Sidebar({
           className="flex-1 flex flex-col min-h-0 overflow-y-auto"
           style={{ display: tab === "agent" ? "flex" : "none" }}
         >
-          <AgentInfoTab
-            agentInfo={agentInfo}
-            loading={agentInfoLoading}
-          />
+          <AgentInfoTab />
         </div>
 
         {/* Create tab (dev only) */}

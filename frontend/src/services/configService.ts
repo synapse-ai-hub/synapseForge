@@ -49,6 +49,16 @@ export interface McpHealthResponse {
   servers: McpServerHealth[];
 }
 
+export interface AgentInfo {
+  name: string;
+  description: string;
+}
+
+export interface SkillsResponse {
+  status: string;
+  skills_text: string;
+}
+
 export const configService = {
   /** List available models and the currently selected one. */
   async getModels(provider?: string): Promise<ModelsResponse> {
@@ -155,6 +165,30 @@ export const configService = {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return response.json();
+  },
+
+  /** List configured agents. */
+  async getAgents(): Promise<{ name: string; description: string }[]> {
+    const response = await fetch(`${API_BASE_URL}/api/config/agents`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.agents || [];
+  },
+
+  /** List available skills (raw markdown text). */
+  async getSkills(): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/api/config/skills`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.skills_text || "";
   },
 
   /** Check health of all configured MCP servers. */

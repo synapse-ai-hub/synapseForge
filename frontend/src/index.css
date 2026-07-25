@@ -13,16 +13,10 @@
   --color-app-error: #C2413D;
 
   /* ── Configurables (build-time: placeholders XML; runtime: colors.json) ── */
-  --color-app-primary: <color_primario></color_primario>;
-  --color-app-primary-light: <color_primario_light></color_primario_light>;
-  --color-app-avatar-asistente: <color_avatar_asistente></color_avatar_asistente>;
-  --color-app-avatar-usuario: <color_avatar_usuario></color_avatar_usuario>;
-  --color-app-btn-nuevo-chat-bg: <color_btn_nuevo_chat_bg></color_btn_nuevo_chat_bg>;
-  --color-app-btn-nuevo-chat-text: <color_btn_nuevo_chat_text></color_btn_nuevo_chat_text>;
-  --color-app-btn-adjuntar: <color_btn_adjuntar></color_btn_adjuntar>;
-  --color-app-btn-enviar: <color_btn_enviar></color_btn_enviar>;
-  --color-app-btn-detener: <color_btn_detener></color_btn_detener>;
-  --color-app-flecha-autoscroll: <color_flecha_autoscroll></color_flecha_autoscroll>;
+  --color-app-primary: <color_primario>color_primario</color_primario>;
+  --color-app-primary-light: <color_secundario>color_secundario</color_secundario>;
+  --color-app-primary-text: <color_texto_primario>color_texto_primario</color_texto_primario>;
+  --color-app-gradient-secondary: <color_secundario_gradiente>color_secundario_gradiente</color_secundario_gradiente>;
 }
 
 /* Scrollbar — thumb = #d9d7d9, track = transparent */
@@ -94,6 +88,7 @@ body {
   padding: 0.125rem 0.375rem;
   border-radius: 4px;
   font-size: 0.875em;
+  color: inherit;
 }
 .markdown-content pre {
   background-color: var(--color-app-bg-tertiary);
@@ -103,6 +98,11 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
   margin-bottom: 0.75rem;
+}
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
 }
 .markdown-content pre code {
   background: none;

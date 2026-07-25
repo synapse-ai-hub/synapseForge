@@ -9,7 +9,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-app-primary text-white hover:bg-app-primary/90",
+        default: "bg-app-primary text-app-primary-text hover:bg-app-primary/90",
+        gradient: "bg-gradient-to-r from-app-primary to-app-gradient-secondary text-app-primary-text hover:opacity-90",
         destructive: "bg-app-error text-white hover:bg-app-error/90",
         outline:
           "border border-app-border bg-white hover:bg-app-bg-secondary",

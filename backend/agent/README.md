@@ -27,7 +27,7 @@ El módulo **Agent** es el núcleo del asistente conversacional. Implementa un b
 ### ✨ Características Principales
 
 - **Loop iterativo nativo**: Llama al LLM en un `while(true)` — si responde con `tool_calls`, las ejecuta y continúa; si responde con contenido, lo entrega y termina.
-- **Persistencia SQLite**: Cada mensaje, tool call y resultado se guarda automáticamente en `agent_db/sessions.db`.
+- **Persistencia SQLite**: Cada mensaje, tool call y resultado se guarda automáticamente en `agent_db/agent.db`.
 - **Contexto compactable**: Gestión inteligente de tokens con estrategias configurables (ask, cod, original) y límite de turnos.
 - **Soporte multi-proveedor**: Funciona con Groq (API) y Ollama (local) sin cambiar la lógica del loop.
 - **Permisos y prompts**: Resolución dinámica de herramientas y skills desde archivos markdown de agente.
@@ -66,7 +66,7 @@ Maneja toda la interacción con la base de datos SQLite:
 - Creación y recuperación de sesiones.
 - Guardado y carga de mensajes con tool calls y resultados.
 - Almacenamiento de configuración clave/valor (`config_kv`): modelo seleccionado, proveedor, ventana de contexto.
-- Path de la DB: `backend/agent/agent_db/sessions.db` (relativo al project root).
+- Path de la DB: `backend/agent/agent_db/agent.db` (relativo al project root).
 
 ### 3. `config.py` — Configuración del entorno
 
@@ -123,7 +123,7 @@ Almacena el prompt base del agente en formato markdown:
 
 ### 10. `agent_db/` — Base de datos SQLite
 
-Directorio que contiene el archivo `sessions.db` con las tablas:
+Directorio que contiene el archivo `agent.db` con las tablas:
 - `sessions` — Metadatos de cada conversación.
 - `messages` — Historial de mensajes con tool calls y resultados.
 - `config_kv` — Configuración persistente (modelo, proveedor, turnos de contexto).
@@ -394,7 +394,7 @@ Los servidores MCP configurados en `config.json` exponen sus herramientas autom�
 ```
 
 **Notas:**
-- La base de datos SQLite se crea automáticamente en `backend/agent/agent_db/sessions.db` al iniciar el agente.
+- La base de datos SQLite se crea automáticamente en `backend/agent/agent_db/agent.db` al iniciar el agente.
 - El directorio de configuración `~/.config/synapseForge/` (skills, tools, agents, config.json) se crea automáticamente al arrancar.
 - Las variables de entorno se cargan desde `.env` en la raíz del proyecto.
 - No requiere servicios externos — SQLite es parte de la stdlib de Python.
@@ -416,7 +416,7 @@ backend/agent/
 ├─ contract.py              # Contratos de respuesta
 ├─ config_dir.py            # Gestión del directorio ~/.config/synapseForge/
 ├─ agent_db/                # Base de datos SQLite
-│   └─ sessions.db
+│   └─ agent.db
 ├─ prompts/                 # Prompts del sistema
 │   └─ system_prompt.md
 ├─ utils/                   # Utilidades auxiliares

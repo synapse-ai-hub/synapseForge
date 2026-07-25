@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["sessions"])
 
 # Path to the SQLite database
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "sessions.db")
+_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 
 def _fetch_attachments(session_id: str) -> dict[int, list[dict]]:

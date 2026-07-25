@@ -174,13 +174,13 @@ Requirements:
 
     try:
         if args.command == "init":
-            _run_init(args.target_dir)
+            _init(args.target_dir)
         elif args.command == "launch":
-            _run_launch(args.repo_path, args.exe_name, args.skip_frontend, args.no_embed)
+            _launch(args.repo_path, args.exe_name, args.skip_frontend, args.no_embed)
         elif args.command == "colors":
-            _run_colors(args.project_dir)
+           _colors(args.project_dir)
         elif args.command == "run":
-            _run_run(args.project_dir)
+            _run(args.project_dir)
         else:
             parser.print_help()
             sys.exit(1)
@@ -189,7 +189,7 @@ Requirements:
         sys.exit(1)
 
 
-def _run_init(target_dir: str) -> None:
+def _init(target_dir: str) -> None:
     """Open tkinter GUI to collect config, then run pipeline.init.main.run()."""
     try:
         from synapseforge.tk.init_app import InitApp
@@ -205,7 +205,7 @@ def _run_init(target_dir: str) -> None:
     print("  Proyecto creado correctamente.")
 
 
-def _run_launch(
+def _launch(
     repo_path: str, exe_name: str, skip_frontend: bool, no_embed: bool
 ) -> None:
     """Import and run pipeline.launch.forge.build()."""
@@ -222,7 +222,7 @@ def _run_launch(
     )
 
 
-def _run_colors(project_dir: str) -> None:
+def _colors(project_dir: str) -> None:
     """Open tkinter GUI for editing frontend/public/colors.json."""
     try:
         from synapseforge.tk.colors_app import ColorsApp
@@ -238,7 +238,7 @@ def _run_colors(project_dir: str) -> None:
         print("  Recargá el navegador para ver los cambios (sin rebuild).")
 
 
-def _run_run(project_dir: str) -> None:
+def _run(project_dir: str) -> None:
     """Start uvicorn + npm run dev and open the browser."""
     project_path = Path(project_dir).resolve()
     frontend_path = project_path / "frontend"
@@ -259,7 +259,7 @@ def _run_run(project_dir: str) -> None:
     )
 
     # Wait a few seconds and check if backend is alive
-    time.sleep(5)
+    time.sleep(3)
     if uvicorn_proc.poll() is not None:
         print("  ERROR: Backend falló al iniciar (¿olvidaste activar el venv?)", file=sys.stderr)
         sys.exit(1)

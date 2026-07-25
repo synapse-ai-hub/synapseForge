@@ -102,7 +102,6 @@ export function Sidebar({
   };
 
   const isDevOnly = import.meta.env.VITE_MODE === "dev";
-  console.log("[Sidebar] VITE_MODE =", import.meta.env.VITE_MODE, "→ isDevOnly =", isDevOnly);
 
   // Menu items
   const menuItems: Array<{ key: SidebarTab; label: string; icon: React.ReactNode; devOnly?: boolean }> = [

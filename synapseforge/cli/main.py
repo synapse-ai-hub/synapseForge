@@ -240,6 +240,16 @@ def _colors(project_dir: str) -> None:
 
 def _run(project_dir: str) -> None:
     """Start uvicorn + npm run dev and open the browser."""
+    import os
+
+    # ── Verificar que el entorno virtual esté activado ────────────────
+    if not os.environ.get("VIRTUAL_ENV"):
+        raise RuntimeError(
+            "No hay un entorno virtual activado. "
+            "Activá el venv antes de ejecutar 'synapseforge run'.\n"
+            "Ejemplo: .\\venv\\Scripts\\activate (Windows) o source venv/bin/activate (Linux/Mac)"
+        )
+
     project_path = Path(project_dir).resolve()
     frontend_path = project_path / "frontend"
     backend_module = "backend.main:app"

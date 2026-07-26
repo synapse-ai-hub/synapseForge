@@ -25,9 +25,9 @@ ENV VITE_MODE=$VITE_MODE \
 RUN npm run build
 
 # ==============================================================================
-# Stage 2 — Python runtime (uvicorn + FastAPI)
+# Stage 2a — Backend base (shared code, no frontend yet)
 # ==============================================================================
-FROM python:3.12-slim
+FROM python:3.12-slim AS backend-base
 
 WORKDIR /app
 
@@ -48,15 +48,28 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/ ./backend/
 
-# Copy built frontend from Stage 1 (triggered by main.py catch-all)
-COPY --from=frontend-build /app/frontend/dist/ ./frontend/dist/
-
 # Expose the application port
 EXPOSE 8000
 
-# Health check
+# ==============================================================================
+# Stage 2b — Backend only (for ACI / separated deployments)
+# ==============================================================================
+FROM backend-base AS backend-only
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run uvicorn on all interfaces (so Docker port mapping works)
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# ==============================================================================
+# Stage 2c — Autocontained (backend + frontend static files)
+# ==============================================================================
+FROM backend-base AS autocontained
+
+# Copy built frontend from Stage 1 (triggered by main.py catch-all)
+COPY --from=frontend-build /app/frontend/dist/ ./frontend/dist/
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

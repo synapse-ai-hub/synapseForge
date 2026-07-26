@@ -461,15 +461,9 @@ async def _check_stdio_server_health(config: McpServerConfig, timeout: float) ->
     conn = McpConnection(config)
     try:
         conn.start()
-        # Give it a moment to start
-        import asyncio
-        await asyncio.sleep(0.5)
-        tools = conn.list_tools()
         return {
             "label": label,
             "status": McpServerStatus.CONNECTED,
-            "tools_count": len(tools),
-            "tools": [t.get("name") for t in tools],
         }
     except Exception as exc:
         return {

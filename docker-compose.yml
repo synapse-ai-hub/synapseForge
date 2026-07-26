@@ -1,12 +1,27 @@
 services:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Modo 1 — Contenedor autocontenido (backend + frontend estático)
+  # ────────────────────────────────────────────────────────────────────────────
   app:
     build:
       context: .
+      target: autocontained
       args:
         VITE_MODE: prod
         # Set these if the frontend needs to reach the API at a different origin
         # VITE_URL_BASE: "http://localhost:8000"
         # VITE_URL_PROD: "http://localhost:8000"
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Modo 2 — Solo backend (para ACI / separated deployments)
+  # ────────────────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      target: backend-only
     ports:
       - "8000:8000"
     restart: unless-stopped

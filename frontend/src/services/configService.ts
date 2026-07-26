@@ -21,32 +21,14 @@ export interface ProvidersResponse {
   providers: Array<{ provider: string; label: string }>;
 }
 
-export interface McpServer {
-  label: string;
+export interface SkillInfo {
+  name: string;
   description: string;
-  transport: string;
-  command: string;
-  args: string[];
-  disabled: boolean;
 }
 
-export interface McpServerHealth {
-  label: string;
-  status: "connected" | "failed" | "disabled" | "not_configured";
-  error?: string;
-  tools_count?: number;
-  tools?: string[];
-  note?: string;
-}
-
-export interface McpServersResponse {
-  status: string;
-  servers: McpServer[];
-}
-
-export interface McpHealthResponse {
-  status: string;
-  servers: McpServerHealth[];
+export interface ToolInfo {
+  name: string;
+  description: string;
 }
 
 export interface AgentInfo {
@@ -54,9 +36,10 @@ export interface AgentInfo {
   description: string;
 }
 
-export interface SkillsResponse {
-  status: string;
-  skills_text: string;
+export interface McpServerStatus {
+  label: string;
+  status: "connected" | "failed" | "disabled" | "not_configured";
+  error?: string;
 }
 
 export const configService = {
@@ -156,19 +139,32 @@ export const configService = {
     return response.json();
   },
 
-  /** List configured MCP servers. */
-  async getMcpServers(): Promise<McpServersResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/config/mcp/servers`, {
+  /** List available skills (name + description). */
+  async getSkills(): Promise<SkillInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/config/skills`, {
       method: "GET",
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    return response.json();
+    const data = await response.json();
+    return data.skills || [];
   },
 
-  /** List configured agents. */
-  async getAgents(): Promise<{ name: string; description: string }[]> {
+  /** List all available tools (native + external, no MCP). */
+  async getTools(): Promise<ToolInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/config/tools`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.tools || [];
+  },
+
+  /** List available sub-agents. */
+  async getAgents(): Promise<AgentInfo[]> {
     const response = await fetch(`${API_BASE_URL}/api/config/agents`, {
       method: "GET",
     });
@@ -179,27 +175,16 @@ export const configService = {
     return data.agents || [];
   },
 
-  /** List available skills (raw markdown text). */
-  async getSkills(): Promise<string> {
-    const response = await fetch(`${API_BASE_URL}/api/config/skills`, {
+  /** List MCP servers with connection status. */
+  async getMcp(): Promise<McpServerStatus[]> {
+    const response = await fetch(`${API_BASE_URL}/api/config/mcp`, {
       method: "GET",
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     const data = await response.json();
-    return data.skills_text || "";
-  },
-
-  /** Check health of all configured MCP servers. */
-  async getMcpHealth(): Promise<McpHealthResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/config/mcp/health`, {
-      method: "GET",
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    return response.json();
+    return data.servers || [];
   },
 };
 

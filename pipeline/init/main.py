@@ -59,6 +59,9 @@ def run(target_dir: str, config: dict | None = None) -> None:
     print("\n[6/10] Copying logos ...")
     company_logo_dest = target / "frontend" / "src" / "assets" / "logo_empresa.png"
     handle_logo(config, company_logo_dest, config_key="logo.path")
+    # Also copy to root/src for backward compatibility with template references
+    company_logo_root = target / "src" / "logo_empresa.png"
+    handle_logo(config, company_logo_root, config_key="logo.path")
     client_logo_dest = target / "frontend" / "src" / "assets" / "logo_cliente.png"
     handle_logo(config, client_logo_dest, config_key="logo_cliente")
 

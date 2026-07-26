@@ -91,7 +91,7 @@ def _build_replacement_map(config: dict) -> Dict[str, str]:
     for tag, key_path in TAG_MAP.items():
         if tag == "logo":
             # Use repo-relative path instead of absolute path
-            replacements[tag] = "src/logo_empresa.png"
+            replacements[tag] = "src/assets/logo_empresa.png"
         else:
             value = _deep_get(config, key_path)
             if value is not None and value != "":

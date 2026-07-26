@@ -1,234 +1,228 @@
 import { useState, useEffect, useCallback } from "react";
-import { Wrench, Puzzle, Brain, Server, Globe, Database, Cpu } from "lucide-react";
-import configService, { type McpServer, type McpServerHealth, type AgentInfo } from "../services/configService";
+import { Wrench, Puzzle, Brain, Server, Cpu, Globe, Database } from "lucide-react";
+import configService, { type SkillInfo, type ToolInfo, type AgentInfo, type McpServerStatus } from "../services/configService";
 
-interface ParsedSkill {
-  name: string;
-  description: string;
-  triggers: string;
-}
-
-/** Parse skills markdown text into structured skill objects. */
-function parseSkillsText(text: string): ParsedSkill[] {
-  if (!text) return [];
-  const skills: ParsedSkill[] = [];
-  const blocks = text.split("\n\n");
-  for (const block of blocks) {
-    const nameMatch = block.match(/^###\s+(.+)$/m);
-    if (!nameMatch) continue;
-    const name = nameMatch[1].trim();
-    const descMatch = block.match(/\*\*Descripción\*\*:\s*(.+)/);
-    const triggerMatch = block.match(/\*\*Triggers\*\*:\s*(.+)/);
-    skills.push({
-      name,
-      description: descMatch ? descMatch[1].trim() : "",
-      triggers: triggerMatch ? triggerMatch[1].trim() : "",
-    });
-  }
-  return skills;
-}
+type AgentTab = "tools" | "skills" | "agents" | "mcp" | "rag";
 
 export function AgentInfoTab() {
+  const [tab, setTab] = useState<AgentTab>("tools");
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Sidebar nav — vertical tabs one below the other */}
+      <nav className="flex flex-col py-2 border-b border-app-border bg-app-bg-secondary">
+        {([
+          { key: "tools" as AgentTab, label: "Tools", icon: <Wrench size={14} /> },
+          { key: "skills" as AgentTab, label: "Skills", icon: <Puzzle size={14} /> },
+          { key: "agents" as AgentTab, label: "Agentes", icon: <Brain size={14} /> },
+          { key: "mcp" as AgentTab, label: "MCP", icon: <Server size={14} /> },
+          { key: "rag" as AgentTab, label: "RAG", icon: <Database size={14} /> },
+        ]).map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => setTab(item.key)}
+            className={`flex items-center gap-2 px-3 py-2.5 text-xs font-medium transition-colors border-l-2 ${
+              tab === item.key
+                ? "border-app-primary text-app-primary bg-app-primary/10"
+                : "border-transparent text-app-text-secondary hover:text-app-text hover:bg-app-bg-tertiary"
+            }`}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* Content — below the nav tabs (same as Sidebar layout) */}
+      <div className="flex-1 overflow-y-auto p-3">
+        {tab === "tools" && <ToolsPanel />}
+        {tab === "skills" && <SkillsPanel />}
+        {tab === "agents" && <AgentsPanel />}
+        {tab === "mcp" && <McpPanel />}
+        {tab === "rag" && <RagPanel />}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tools ────────────────────────────────────────────────────────
+
+function ToolsPanel() {
+  const [tools, setTools] = useState<ToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Tools from MCP servers (list of tool names from health)
-  const [tools, setTools] = useState<{ name: string; server: string }[]>([]);
-
-  // Skills
-  const [skills, setSkills] = useState<ParsedSkill[]>([]);
-
-  // Agents
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-
-  // MCP servers
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [mcpHealth, setMcpHealth] = useState<Record<string, McpServerHealth>>({});
-
-  const loadAll = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-
-      // Load everything in parallel
-      const [mcpServersData, healthData, agentsData, skillsText] = await Promise.all([
-        configService.getMcpServers(),
-        configService.getMcpHealth(),
-        configService.getAgents(),
-        configService.getSkills(),
-      ]);
-
-      // MCP servers
-      setMcpServers(mcpServersData.servers || []);
-
-      // Health
-      const healthMap: Record<string, McpServerHealth> = {};
-      for (const h of healthData.servers || []) {
-        healthMap[h.label] = h;
-      }
-      setMcpHealth(healthMap);
-
-      // Tools (from MCP health — tool names reported by each server)
-      const toolEntries: { name: string; server: string }[] = [];
-      for (const h of healthData.servers || []) {
-        if (h.status === "connected" && h.tools) {
-          for (const tool of h.tools) {
-            toolEntries.push({ name: tool, server: h.label });
-          }
-        }
-      }
-      setTools(toolEntries);
-
-      // Agents
-      setAgents(agentsData);
-
-      // Skills
-      setSkills(parseSkillsText(skillsText));
-
+      const data = await configService.getTools();
+      setTools(data);
     } catch (err) {
-      console.error("Error cargando información del agente:", err);
+      console.error("Error cargando tools:", err);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+  useEffect(() => { load(); }, [load]);
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-4">
-        <p className="text-sm text-app-text-secondary">Cargando información del agente...</p>
-      </div>
-    );
-  }
+  if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 space-y-4">
-
-      {/* ── Tools ── */}
-      <Section icon={<Wrench size={14} />} title="Herramientas disponibles" count={tools.length}>
-        {tools.length > 0 ? (
-          tools.map((t, i) => (
-            <div key={`tool-${i}`} className="py-1.5 flex items-center gap-2 text-xs text-app-text">
-              <Cpu size={12} className="shrink-0 text-app-primary" />
-              <span className="truncate">{t.name}</span>
-              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-app-bg-tertiary text-app-text-secondary ml-auto">
-                {t.server}
-              </span>
-            </div>
-          ))
-        ) : (
-          <p className="text-xs text-app-text-secondary py-1">No hay herramientas disponibles.</p>
-        )}
-      </Section>
-
-      {/* ── Skills ── */}
-      <Section icon={<Puzzle size={14} />} title="Skills disponibles" count={skills.length}>
-        {skills.length > 0 ? (
-          skills.map((s) => (
-            <div key={s.name} className="py-1.5 text-xs text-app-text">
-              <span className="font-medium">{s.name}</span>
-              {s.description && (
-                <span className="block text-app-text-secondary truncate text-[11px] mt-0.5">
-                  {s.description}
-                </span>
-              )}
-              {s.triggers && (
-                <span className="inline-block mt-0.5 text-[10px] px-1.5 py-0.5 rounded bg-app-bg-tertiary text-app-text-secondary">
-                  Triggers: {s.triggers}
-                </span>
-              )}
-            </div>
-          ))
-        ) : (
-          <p className="text-xs text-app-text-secondary py-1">No hay skills instaladas.</p>
-        )}
-      </Section>
-
-      {/* ── Agents ── */}
-      <Section icon={<Brain size={14} />} title="Agentes disponibles" count={agents.length}>
-        {agents.length > 0 ? (
-          agents.map((a) => (
-            <div key={a.name} className="py-1.5 text-xs text-app-text">
-              <span className="font-medium">{a.name}</span>
-              {a.description && (
-                <span className="block text-app-text-secondary truncate text-[11px] mt-0.5">
-                  {a.description}
-                </span>
-              )}
-            </div>
-          ))
-        ) : (
-          <p className="text-xs text-app-text-secondary py-1">No hay agentes configurados.</p>
-        )}
-      </Section>
-
-      {/* ── MCP Servers ── */}
-      <Section icon={<Server size={14} />} title="Servidores MCP" count={mcpServers.length}>
-        {mcpServers.length > 0 ? (
-          mcpServers.map((server) => {
-            const health = mcpHealth[server.label];
-            const isConnected = health?.status === "connected";
-            const isFailed = health?.status === "failed";
-
-            return (
-              <div key={server.label} className="py-1.5 flex items-center gap-2 text-xs text-app-text">
-                {server.transport === "http" ? (
-                  <Globe size={12} className="shrink-0 text-app-primary" />
-                ) : (
-                  <Database size={12} className="shrink-0 text-app-primary" />
-                )}
-                <span className="truncate">{server.label}</span>
-                <span className={`shrink-0 ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                  isConnected
-                    ? "bg-app-primary/10 text-app-primary"
-                    : isFailed
-                    ? "bg-app-error/10 text-app-error"
-                    : "bg-app-bg-tertiary text-app-text-secondary"
-                }`}>
-                  {isConnected ? "Conectado" : isFailed ? "Error" : "Desconocido"}
-                </span>
-              </div>
-            );
-          })
-        ) : (
-          <p className="text-xs text-app-text-secondary py-1">No hay servidores MCP configurados.</p>
-        )}
-      </Section>
-
+    <div className="space-y-1">
+      {tools.length === 0 ? (
+        <p className="text-sm text-app-text-secondary">No hay herramientas disponibles.</p>
+      ) : (
+        tools.map((t) => (
+          <div key={t.name} className="rounded-lg border border-app-border bg-white px-3 py-2">
+            <span className="text-sm font-medium text-app-text">{t.name}</span>
+            {t.description && (
+              <p className="text-xs text-app-text-secondary mt-0.5">{t.description}</p>
+            )}
+          </div>
+        ))
+      )}
     </div>
   );
 }
 
-// ─── Section component with colored header ───
+// ─── Skills ───────────────────────────────────────────────────────
 
-function Section({
-  icon,
-  title,
-  count,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  count: number;
-  children: React.ReactNode;
-}) {
+function SkillsPanel() {
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await configService.getSkills();
+      setSkills(data);
+    } catch (err) {
+      console.error("Error cargando skills:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
+
   return (
-    <div className="rounded-lg overflow-hidden border border-app-border">
-      {/* Colored header */}
-      <div className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-app-primary to-app-gradient-secondary">
-        <span className="text-app-primary-text shrink-0">{icon}</span>
-        <span className="text-xs font-medium text-app-primary-text truncate">{title}</span>
-        {count > 0 && (
-          <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full text-[9px] font-medium ml-auto bg-white text-app-primary">
-            {count}
-          </span>
-        )}
-      </div>
-      {/* White content */}
-      <div className="px-3 py-1.5 bg-white">
-        {children}
-      </div>
+    <div className="space-y-1">
+      {skills.length === 0 ? (
+        <p className="text-sm text-app-text-secondary">No hay skills instaladas.</p>
+      ) : (
+        skills.map((s) => (
+          <div key={s.name} className="rounded-lg border border-app-border bg-white px-3 py-2">
+            <span className="text-sm font-medium text-app-text">{s.name}</span>
+            {s.description && (
+              <p className="text-xs text-app-text-secondary mt-0.5">{s.description}</p>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ─── Agents ───────────────────────────────────────────────────────
+
+function AgentsPanel() {
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await configService.getAgents();
+      setAgents(data);
+    } catch (err) {
+      console.error("Error cargando agentes:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
+
+  return (
+    <div className="space-y-1">
+      {agents.length === 0 ? (
+        <p className="text-sm text-app-text-secondary">No hay agentes configurados.</p>
+      ) : (
+        agents.map((a) => (
+          <div key={a.name} className="rounded-lg border border-app-border bg-white px-3 py-2">
+            <span className="text-sm font-medium text-app-text">{a.name}</span>
+            {a.description && (
+              <p className="text-xs text-app-text-secondary mt-0.5">{a.description}</p>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ─── MCP ──────────────────────────────────────────────────────────
+
+function McpPanel() {
+  const [servers, setServers] = useState<McpServerStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await configService.getMcp();
+      setServers(data);
+    } catch (err) {
+      console.error("Error cargando MCP:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
+
+  return (
+    <div className="space-y-1">
+      {servers.length === 0 ? (
+        <p className="text-sm text-app-text-secondary">No hay servidores MCP configurados.</p>
+      ) : (
+        servers.map((s) => (
+          <div key={s.label} className="rounded-lg border border-app-border bg-white px-3 py-2">
+            <div className="flex items-center gap-2">
+              {s.status === "connected" ? (
+                <Globe size={14} className="shrink-0 text-green-600" />
+              ) : (
+                <Database size={14} className="shrink-0 text-app-text-secondary" />
+              )}
+              <span className="text-sm font-medium text-app-text">{s.label}</span>
+              <span className={`ml-auto text-xs px-1.5 py-0.5 rounded font-medium ${
+                s.status === "connected"
+                  ? "bg-green-100 text-green-700"
+                  : s.status === "failed"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-gray-100 text-gray-500"
+              }`}>
+                {s.status === "connected" ? "Conectado" : s.status === "failed" ? "Error" : s.status}
+              </span>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function RagPanel() {
+  return (
+    <div className="space-y-1">
+      <p className="text-sm text-app-text-secondary">RAG panel content goes here.</p>
     </div>
   );
 }

@@ -8,6 +8,7 @@ Structure:
 ├── skills/           # User skills (SKILL.md in subdirs)
 ├── tools/            # External tools (.py files)
 ├── agents/           # Agent definitions (.md files)
+├── knowledge/        # Chroma vector store collections
 └── config.json       # Main config (MCP, UI prefs, etc.)
 """
 
@@ -50,6 +51,7 @@ def get_config_dir() -> Path:
     (config_dir / "skills").mkdir(exist_ok=True)
     (config_dir / "tools").mkdir(exist_ok=True)
     (config_dir / "agents").mkdir(exist_ok=True)
+    (config_dir / "knowledge").mkdir(exist_ok=True)
 
     return config_dir
 
@@ -160,3 +162,8 @@ def get_tools_dir() -> Path:
 def get_agents_dir() -> Path:
     """Return the agents directory path."""
     return get_config_dir() / "agents"
+
+
+def get_knowledge_dir() -> Path:
+    """Return the knowledge (vector store) directory path."""
+    return get_config_dir() / "knowledge"

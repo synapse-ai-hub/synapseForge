@@ -30,10 +30,7 @@ if _project_root not in sys.path:
 from backend.instances import agent, session_manager
 from backend.agent.utils.model_resolver import get_groq_models, get_ollama_models
 from backend.agent.utils.error_logger import log_error
-from backend.agent.config_dir import get_mcp_config
-from backend.agent.utils.mcp_helper import check_all_mcp_servers_health
-from backend.agent.permissions import list_agents
-from backend.agent.utils.skill_loader import format_skills_section
+from backend.routes.agent_helpers import get_skills_list, get_tools_list, get_agents_list, get_mcp_list
 
 logger = logging.getLogger(__name__)
 
@@ -466,129 +463,73 @@ def load_persisted_config() -> None:
 
 
 # ---------------------------------------------------------------------------
-# MCP servers
-# ---------------------------------------------------------------------------
-
-
-@router.get("/mcp/servers")
-async def list_mcp_servers() -> JSONResponse:
-    """List configured MCP servers from config.json."""
-    try:
-        mcp_config = get_mcp_config()
-        servers = mcp_config.get("servers", {})
-        # Convert dict of servers to list, adding label to each
-        server_list = []
-        for label, config in servers.items():
-            if config.get("disabled"):
-                continue
-            server_config = dict(config)
-            server_config["label"] = label
-            server_list.append(server_config)
-        
-        # Return only safe fields for the frontend
-        safe_servers = [
-            {
-                "label": s.get("label", ""),
-                "description": s.get("description", ""),
-                "transport": s.get("transport", "stdio"),
-                "command": s.get("command", ""),
-                "args": s.get("args", []),
-                "disabled": s.get("disabled", False),
-            }
-            for s in server_list
-        ]
-        return JSONResponse(
-            status_code=200,
-            content={"status": "success", "servers": safe_servers},
-        )
-    except Exception as exc:
-        log_error(str(exc), source="backend/routes/config.py:list_mcp_servers")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": "Error cargando servidores MCP", "servers": []},
-        )
-
-
-# ---------------------------------------------------------------------------
-# MCP health check
-# ---------------------------------------------------------------------------
-
-
-@router.get("/mcp/health")
-async def mcp_health_check() -> JSONResponse:
-    """Check health of all configured MCP servers.
-
-    Attempts to connect to each server and list tools to verify it's functional.
-    Returns status for each server: connected, failed, disabled, or not_configured.
-    """
-    try:
-        results = await check_all_mcp_servers_health(timeout=10.0)
-        return JSONResponse(
-            status_code=200,
-            content={"status": "success", "servers": results},
-        )
-    except Exception as exc:
-        log_error(str(exc), source="backend/routes/config.py:mcp_health_check")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": "Error verificando salud MCP", "servers": []},
-        )
-
-
-# ---------------------------------------------------------------------------
-# Agents listing
-# ---------------------------------------------------------------------------
-
-
-@router.get("/agents")
-async def list_agents_endpoint() -> JSONResponse:
-    """List all configured agents with name and description.
-
-    Delegates to ``backend.agent.permissions.list_agents()`` which scans
-    the ``agents/`` folder in the config directory.
-    """
-    try:
-        print("[DEBUG] list_agents_endpoint called")
-        result = await asyncio.to_thread(list_agents)
-        print(f"[DEBUG] list_agents result: {result}")
-        data = json.loads(result.get("data", "[]")) if result.get("status") == "success" else []
-        return JSONResponse(
-            status_code=200,
-            content={"status": "success", "agents": data},
-        )
-    except Exception as exc:
-        print(f"[DEBUG] Agents endpoint EXCEPTION: {type(exc).__name__}: {exc}")
-        traceback.print_exc()
-        logger.exception("Agents endpoint failed: %s", exc)
-        log_error(f"{type(exc).__name__}: {exc}", source="backend/routes/config.py:list_agents")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": "Error listando agentes", "agents": []},
-        )
-
-
-# ---------------------------------------------------------------------------
-# Skills listing
+# AgentInfo endpoints
 # ---------------------------------------------------------------------------
 
 
 @router.get("/skills")
-async def list_skills_endpoint() -> JSONResponse:
-    """List all available skills with description and triggers.
-
-    Delegates to ``backend.agent.utils.skill_loader.format_skills_section()``
-    which scans the ``skills/`` folder in the config directory.
-    Returns the formatted markdown string.
-    """
+async def list_skills() -> JSONResponse:
+    """List available skills (name + description)."""
     try:
-        skills_text = await asyncio.to_thread(format_skills_section)
+        skills = get_skills_list()
         return JSONResponse(
             status_code=200,
-            content={"status": "success", "skills_text": skills_text},
+            content={"status": "success", "skills": skills},
         )
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:list_skills")
         return JSONResponse(
             status_code=500,
-            content={"status": "error", "message": "Error listando skills", "skills_text": ""},
+            content={"status": "error", "message": "Error listing skills", "skills": []},
+        )
+
+
+@router.get("/tools")
+async def list_tools() -> JSONResponse:
+    """List all available tools (native + external) without permission filtering."""
+    try:
+        tools = get_tools_list()
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "tools": tools},
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:list_tools")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error listing tools", "tools": []},
+        )
+
+
+@router.get("/agents")
+async def list_agents() -> JSONResponse:
+    """List available sub-agents (excluding AGENT.md and ROUTER.md)."""
+    try:
+        agents = get_agents_list()
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "agents": agents},
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:list_agents")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error listing agents", "agents": []},
+        )
+
+
+@router.get("/mcp")
+async def list_mcp_servers() -> JSONResponse:
+    """List MCP servers with connection status."""
+    try:
+        servers = await get_mcp_list()
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "servers": servers},
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:list_mcp_servers")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error checking MCP servers", "servers": []},
         )

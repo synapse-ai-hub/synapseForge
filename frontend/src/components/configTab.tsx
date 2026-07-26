@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Settings, Server, Cpu, Database, Globe, Trash2, Upload } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import configService, { type McpServer, type McpServerHealth } from "../services/configService";
+import configService from "../services/configService";
 import contextFilesService, { type ContextFile } from "../services/contextFilesService";
 
 interface ConfigTabProps {

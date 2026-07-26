@@ -1,0 +1,20 @@
+Agregar:
+
+1. Sección de MCP en docs, configuración, etc. Verificar que los tome y que funcionen.  [ ]
+1.5 Debe tener para seleccionar, y ahí abre contenedores,como el general de sidebar. Más limpio. Lo mismo configuración y todas las pantallas de sidebar. [x]
+2. Agregar para crear RAG.  [x]
+3. Agregar para que tome RAG... Hay que ver Transformers, etc. [ ]
+4. Crear los endpoints para que cree todo. [ ]
+5. Revisar launch, que funcione bien. Revisar cómo pone mode en launch, debe hardcodearlo a prod… Se puede crear otra gui para que el usuario  ingrese url y esas cosas. [ ]
+6. La parte de crear... Quizás lo saco de UI. Si lo paso a CLI, agregar gui. Si lo dejo en UI, se tiene que abrit un modal con qué quiere hacer, etc. No. Decidido: UI.  [x]
+7. Agregar, probablemente en CLI, guide para debuggear tolos. Ver. Quizás que el usuario indique errores. En las indicaciones para crear, se pueden agregar tests auomatizados… Ver cómo se maneja. [ ]
+8. Ver el contador de context window. En este caso, siempre debe trabajar sobre loop padre. Pero en los hijos se debe verificar.
+9. Ver tema de summarization.  [ ]
+10. Ver opción dual de Docker: todo en un solo contenedor o solo el backend, para front estático. [x]
+11. Revisar si las funciones para los endpoints de tools, skills, no están duplicadas. Pasarlas a un helper. Eso es verga. Revisar healt del MCp. Aparentemente tiene tools. Revisar todos los endpoints, están para el ojete. [x]
+12. Los permisos hoy son wildcards. El agente ve lo que tiene permisos. Además de eso, limitarlo por código. [ ]
+13. Agent.md como comportamiento general. Router como system. [ ]
+14. Agregar carpeta para conocimiento con Chroma. [ ]
+15. Ver archivo que genera .zip. Que directamente haga todo el proceso, más simple que hacerlo a mano. [x]
+16. Actualizar docs [ ]
+17. Actualizar documentación general. [ ]

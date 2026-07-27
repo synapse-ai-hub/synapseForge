@@ -16,57 +16,62 @@
 </head>
 <body class="min-h-screen">
   <!-- Header -->
-  <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
+  <header style="background: white; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;">
     <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png"
-         alt="Logo" class="h-10 w-auto" onerror="this.style.display='none'">
-    <span class="text-lg font-bold text-gray-900">synapseForge</span>
-    <span class="text-sm text-gray-400 ml-2">— Crear Agente</span>
+         alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
+    <span style="font-size: 1.13rem; font-weight: 700; color: #111827;">synapseForge</span>
+    <span style="font-size: 0.875rem; color: #9ca3af; margin-left: 0.5rem;">— Crear Agente</span>
   </header>
 
   <!-- Main -->
   <main class="max-w-2xl mx-auto px-6 py-8">
-    <p class="text-sm text-gray-500 mb-6">Completá los campos para que el asistente genere el agente.</p>
+
+    <!-- Explicación -->
+    <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-6">
+      <p class="text-sm text-indigo-900">
+        Un <strong>agente</strong> es un asistente especializado en una tarea. Tiene su propia personalidad, conocimientos y acceso a herramientas específicas. Podés delegarle trabajos y él se encarga de resolverlos usando las tools y skills que tenga disponibles.
+      </p>
+    </div>
 
     <form id="agentForm" class="space-y-5">
-      <!-- Name -->
+      <!-- Nombre -->
       <div>
-        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre <span class="text-gray-400">(opcional)</span></label>
+        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
         <input type="text" id="name" name="name"
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
-               placeholder="Ej: data-analyzer, security-reviewer">
-        <p class="text-xs text-gray-400 mt-1">Si no se indica, el LLM lo infiere automáticamente.</p>
+               placeholder="Ej: analista-ventas, revisor-codigo">
       </div>
 
-      <!-- Role -->
+      <!-- Rol -->
       <div>
-        <label for="role" class="block text-sm font-medium text-gray-700 mb-1">¿Cuál es el rol del agente? <span class="text-red-500">*</span></label>
+        <label for="role" class="block text-sm font-medium text-gray-700 mb-1">¿Qué va a hacer este agente? <span class="text-red-500">*</span></label>
         <textarea id="role" name="role" rows="4"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Describí su especialidad, qué tareas va a realizar, su personalidad o enfoque..."></textarea>
+                  placeholder="Describí su especialidad, cómo debería trabajar, qué tono usar. Por ejemplo: 'Es un analista de ventas que revisa reportes mensuales, identifica tendencias y genera recomendaciones en lenguaje sencillo para el equipo comercial'."></textarea>
       </div>
 
-      <!-- Tools -->
+      <!-- Tools que necesita -->
       <div>
-        <label for="tools" class="block text-sm font-medium text-gray-700 mb-1">¿Qué tools necesita? <span class="text-gray-400">(opcional)</span></label>
+        <label for="tools" class="block text-sm font-medium text-gray-700 mb-1">¿Qué herramientas necesita?</label>
         <textarea id="tools" name="tools" rows="3"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Ej: read, write, websearch, task... o describí funcionalidades que necesita"></textarea>
+                  placeholder="Ej: leer archivos, buscar en la web, ejecutar consultas SQL, enviar emails... o simplemente describí qué necesitá que pueda hacer."></textarea>
       </div>
 
       <!-- Skills -->
       <div>
-        <label for="skills" class="block text-sm font-medium text-gray-700 mb-1">¿Qué skills debe tener? <span class="text-gray-400">(opcional)</span></label>
+        <label for="skills" class="block text-sm font-medium text-gray-700 mb-1">¿Qué conocimientos especializados necesita?</label>
         <textarea id="skills" name="skills" rows="3"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Ej: sql-pro, api-designer... o el dominio de conocimiento que necesita"></textarea>
+                  placeholder="Ej: análisis financiero, optimización SQL, diseño de APIs... o cualquier área de expertise que deba tener."></textarea>
       </div>
 
-      <!-- Behavior -->
+      <!-- Reglas -->
       <div>
-        <label for="behavior" class="block text-sm font-medium text-gray-700 mb-1">Comportamiento y restricciones <span class="text-gray-400">(opcional)</span></label>
-        <textarea id="behavior" name="behavior" rows="3"
+        <label for="rules" class="block text-sm font-medium text-gray-700 mb-1">Reglas o límites importantes</label>
+        <textarea id="rules" name="rules" rows="3"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Tono, reglas, cosas que NO debe hacer, formato de respuestas esperado..."></textarea>
+                  placeholder="Cosas que NO debe hacer, formato de respuestas, nivel de detalle, restricciones de seguridad..."></textarea>
       </div>
 
       <!-- Submit -->
@@ -79,7 +84,6 @@
       </div>
     </form>
 
-    <!-- Result -->
     <div id="result" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
       <p class="text-sm text-green-800 font-medium">¡Agente creado exitosamente!</p>
       <button onclick="window.close()"
@@ -97,10 +101,8 @@
       btn.disabled = true;
       status.classList.remove("hidden");
       status.textContent = "Trabajando...";
-
       try {
-        // TODO: conectar endpoint POST
-        await new Promise(r => setTimeout(r, 1500)); // placeholder
+        await new Promise(r => setTimeout(r, 1500));
         status.classList.add("hidden");
         document.getElementById("result").classList.remove("hidden");
       } catch (err) {

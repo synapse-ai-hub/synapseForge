@@ -15,50 +15,39 @@
   </style>
 </head>
 <body class="min-h-screen">
-  <!-- Header -->
-  <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
+  <!-- Header (mismo tamaño que docs) -->
+  <header style="background: white; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;">
     <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png"
-         alt="Logo" class="h-10 w-auto" onerror="this.style.display='none'">
-    <span class="text-lg font-bold text-gray-900">synapseForge</span>
-    <span class="text-sm text-gray-400 ml-2">— Crear Tool</span>
+         alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
+    <span style="font-size: 1.13rem; font-weight: 700; color: #111827;">synapseForge</span>
+    <span style="font-size: 0.875rem; color: #9ca3af; margin-left: 0.5rem;">— Crear Tool</span>
   </header>
 
   <!-- Main -->
   <main class="max-w-2xl mx-auto px-6 py-8">
-    <p class="text-sm text-gray-500 mb-6">Completá los campos para que el asistente genere la herramienta.</p>
+
+    <!-- Explicación -->
+    <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-6">
+      <p class="text-sm text-indigo-900">
+        Una <strong>tool</strong> es una función que el asistente puede ejecutar. Le da la capacidad de hacer cosas como leer archivos, buscar en la web, ejecutar código, consultar APIs, etc. Acá vas a describir qué necesitás que haga.
+      </p>
+    </div>
 
     <form id="toolForm" class="space-y-5">
-      <!-- Name -->
+      <!-- Nombre -->
       <div>
-        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre <span class="text-gray-400">(opcional)</span></label>
+        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
         <input type="text" id="name" name="name"
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
-               placeholder="Ej: extraer-precios">
-        <p class="text-xs text-gray-400 mt-1">Si no se indica, el LLM lo infiere automáticamente.</p>
+               placeholder="Ej: calcular-iva, extraer-pdf">
       </div>
 
-      <!-- Purpose -->
+      <!-- Qué hace -->
       <div>
-        <label for="purpose" class="block text-sm font-medium text-gray-700 mb-1">¿Qué debe hacer esta tool? <span class="text-red-500">*</span></label>
+        <label for="purpose" class="block text-sm font-medium text-gray-700 mb-1">¿Qué necesitás que haga? <span class="text-red-500">*</span></label>
         <textarea id="purpose" name="purpose" rows="4"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Describí qué tarea debe realizar, qué datos necesita y qué debería devolver..."></textarea>
-      </div>
-
-      <!-- Params hint -->
-      <div>
-        <label for="params" class="block text-sm font-medium text-gray-700 mb-1">Parámetros esperados <span class="text-gray-400">(opcional)</span></label>
-        <textarea id="params" name="params" rows="3"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Ej: url del sitio, id del producto, texto a buscar..."></textarea>
-      </div>
-
-      <!-- External API -->
-      <div>
-        <label for="api" class="block text-sm font-medium text-gray-700 mb-1">API o lógica externa <span class="text-gray-400">(opcional)</span></label>
-        <textarea id="api" name="api" rows="3"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Endpoint, librería, comando shell, o cualquier integración necesaria..."></textarea>
+                  placeholder="Describí qué tarea tiene que realizar, qué datos necesita y qué debería devolver. Por ejemplo: 'Dado un número de factura, consulta la API de AFIP y devuelve el detalle de la misma'."></textarea>
       </div>
 
       <!-- Submit -->
@@ -71,7 +60,6 @@
       </div>
     </form>
 
-    <!-- Result -->
     <div id="result" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
       <p class="text-sm text-green-800 font-medium">¡Tool creada exitosamente!</p>
       <button onclick="window.close()"
@@ -89,10 +77,8 @@
       btn.disabled = true;
       status.classList.remove("hidden");
       status.textContent = "Trabajando...";
-
       try {
-        // TODO: conectar endpoint POST
-        await new Promise(r => setTimeout(r, 1500)); // placeholder
+        await new Promise(r => setTimeout(r, 1500));
         status.classList.add("hidden");
         document.getElementById("result").classList.remove("hidden");
       } catch (err) {

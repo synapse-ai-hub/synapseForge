@@ -16,8 +16,6 @@ from typing import Dict, Pattern
 # ---------------------------------------------------------------------------
 TAG_MAP: Dict[str, str] = {
     "logo": "logo.path",
-    "width": "logo.width",
-    "height": "logo.height",
     "empresa": "empresa",
     "owner": "owner",
     "legal": "legal",
@@ -90,8 +88,8 @@ def _build_replacement_map(config: dict) -> Dict[str, str]:
 
     for tag, key_path in TAG_MAP.items():
         if tag == "logo":
-            # Use repo-relative path instead of absolute path
-            replacements[tag] = "src/assets/logo_empresa.png"
+            # Path relativo al repo desde la raíz (el logo se copia a ambos lugares)
+            replacements[tag] = "src/logo_empresa.png"
         else:
             value = _deep_get(config, key_path)
             if value is not None and value != "":

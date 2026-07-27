@@ -18,9 +18,6 @@ def get_user_input() -> Dict[str, object]:
     logo_path: Optional[str] = _prompt("Logo de la empresa (para README, sin comillas)", required=True)
     logo_resolved = _resolve_logo(logo_path)
 
-    width: Optional[str] = _prompt("Logo — ancho (px, opcional)", default="")
-    height: Optional[str] = _prompt("Logo — alto (px, opcional)", default="")
-
     # ── Project info ────────────────────────────────────────────────────
     empresa: str = _prompt("Nombre de la empresa desarrolladora", required=True)
     owner: str = _prompt("Owner del repo (usuario de GitHub)", required=True)
@@ -61,8 +58,6 @@ def get_user_input() -> Dict[str, object]:
     return {
         "logo": {
             "path": str(logo_resolved),
-            "width": width or None,
-            "height": height or None,
         },
         "empresa": empresa,
         "owner": owner,

@@ -14,30 +14,36 @@
     body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; }
     .dropzone { transition: all 0.15s ease; }
     .dropzone.dragover { border-color: #6366f1; background: #eef2ff; }
-    .file-item { transition: all 0.15s ease; }
   </style>
 </head>
 <body class="min-h-screen">
   <!-- Header -->
-  <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
+  <header style="background: white; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;">
     <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png"
-         alt="Logo" class="h-10 w-auto" onerror="this.style.display='none'">
-    <span class="text-lg font-bold text-gray-900">synapseForge</span>
-    <span class="text-sm text-gray-400 ml-2">— Crear RAG</span>
+         alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
+    <span style="font-size: 1.13rem; font-weight: 700; color: #111827;">synapseForge</span>
+    <span style="font-size: 0.875rem; color: #9ca3af; margin-left: 0.5rem;">— Crear RAG</span>
   </header>
 
   <!-- Main -->
   <main class="max-w-2xl mx-auto px-6 py-8 space-y-8">
 
-    <!-- Collection name -->
+    <!-- Explicación -->
+    <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-4">
+      <p class="text-sm text-indigo-900">
+        Una <strong>base de conocimiento (RAG)</strong> permite que el asistente responda preguntas usando tu propia información. Subí documentos o agregá URLs, y el asistente va a poder consultarlos al responder.
+      </p>
+    </div>
+
+    <!-- Colección -->
     <section>
       <label for="collection" class="block text-sm font-medium text-gray-700 mb-1">Nombre de la colección <span class="text-red-500">*</span></label>
       <input type="text" id="collection" name="collection"
              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
-             placeholder="Ej: docs-tecnicas, manual-producto">
+             placeholder="Ej: manual-producto, docs-internas">
     </section>
 
-    <!-- File upload -->
+    <!-- Archivos -->
     <section>
       <h2 class="text-sm font-medium text-gray-700 mb-2">Archivos</h2>
       <div id="dropzone"
@@ -70,12 +76,11 @@
               class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50">
         Crear RAG
       </button>
-      <div id="status" class="text-sm text-gray-500 hidden">Trabajando...</div>
+      <div id="status" class="text-sm text-gray-500 hidden">Procesando...</div>
     </section>
 
-    <!-- Result -->
     <div id="result" class="hidden p-4 bg-green-50 border border-green-200 rounded-lg">
-      <p class="text-sm text-green-800 font-medium">¡Colección RAG creada exitosamente!</p>
+      <p class="text-sm text-green-800 font-medium">¡Base de conocimiento creada exitosamente!</p>
       <button onclick="window.close()"
               class="mt-3 text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
         Aceptar
@@ -84,7 +89,7 @@
   </main>
 
   <script>
-    // ─── File upload ──────────────────────────────────────────────
+    // ─── Files ────────────────────────────────────────────────────
     const dropzone = document.getElementById("dropzone");
     const fileInput = document.getElementById("fileInput");
     const fileList = document.getElementById("fileList");
@@ -117,7 +122,7 @@
       fileList.innerHTML = "";
       selectedFiles.forEach((f, i) => {
         const li = document.createElement("li");
-        li.className = "file-item flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm";
+        li.className = "flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm";
         li.innerHTML = `
           <span class="text-indigo-600 font-medium">${f.name}</span>
           <span class="text-gray-400 text-xs">(${(f.size / 1024).toFixed(1)} KB)</span>
@@ -174,8 +179,7 @@
       status.textContent = "Procesando...";
 
       try {
-        // TODO: conectar endpoint POST
-        await new Promise(r => setTimeout(r, 2000)); // placeholder
+        await new Promise(r => setTimeout(r, 2000));
         status.classList.add("hidden");
         document.getElementById("result").classList.remove("hidden");
       } catch (err) {

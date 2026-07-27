@@ -75,6 +75,13 @@ except ImportError as e:
     metrics_router = None
     logging.warning("backend.routes.metrics could not be imported.")
 
+try:
+    from backend.routes.create import router as create_router
+except ImportError as e:
+    log_error(str(e), source="main.py:create_import")
+    create_router = None
+    logging.warning("backend.routes.create could not be imported.")
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -212,6 +219,9 @@ if context_files_router is not None:
 
 if metrics_router is not None:
     app.include_router(metrics_router, prefix="/api")
+
+if create_router is not None:
+    app.include_router(create_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

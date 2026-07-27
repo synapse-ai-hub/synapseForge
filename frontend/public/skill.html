@@ -12,53 +12,78 @@
   <style>
     * { font-family: 'Inter', system-ui, sans-serif; }
     body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; }
+
+    @keyframes typing-bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-6px); }
+    }
+    .typing-dot {
+      animation: typing-bounce 1.4s infinite ease-in-out;
+    }
+    .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+    .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+    .typing-dot:nth-child(3) { animation-delay: 0s; }
   </style>
 </head>
 <body class="min-h-screen">
   <!-- Header -->
-  <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-3">
+  <header style="background: white; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;">
     <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png"
-         alt="Logo" class="h-10 w-auto" onerror="this.style.display='none'">
-    <span class="text-lg font-bold text-gray-900">synapseForge</span>
-    <span class="text-sm text-gray-400 ml-2">— Crear Skill</span>
+         alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
+    <span style="font-size: 1.13rem; font-weight: 700; color: #111827;">synapseForge</span>
+    <span style="font-size: 0.875rem; color: #9ca3af; margin-left: 0.5rem;">— Crear Skill</span>
   </header>
 
   <!-- Main -->
   <main class="max-w-2xl mx-auto px-6 py-8">
-    <p class="text-sm text-gray-500 mb-6">Completá los campos para que el asistente genere la skill.</p>
+
+    <!-- Explicación -->
+    <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-6">
+      <p class="text-sm text-indigo-900">
+        Una <strong>skill</strong> es un conjunto de instrucciones y conocimientos que el asistente usa para resolver una tarea específica. Es como un manual de experto: le dice cómo pensar, qué pasos seguir y qué tener en cuenta al trabajar en ese tema.
+      </p>
+    </div>
 
     <form id="skillForm" class="space-y-5">
-      <!-- Name -->
+      <!-- Nombre -->
       <div>
-        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre <span class="text-gray-400">(opcional)</span></label>
+        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
         <input type="text" id="name" name="name"
                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
-               placeholder="Ej: sql-pro, api-designer">
-        <p class="text-xs text-gray-400 mt-1">Si no se indica, el LLM lo infiere automáticamente.</p>
+               placeholder="Ej: analisis-competencia, calculo-presupuesto">
       </div>
 
-      <!-- Task -->
+      <!-- Tarea -->
       <div>
-        <label for="task" class="block text-sm font-medium text-gray-700 mb-1">¿Para qué tarea es esta skill? <span class="text-red-500">*</span></label>
+        <label for="task" class="block text-sm font-medium text-gray-700 mb-1">¿Para qué tarea es? <span class="text-red-500">*</span></label>
         <textarea id="task" name="task" rows="4"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Describí la tarea específica que debe resolver, el dominio de conocimiento..."></textarea>
+                  placeholder="Describí la tarea para la que se necesita esta skill. Por ejemplo: 'Analizar la competencia en un mercado específico y generar un informe con fortalezas, debilidades y oportunidades'."></textarea>
       </div>
 
-      <!-- Triggers -->
+      <!-- Cuándo usarla -->
       <div>
-        <label for="triggers" class="block text-sm font-medium text-gray-700 mb-1">¿Cuándo se debe usar? <span class="text-gray-400">(opcional)</span></label>
+        <label for="triggers" class="block text-sm font-medium text-gray-700 mb-1">¿Cuándo se debería usar?</label>
         <textarea id="triggers" name="triggers" rows="3"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Palabras clave o frases que activen esta skill. Ej: 'SQL lento', 'optimizar query', 'diseñar schema'..."></textarea>
+                  placeholder="Palabras clave o frases que indiquen que esta skill es la adecuada. Ej: 'análisis de competencia', 'investigación de mercado', 'comparativa'..."></textarea>
       </div>
 
-      <!-- Scope -->
+      <!-- Cuándo NO usarla -->
       <div>
-        <label for="scope" class="block text-sm font-medium text-gray-700 mb-1">Alcance / lo que NO debe hacer <span class="text-gray-400">(opcional)</span></label>
-        <textarea id="scope" name="scope" rows="3"
+        <label for="notTriggers" class="block text-sm font-medium text-gray-700 mb-1">¿Cuándo NO se debería usar?</label>
+        <textarea id="notTriggers" name="notTriggers" rows="3"
                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Limitaciones, exclusiones, o temas relacionados que no cubre..."></textarea>
+                  placeholder="Situaciones o temas que esta skill NO debe cubrir. Ej: 'No usar para análisis financiero', 'No aplica a mercados internacionales'..."></textarea>
+      </div>
+
+      <!-- Referencias -->
+      <div>
+        <label for="refs" class="block text-sm font-medium text-gray-700 mb-1">Material de referencia <span class="text-gray-400">(opcional)</span></label>
+        <textarea id="refs" name="refs" rows="3"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
+                  placeholder="Todo lo que quieras que el asistente tenga en cuenta: tablas, cálculos, ejemplos, plantillas, fragmentos de código, URLs de referencia..."></textarea>
+        <p class="text-xs text-gray-400 mt-1">Esto se va a guardar como material de consulta dentro de la skill.</p>
       </div>
 
       <!-- Submit -->
@@ -67,13 +92,17 @@
                 class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50">
           Crear Skill
         </button>
-        <div id="status" class="text-sm text-gray-500 hidden">Trabajando...</div>
+        <div id="status" class="text-sm text-gray-500 hidden">
+          <span class="typing-dot h-2 w-2 rounded-full bg-gray-400 inline-block" />
+          <span class="typing-dot h-2 w-2 rounded-full bg-gray-400 inline-block ml-0.5" />
+          <span class="typing-dot h-2 w-2 rounded-full bg-gray-400 inline-block ml-0.5" />
+          Trabajando...
+        </div>
       </div>
     </form>
 
-    <!-- Result -->
     <div id="result" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-      <p class="text-sm text-green-800 font-medium">¡Skill creada exitosamente!</p>
+      <p id="resultMsg" class="text-sm text-green-800 font-medium">¡Skill creada exitosamente!</p>
       <button onclick="window.close()"
               class="mt-3 text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
         Aceptar
@@ -82,21 +111,55 @@
   </main>
 
   <script>
+    const API = "http://localhost:8000/api";
+
     document.getElementById("skillForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const status = document.getElementById("status");
       const btn = e.target.querySelector("button[type=submit]");
+      const resultDiv = document.getElementById("result");
+      const resultMsg = document.getElementById("resultMsg");
+
       btn.disabled = true;
       status.classList.remove("hidden");
-      status.textContent = "Trabajando...";
+      resultDiv.classList.add("hidden");
 
       try {
-        // TODO: conectar endpoint POST
-        await new Promise(r => setTimeout(r, 1500)); // placeholder
+        const body = {
+          task: document.getElementById("task").value.trim(),
+          name: document.getElementById("name").value.trim() || null,
+          triggers: document.getElementById("triggers").value.trim() || null,
+          not_triggers: document.getElementById("notTriggers").value.trim() || null,
+          refs: document.getElementById("refs").value.trim() || null,
+        };
+
+        const resp = await fetch(`${API}/create/skill`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const data = await resp.json();
         status.classList.add("hidden");
-        document.getElementById("result").classList.remove("hidden");
+
+        if (data.status === "success") {
+          let msg = data.message;
+          if (data.data && data.data.exist === "Sí" && data.data.skill) {
+            msg = `Ya existe la skill «${data.data.skill}». ${data.data.explicacion || data.message}`;
+          }
+          resultMsg.textContent = msg;
+          resultDiv.classList.remove("hidden");
+          resultDiv.className = "mt-6 p-4 bg-green-50 border border-green-200 rounded-lg";
+          document.getElementById("skillForm").classList.add("hidden");
+        } else {
+          status.textContent = "Error: " + data.message;
+          status.className = "text-sm text-red-500";
+          btn.disabled = false;
+        }
       } catch (err) {
-        status.textContent = "Error: " + err.message;
+        status.textContent = "Error de conexión: " + err.message;
+        status.className = "text-sm text-red-500";
+        btn.disabled = false;
       }
     });
   </script>

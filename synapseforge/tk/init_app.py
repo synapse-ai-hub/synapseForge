@@ -187,28 +187,16 @@ class InitApp:
             row=0, column=2, pady=3
         )
 
-        ttk.Label(tab, text="Ancho (px, opcional)").grid(
-            row=1, column=0, sticky="w", pady=3, padx=(20, 0)
-        )
-        self._logo_w = ttk.Entry(tab, width=12)
-        self._logo_w.grid(row=1, column=1, sticky="w", pady=3)
-
-        ttk.Label(tab, text="Alto (px, opcional)").grid(
-            row=2, column=0, sticky="w", pady=3, padx=(20, 0)
-        )
-        self._logo_h = ttk.Entry(tab, width=12)
-        self._logo_h.grid(row=2, column=1, sticky="w", pady=3)
-
         # ── Logo cliente (optional) ──────────────────────────────────
         ttk.Label(tab, text="Logo del cliente (para la app)").grid(
-            row=3, column=0, sticky="w", pady=(15, 3)
+            row=1, column=0, sticky="w", pady=(15, 3)
         )
         self._logo_cliente_var = tk.StringVar()
         ttk.Entry(tab, textvariable=self._logo_cliente_var, width=50).grid(
-            row=3, column=1, padx=(0, 5), pady=(15, 3)
+            row=1, column=1, padx=(0, 5), pady=(15, 3)
         )
         ttk.Button(tab, text="Examinar…", command=self._browse_logo_cliente).grid(
-            row=3, column=2, pady=(15, 3)
+            row=1, column=2, pady=(15, 3)
         )
 
     def _browse_logo(self) -> None:
@@ -343,12 +331,8 @@ class InitApp:
                                    f"No se encontró: {logo_resolved}", parent=self.root)
             return None
 
-        w = self._logo_w.get().strip()
-        h = self._logo_h.get().strip()
         config["logo"] = {
             "path": str(logo_resolved),
-            "width": w or None,
-            "height": h or None,
         }
 
         # ── Logo cliente ──────────────────────────────────────────────

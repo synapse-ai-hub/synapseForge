@@ -136,6 +136,7 @@ my-project/
 │   │   ├── chat.py            # POST /api/chat → SSE stream (AgentLoop)
 │   │   ├── config.py          # Providers, models, MCP health, context window
 │   │   ├── sessions.py        # CRUD sessions, messages, titles
+│   │   ├── create.py          # POST /api/create/{type} (skill, tool, agent, rag)
 │   │   ├── context_files.py   # CRUD context files (instructions/documents)
 │   │   ├── metrics.py         # Metrics: aggregated, per-session, tokens by model/provider
 │   │   ├── file_text_extractor.py  # Text extraction: PDF, DOCX, XLSX, TXT + OCR fallback
@@ -160,8 +161,9 @@ my-project/
 │       │   ├── __init__.py
 │       │   ├── clean_memory.py    # GPU/CPU model release
 │       │   ├── model_resolver.py  # Active model resolution and validation
-│       │   ├── skill_loader.py    # SKILL.md loading and formatting for system prompt
-│       │   ├── email_parser.py    # Email parsing (headers, body, attachments)
+│   │   ├── skill_loader.py    # SKILL.md loading and formatting for system prompt
+│   │   ├── skill_creator.py   # LLM-based skill creation (evaluation + generation)
+│   │   ├── email_parser.py    # Email parsing (headers, body, attachments)
 │       │   ├── mcp_helper.py      # MCP stdio/HTTP, tool discovery, health check
 │       │   ├── subagent_logger.py # Custom SUBAGENT log level
 │       │   └── error_logger.py    # Error logging to SQLite (error_log table)
@@ -248,6 +250,7 @@ my-project/
 ├── skills/                 # Installed skills (SKILL.md per skill + references/)
 ├── tools/                  # Custom tools (.py files with TOOL_NAME, execute())
 ├── agents/                 # Agent definitions (.md with YAML frontmatter + permissions + prompt)
+├── knowledge/              # RAG collections (ChromaDB) — created from the create UI
 └── config.json             # MCP server configuration
 ```
 
@@ -291,6 +294,17 @@ parameters:
 | `synapseforge colors [dir]` | Edit `frontend/public/colors.json` via GUI (live reload) |
 | `synapseforge run [dir]` | Start uvicorn + npm dev servers, open browser |
 | `synapseforge --help` | Show global help |
+
+---
+
+## Future integration — Vercel Skills
+
+Integration with the [Vercel Skills ecosystem](https://github.com/vercel-labs/skills) (`npx skills`) is planned. The two-stage workflow will:
+
+1. **Search**: run `npx skills find <query>` to discover skills from public repositories.
+2. **Evaluate/Install**: an LLM evaluates results against the user's needs and installs matching skills automatically.
+
+This will expand the skill repository without manual creation, leveraging the open agent skills ecosystem.
 
 ---
 

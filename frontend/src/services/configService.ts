@@ -186,6 +186,80 @@ export const configService = {
     const data = await response.json();
     return data.servers || [];
   },
+
+  // ── Delete endpoints ─────────────────────────────────────────────
+
+  /** Delete a skill by name. */
+  async deleteSkill(name: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/agent/skills/${encodeURIComponent(name)}`,
+      { method: "DELETE" }
+    );
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+  },
+
+  /** Delete an external tool by name. */
+  async deleteTool(name: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/agent/tools/${encodeURIComponent(name)}`,
+      { method: "DELETE" }
+    );
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+  },
+
+  /** Delete an agent by name. */
+  async deleteAgent(name: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/agent/agents/${encodeURIComponent(name)}`,
+      { method: "DELETE" }
+    );
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+  },
+
+  /** Delete an MCP server by label. */
+  async deleteMcp(label: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/agent/mcp/${encodeURIComponent(label)}`,
+      { method: "DELETE" }
+    );
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+  },
+
+  /** List knowledge collections. */
+  async listKnowledge(): Promise<string[]> {
+    const response = await fetch(`${API_BASE_URL}/api/agent/knowledge`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      return [];
+    }
+    const data = await response.json();
+    return data.collections || [];
+  },
+
+  /** Delete a knowledge collection by name. */
+  async deleteKnowledge(collection: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/agent/knowledge/${encodeURIComponent(collection)}`,
+      { method: "DELETE" }
+    );
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+  },
 };
 
 export default configService;

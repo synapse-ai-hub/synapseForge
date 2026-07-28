@@ -1,0 +1,251 @@
+"""Endpoints para listar y eliminar skills, tools, agents, MCP y RAG.
+
+Endpoints:
+- ``GET /agent/knowledge`` — Lista colecciones vectoriales.
+- ``DELETE /agent/skills/{name}`` — Elimina una skill (directorio completo).
+- ``DELETE /agent/tools/{name}`` — Elimina una tool externa (.py).
+- ``DELETE /agent/agents/{name}`` — Elimina un agente (.md).
+- ``DELETE /agent/mcp/{label}`` — Elimina un servidor MCP de la config.
+- ``DELETE /agent/knowledge/{collection}`` — Elimina una colección vectorial.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import sys
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(os.path.dirname(_current_dir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from backend.agent.config_dir import (
+    get_skills_dir,
+    get_tools_dir,
+    get_agents_dir,
+    get_knowledge_dir,
+    load_config,
+    save_config,
+)
+from backend.agent.utils.error_logger import log_error
+from backend.agent.utils.vector_db import VectorDB
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/agent", tags=["agent"])
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_response(
+    status: str,
+    message: str,
+    status_code: int = 200,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": status, "message": message},
+    )
+
+
+def _rmtree(path: Path) -> bool:
+    """Remove a directory tree."""
+    try:
+        shutil.rmtree(str(path))
+        return True
+    except OSError as e:
+        log_error(str(e), source="agent_items.py:_rmtree")
+        return False
+
+
+def _unlink(path: Path) -> bool:
+    """Remove a single file."""
+    try:
+        path.unlink()
+        return True
+    except OSError as e:
+        log_error(str(e), source="agent_items.py:_unlink")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# GET /agent/knowledge  —  listar colecciones
+# ---------------------------------------------------------------------------
+
+
+@router.get("/knowledge")
+async def list_knowledge_collections() -> JSONResponse:
+    """Lista las colecciones vectoriales disponibles."""
+    try:
+        db = VectorDB()
+        cols = db.list_collections()
+        names = [c["name"] for c in cols]
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "collections": names},
+        )
+    except Exception as exc:
+        log_error(str(exc), source="agent_items.py:list_knowledge_collections")
+        logger.warning("Error listando colecciones: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error listando colecciones", "collections": []},
+        )
+
+
+# ---------------------------------------------------------------------------
+# DELETE /agent/skills/{name}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/skills/{name}")
+async def delete_skill(name: str) -> JSONResponse:
+    """Elimina una skill por nombre.
+
+    Busca ``<skills_dir>/<name>/`` y lo borra recursivamente.
+    """
+    if not name or ".." in name or "/" in name:
+        return _make_response("error", "Nombre de skill inválido.", 400)
+
+    skill_dir = get_skills_dir() / name
+    if not skill_dir.is_dir():
+        return _make_response("error", f"Skill '{name}' no encontrada.", 404)
+
+    logger.info("Eliminando skill: %s", skill_dir)
+    ok = _rmtree(skill_dir)
+    if not ok:
+        return _make_response("error", f"No se pudo eliminar la skill '{name}'.", 500)
+
+    return _make_response("success", f"Skill '{name}' eliminada.")
+
+
+# ---------------------------------------------------------------------------
+# DELETE /agent/tools/{name}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/tools/{name}")
+async def delete_tool(name: str) -> JSONResponse:
+    """Elimina una tool externa por nombre.
+
+    Busca ``<tools_dir>/<name>.py`` y lo borra.
+    """
+    if not name or ".." in name or "/" in name:
+        return _make_response("error", "Nombre de tool inválido.", 400)
+
+    # La tool puede estar como nombre sin extensión
+    tool_path = get_tools_dir() / name
+    if not tool_path.is_file():
+        tool_path = get_tools_dir() / f"{name}.py"
+    if not tool_path.is_file():
+        return _make_response("error", f"Tool '{name}' no encontrada.", 404)
+
+    logger.info("Eliminando tool externa: %s", tool_path)
+    ok = _unlink(tool_path)
+    if not ok:
+        return _make_response("error", f"No se pudo eliminar la tool '{name}'.", 500)
+
+    return _make_response("success", f"Tool externa '{name}' eliminada.")
+
+
+# ---------------------------------------------------------------------------
+# DELETE /agent/agents/{name}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/agents/{name}")
+async def delete_agent(name: str) -> JSONResponse:
+    """Elimina un agente por nombre.
+
+    Busca ``<agents_dir>/<name>.md`` y lo borra.
+    """
+    if not name or ".." in name or "/" in name:
+        return _make_response("error", "Nombre de agente inválido.", 400)
+
+    agent_path = get_agents_dir() / f"{name}.md"
+    if not agent_path.is_file():
+        return _make_response("error", f"Agente '{name}' no encontrado.", 404)
+
+    logger.info("Eliminando agente: %s", agent_path)
+    ok = _unlink(agent_path)
+    if not ok:
+        return _make_response("error", f"No se pudo eliminar el agente '{name}'.", 500)
+
+    return _make_response("success", f"Agente '{name}' eliminado.")
+
+
+# ---------------------------------------------------------------------------
+# DELETE /agent/mcp/{label}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/mcp/{label:path}")
+async def delete_mcp_server(label: str) -> JSONResponse:
+    """Elimina un servidor MCP de la configuración.
+
+    Busca en ``config.json`` → ``mcp.servers`` el que tenga ``label``
+    coincidente y lo remueve.
+    """
+    if not label:
+        return _make_response("error", "Label del servidor inválido.", 400)
+
+    config = load_config()
+    servers: list[dict[str, Any]] = config.get("mcp", {}).get("servers", [])
+
+    # Buscar servidor por label (case-sensitive)
+    found = None
+    for s in servers:
+        if s.get("label") == label:
+            found = s
+            break
+
+    if found is None:
+        return _make_response("error", f"Servidor MCP '{label}' no encontrado.", 404)
+
+    servers.remove(found)
+    config.setdefault("mcp", {})["servers"] = servers
+
+    ok = save_config(config)
+    if not ok:
+        return _make_response("error", f"No se pudo guardar la configuración al eliminar '{label}'.", 500)
+
+    logger.info("Servidor MCP eliminado: %s", label)
+    return _make_response("success", f"Servidor MCP '{label}' eliminado.")
+
+
+# ---------------------------------------------------------------------------
+# DELETE /agent/knowledge/{collection}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/knowledge/{collection}")
+async def delete_knowledge_collection(collection: str) -> JSONResponse:
+    """Elimina una colección vectorial de la base de conocimiento.
+
+    Busca ``<knowledge_dir>/<collection>/`` y lo borra recursivamente.
+    """
+    if not collection or ".." in collection or "/" in collection:
+        return _make_response("error", "Nombre de colección inválido.", 400)
+
+    coll_dir = get_knowledge_dir() / collection
+    if not coll_dir.is_dir():
+        return _make_response("error", f"Colección '{collection}' no encontrada.", 404)
+
+    logger.info("Eliminando colección vectorial: %s", coll_dir)
+    ok = _rmtree(coll_dir)
+    if not ok:
+        return _make_response(
+            "error", f"No se pudo eliminar la colección '{collection}'.", 500
+        )
+
+    return _make_response("success", f"Colección '{collection}' eliminada.")

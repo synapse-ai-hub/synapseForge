@@ -44,7 +44,7 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
         <AvatarFallback
           className={
             isAssistant
-              ? "bg-app-primary text-app-primary-text"
+              ? "bg-gradient-to-r from-app-primary to-app-gradient-secondary text-app-primary-text"
               : "bg-app-bg-tertiary text-app-text"
           }
         >

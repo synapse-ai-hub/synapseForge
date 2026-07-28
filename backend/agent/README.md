@@ -418,11 +418,16 @@ backend/agent/
 ├─ agent_db/                # Base de datos SQLite
 │   └─ agent.db
 ├─ prompts/                 # Prompts del sistema
-│   └─ system_prompt.md
+│   ├─ system_prompt.md     # Prompt base del router
+│   ├─ help.md              # Documentación interna para tool help
+│   ├─ title.md             # Prompt para generar títulos de sesión
+│   ├─ generar_skill.md     # Prompt para crear skills con LLM
+│   └─ evaluar_skills.md    # Prompt para evaluar skills existentes
 ├─ utils/                   # Utilidades auxiliares
 │   ├─ clean_memory.py      # Liberación de modelos
 │   ├─ model_resolver.py    # Resolución del modelo activo
 │   ├─ skill_loader.py      # Carga de skills
+│   ├─ skill_creator.py     # Creación de skills vía LLM
 │   ├─ email_parser.py      # Parseo de correos electrónicos
 │   ├─ mcp_helper.py        # Integración MCP
 │   └─ generate_ico.py      # Generación de .ico desde logo PNG

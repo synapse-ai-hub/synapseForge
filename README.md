@@ -112,6 +112,7 @@ synapseForge/
 │  ├─ routes/
 │  │  ├─ __init__.py
 │  │  ├─ chat.py                 #   POST /api/chat → SSE stream (AgentLoop)
+│  │  ├─ create.py               #   POST /api/create/{type} (skill, tool, agent, rag)
 │  │  ├─ config.py               #   Providers, models, MCP health, context window
 │  │  ├─ sessions.py             #   CRUD sesiones, mensajes, títulos
 │  │  ├─ context_files.py        #   CRUD archivos de contexto (instrucciones/documentos)
@@ -133,19 +134,28 @@ synapseForge/
 │     ├─ prompts/
 │     │  ├─ system_prompt.md     #   Prompt base del router (con checklist de fidelidad)
 │     │  ├─ help.md              #   Documentación interna para tool `help`
-│     │  └─ title.md             #   Prompt para generar títulos de sesión
+│     │  ├─ title.md             #   Prompt para generar títulos de sesión
+│     │  ├─ generar_skill.md     #   Prompt para crear skills con LLM
+│     │  └─ evaluar_skills.md    #   Prompt para evaluar skills existentes
 │     ├─ utils/
-│     │  ├─ __init__.py
-│     │  ├─ clean_memory.py      #   Liberación modelos GPU/CPU
-│     │  ├─ model_resolver.py    #   Resolución y validación modelo activo
-│     │  ├─ skill_loader.py      #   Carga y formateo SKILL.md para system prompt
-│     │  ├─ email_parser.py      #   Parseo emails (headers, body, adjuntos)
-│     │  ├─ mcp_helper.py        #   MCP stdio/HTTP, tool discovery, health check
-│     │  ├─ subagent_logger.py   #   Logger custom nivel SUBAGENT
-│     │  └─ error_logger.py      #   Log de errores a SQLite (error_log table)
-│     └─ README.md
+│  │  ├─ __init__.py
+│  │  ├─ clean_memory.py      #   Liberación modelos GPU/CPU
+│  │  ├─ model_resolver.py    #   Resolución y validación modelo activo
+│  │  ├─ skill_loader.py      #   Carga y formateo SKILL.md para system prompt
+│  │  ├─ skill_creator.py     #   Creación de skills vía LLM (evaluación + generación)
+│  │  ├─ email_parser.py      #   Parseo emails (headers, body, adjuntos)
+│  │  ├─ mcp_helper.py        #   MCP stdio/HTTP, tool discovery, health check
+│  │  ├─ subagent_logger.py   #   Logger custom nivel SUBAGENT
+│  │  └─ error_logger.py      #   Log de errores a SQLite (error_log table)
+│  └─ README.md
 │
 ├─ frontend/                     # Fuente del template — frontend React/Vite/TS
+│  ├─ public/
+│  │  ├─ docs.html               # Documentación completa del producto
+│  │  ├─ skill.html              # Formulario standalone para crear skills
+│  │  ├─ tool.html               # Formulario standalone para crear tools
+│  │  ├─ agent.html              # Formulario standalone para crear agentes
+│  │  └─ rag.html                # Formulario standalone para crear RAG
 │  ├─ package.json
 │  ├─ package-lock.json
 │  ├─ tsconfig.json
@@ -351,6 +361,7 @@ El template incluye un framework completo de agentes en `backend/agent/`:
 | Archivo | Endpoints | Descripción |
 |---------|-----------|-------------|
 | `chat.py` | `POST /api/chat` | SSE stream: chunk, tool_call, tool_result, subagent_call, subagent_result, session_title, done, error |
+| `create.py` | `POST /api/create/skill`, `POST /api/create/tool`, `POST /api/create/agent`, `POST /api/create/rag` | Creación programática de skills, tools, agentes y RAG vía LLM. Cada endpoint recibe los datos del formulario y delega en un helper especializado. |
 | `config.py` | `GET /api/config/providers`, `GET /api/config/models?provider=`, `POST /api/config/models/select`, `GET /api/config/context-window`, `POST /api/config/context-window`, `GET /api/config/mcp/servers`, `GET /api/config/mcp/health` | Configuración proveedores, modelos, ventana de contexto, MCP |
 | `sessions.py` | `GET /api/sessions`, `GET /api/sessions/{id}`, `DELETE /api/sessions/{id}`, `GET /api/sessions/{id}/messages`, `POST /api/sessions/{id}/title` | CRUD sesiones y mensajes |
 | `context_files.py` | `GET /api/context-files`, `POST /api/context-files`, `DELETE /api/context-files/{id}` | CRUD archivos de contexto (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY). Extracción texto → inyección en system prompt |
@@ -364,6 +375,7 @@ El template incluye un framework completo de agentes en `backend/agent/`:
 ├── skills/                 # Skills instaladas (carpeta por skill con SKILL.md + references/)
 ├── tools/                  # Tools instaladas (.py con TOOL_NAME, execute())
 ├── agents/                 # Agentes (.md con frontmatter YAML + permisos + prompt body)
+├── knowledge/              # Colecciones RAG (ChromaDB) — creadas desde la UI de creación
 └── config.json             # Config MCP: servers, timeout, transport
 ```
 
@@ -488,6 +500,17 @@ docker compose up --build -d
 - El backend sirve el frontend estático (`frontend/dist/`) automáticamente si existe.
 - `VITE_MODE=prod` hace que los servicios frontend usen `VITE_URL_PROD` para llamadas a la API.
 - Healthcheck en `/health` para orquestadores.
+
+---
+
+## Integración futura — Skills Vercel
+
+Está planificada la integración con el ecosistema de [Vercel Skills](https://github.com/vercel-labs/skills) (`npx skills`), que permite buscar, instalar y gestionar skills desde repositorios públicos. El flujo planeado funciona en dos etapas:
+
+1. **Búsqueda**: ejecutar `npx skills find <query>` para descubrir skills disponibles en el ecosistema.
+2. **Evaluación/Instalación**: un LLM evalúa los resultados contra la necesidad del usuario, y si corresponde, instala la skill desde el source.
+
+Esto permitiría ampliar el repositorio de skills sin tener que crearlas manualmente, aprovechando el ecosistema abierto de agent skills.
 
 ---
 

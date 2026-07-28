@@ -186,7 +186,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             }}
             className="flex-1"
           />
-          <Button onClick={handleSaveContext} disabled={savingContext}>
+          <Button onClick={handleSaveContext} disabled={savingContext} variant="gradient">
             Guardar
           </Button>
         </div>

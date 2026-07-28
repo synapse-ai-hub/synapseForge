@@ -1,7 +1,7 @@
 """Router para endpoints de creación (tools, skills, agents, RAG).
 
-Actualmente implementa:
-- ``POST /api/create/skill`` — Busca o crea una skill.
+Endpoints:
+- ``POST /api/create/skill`` — Crea una skill con iteración LLM.
 """
 
 import logging
@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from backend.agent.utils.skill_creator import create_skill
+from backend.agent.utils.skill_creator import create_skill, iterar_skill
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +20,11 @@ router = APIRouter(prefix="/create", tags=["create"])
 
 
 class CreateSkillRequest(BaseModel):
-    """Request para crear una skill."""
+    """Request para crear una skill con iteración."""
 
-    task: str
+    descripcion: str
     name: str | None = None
-    triggers: str | None = None
-    not_triggers: str | None = None
-    refs: str | None = None
+    mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
 
 
 class CreateSkillData(BaseModel):
@@ -44,6 +42,7 @@ class CreateSkillResponse(BaseModel):
     status: str
     message: str
     data: CreateSkillData | None = None
+    question: str | None = None
     usage: dict = {}
 
 
@@ -52,28 +51,67 @@ class CreateSkillResponse(BaseModel):
 
 @router.post("/skill", response_model=CreateSkillResponse)
 async def post_create_skill(req: CreateSkillRequest) -> CreateSkillResponse:
-    """Crea una skill, buscando primero entre las existentes.
+    """Crea una skill con iteración LLM.
 
     Flujo:
-    1. Lee skills locales y pregunta al LLM si alguna sirve.
-    2. Si Sí → la devuelve con explicación.
-    3. Si No → la genera con el LLM y la guarda.
+    1. Si ``mensajes`` está vacío → es la primera llamada.
+       El LLM puede responder con una pregunta o con "create".
+    2. Si ``mensajes`` tiene historial → el LLM sigue iterando.
+    3. Cuando el LLM responde "create" → se evaluan skills existentes
+       y si no hay, se genera la skill.
     """
-    logger.info("POST /api/create/skill — task='%s' name=%s", req.task, req.name)
+    logger.info(
+        "POST /api/create/skill — descripcion='%s' name=%s mensajes=%d",
+        req.descripcion[:80], req.name,
+        len(req.mensajes) if req.mensajes else 0,
+    )
 
-    if not req.task or not req.task.strip():
+    if not req.descripcion or not req.descripcion.strip():
         return CreateSkillResponse(
             status="error",
-            message="El campo 'task' es obligatorio.",
+            message="El campo 'descripcion' es obligatorio.",
             data=None,
         )
 
+    # ── Iterar con LLM ────────────────────────────────────────────────
+    resultado_iter = await iterar_skill(
+        descripcion=req.descripcion.strip(),
+        nombre=req.name.strip() if req.name else None,
+        mensajes=req.mensajes or [],
+    )
+
+    # Si el LLM preguntó algo → devolver la pregunta
+    if resultado_iter.get("status") == "question":
+        logger.info("LLM pregunta: %s", resultado_iter.get("question", "")[:100])
+        return CreateSkillResponse(
+            status="question",
+            message=resultado_iter.get("question", ""),
+            question=resultado_iter.get("question", ""),
+            data=None,
+        )
+
+    # Si el LLM respondió con error
+    if resultado_iter.get("status") == "error":
+        logger.warning("Error en iteración: %s", resultado_iter.get("message"))
+        return CreateSkillResponse(
+            status="error",
+            message=resultado_iter.get("message", "Error en la iteración."),
+            data=None,
+        )
+
+    # ── Si el LLM dijo "create" → proceder con evaluación + generación ─
+    data_create = (resultado_iter.get("data") or {})
+    task = data_create.get("task", req.descripcion)
+    # Si el usuario dió nombre, usá ese exacto. Si no, el que el LLM infirió.
+    name = req.name or data_create.get("name")
+    refs = data_create.get("refs")
+    logger.info("LLM decidió crear. task='%s' name=%s", task[:80], name)
+
     result = await create_skill(
-        task=req.task.strip(),
-        name=req.name.strip() if req.name else None,
-        triggers=req.triggers.strip() if req.triggers else None,
-        not_triggers=req.not_triggers.strip() if req.not_triggers else None,
-        refs=req.refs.strip() if req.refs else None,
+        task=task,
+        name=name,
+        mensajes=req.mensajes or [],
+        refs=refs,
     )
 
     logger.info(
@@ -90,4 +128,5 @@ async def post_create_skill(req: CreateSkillRequest) -> CreateSkillResponse:
         status=result["status"],
         message=result["message"],
         data=data,
+        question=None,
     )

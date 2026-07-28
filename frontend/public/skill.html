@@ -4,15 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>synapseForge — Crear Skill</title>
-  <link rel="icon" type="image/png" href="/src/assets/logo_empresa.png">
+  <link rel="icon" type="image/png" href="https://github.com/synapse-ai-hub/sources/raw/main/logo.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * { font-family: 'Inter', system-ui, sans-serif; }
-    body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; }
-
+    body { font-size: 15px; line-height: 1.6; margin: 0; }
     @keyframes typing-bounce {
       0%, 80%, 100% { transform: translateY(0); }
       40% { transform: translateY(-6px); }
@@ -25,141 +24,478 @@
     .typing-dot:nth-child(3) { animation-delay: 0s; }
   </style>
 </head>
-<body class="min-h-screen">
-  <!-- Header -->
-  <header style="background: white; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;">
-    <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png"
-         alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
-    <span style="font-size: 1.13rem; font-weight: 700; color: #111827;">synapseForge</span>
-    <span style="font-size: 0.875rem; color: #9ca3af; margin-left: 0.5rem;">— Crear Skill</span>
-  </header>
+<body class="h-screen flex flex-col bg-gray-50 overflow-hidden">
 
-  <!-- Main -->
-  <main class="max-w-2xl mx-auto px-6 py-8">
+  <!-- ========== HEADER (95px) ========== -->
+  <header class="flex items-center shrink-0 bg-white px-4 border-b border-gray-200"
+          style="height:95px">
+    <!-- Left: empty to balance center -->
+    <div class="sm:w-44"></div>
 
-    <!-- Explicación -->
-    <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-4 mb-6">
-      <p class="text-sm text-indigo-900">
-        Una <strong>skill</strong> es un conjunto de instrucciones y conocimientos que el asistente usa para resolver una tarea específica. Es como un manual de experto: le dice cómo pensar, qué pasos seguir y qué tener en cuenta al trabajar en ese tema.
-      </p>
+    <!-- Center: logo + title -->
+    <div class="flex-1 flex items-center justify-center gap-2 sm:gap-3">
+      <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo_transparente.png"
+           alt="Logo" class="h-9 sm:h-[95px] w-auto"
+           onerror="this.style.display='none'">
+      <span class="text-lg sm:text-2xl font-semibold" style="color:#111827">synapseForge — Creador de skills</span>
     </div>
 
-    <form id="skillForm" class="space-y-5">
-      <!-- Nombre -->
-      <div>
-        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-        <input type="text" id="name" name="name"
-               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
-               placeholder="Ej: analisis-competencia, calculo-presupuesto">
+    <!-- Right: empty to balance center -->
+    <div class="sm:w-44"></div>
+  </header>
+
+  <!-- ========== SETUP FORM ========== -->
+  <div id="setup" class="flex-1 flex items-center justify-center p-6 bg-gray-50">
+    <div class="w-full max-w-lg bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+      <div class="text-sm text-gray-600">
+        Una <strong>skill</strong> es un conjunto de instrucciones que el asistente usa para resolver una tarea específica. Es como un manual de experto: le dice cómo pensar, qué pasos seguir y qué tener en cuenta.
       </div>
 
-      <!-- Tarea -->
-      <div>
-        <label for="task" class="block text-sm font-medium text-gray-700 mb-1">¿Para qué tarea es? <span class="text-red-500">*</span></label>
-        <textarea id="task" name="task" rows="4"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Describí la tarea para la que se necesita esta skill. Por ejemplo: 'Analizar la competencia en un mercado específico y generar un informe con fortalezas, debilidades y oportunidades'."></textarea>
-      </div>
+      <div id="errorMsg" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5"></div>
 
-      <!-- Cuándo usarla -->
-      <div>
-        <label for="triggers" class="block text-sm font-medium text-gray-700 mb-1">¿Cuándo se debería usar?</label>
-        <textarea id="triggers" name="triggers" rows="3"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Palabras clave o frases que indiquen que esta skill es la adecuada. Ej: 'análisis de competencia', 'investigación de mercado', 'comparativa'..."></textarea>
-      </div>
-
-      <!-- Cuándo NO usarla -->
-      <div>
-        <label for="notTriggers" class="block text-sm font-medium text-gray-700 mb-1">¿Cuándo NO se debería usar?</label>
-        <textarea id="notTriggers" name="notTriggers" rows="3"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Situaciones o temas que esta skill NO debe cubrir. Ej: 'No usar para análisis financiero', 'No aplica a mercados internacionales'..."></textarea>
-      </div>
-
-      <!-- Referencias -->
-      <div>
-        <label for="refs" class="block text-sm font-medium text-gray-700 mb-1">Material de referencia <span class="text-gray-400">(opcional)</span></label>
-        <textarea id="refs" name="refs" rows="3"
-                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Todo lo que quieras que el asistente tenga en cuenta: tablas, cálculos, ejemplos, plantillas, fragmentos de código, URLs de referencia..."></textarea>
-        <p class="text-xs text-gray-400 mt-1">Esto se va a guardar como material de consulta dentro de la skill.</p>
-      </div>
-
-      <!-- Submit -->
-      <div class="flex items-center gap-3 pt-2">
+      <form id="skillForm" class="space-y-4">
+        <div>
+          <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre <span class="text-red-500">*</span></label>
+          <input type="text" id="name" name="name" required
+                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+                 placeholder="Ej: analisis-competencia"
+                 oninput="validarNombre()">
+          <p id="nameHint" class="text-xs text-gray-400 mt-1">Solo min&uacute;sculas, n&uacute;meros y guiones. Sin espacios ni may&uacute;sculas.</p>
+          <p id="nameError" class="text-xs text-red-500 mt-1 hidden"></p>
+        </div>
+        <div>
+          <label for="descripcion" class="block text-sm font-medium text-gray-700 mb-1">Describ&iacute; qu&eacute; necesit&aacute;s <span class="text-red-500">*</span></label>
+          <textarea id="descripcion" name="descripcion" rows="4"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
+                    placeholder="Ej: Necesito una skill que analice la competencia, compare precios y productos, y genere un informe con fortalezas y debilidades."></textarea>
+        </div>
         <button type="submit"
-                class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50">
-          Crear Skill
+                class="w-full bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50">
+          Comenzar
         </button>
-        <div id="status" class="text-sm text-gray-500 hidden">
-          <span class="typing-dot h-2 w-2 rounded-full bg-gray-400 inline-block" />
-          <span class="typing-dot h-2 w-2 rounded-full bg-gray-400 inline-block ml-0.5" />
-          <span class="typing-dot h-2 w-2 rounded-full bg-gray-400 inline-block ml-0.5" />
-          Trabajando...
+      </form>
+    </div>
+  </div>
+
+  <!-- ========== CHAT ========== -->
+  <div id="chatContainer" class="hidden flex-1 flex flex-col min-h-0 bg-gray-50">
+
+    <!-- ========== MESSAGES AREA ========== -->
+    <div class="flex-1 min-h-0 relative">
+      <div id="messagesContainer"
+           class="h-full overflow-y-auto px-3 sm:px-4 py-4 sm:py-6 pr-3 sm:pr-5"
+           style="scrollbar-width:thin;scrollbar-color:#d9d7d9 transparent">
+        <div id="messagesInner" class="relative max-w-full sm:max-w-3xl lg:max-w-4xl mx-auto space-y-4 sm:space-y-6"></div>
+      </div>
+    </div>
+
+    <!-- ========== INPUT AREA ========== -->
+    <div class="shrink-0 border-t border-gray-200 bg-white px-3 sm:px-4 py-3 sm:py-4">
+      <div class="max-w-full sm:max-w-3xl lg:max-w-4xl mx-auto">
+        <!-- File chips -->
+        <div id="fileChips" class="flex flex-wrap gap-2 mb-3 hidden"></div>
+
+        <!-- Hidden file input -->
+        <input id="fileInput" type="file" multiple
+               accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.txt,.md,.json,.xml"
+               class="hidden">
+
+        <!-- Textarea wrapper with buttons inside -->
+        <div class="relative">
+          <textarea id="chatInput" rows="1"
+                    class="w-full resize-none rounded-2xl border border-gray-200
+                           bg-white
+                           text-gray-800 placeholder-gray-400
+                           focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400
+                           transition-colors
+                           pt-3 sm:pt-4 pb-[52px] sm:pb-[64px] pr-12 sm:pr-12 pl-12 sm:pl-12
+                           min-h-[80px] sm:min-h-[100px]"
+                    style="max-height:220px"
+                    placeholder="Escribí tu consulta..."></textarea>
+
+          <!-- Attach button - bottom left -->
+          <button id="attachBtn" type="button"
+                  class="absolute bottom-3 left-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
+                         flex items-center justify-center
+                         bg-indigo-500/10 hover:bg-indigo-500/20
+                         text-indigo-600 transition-all duration-150"
+                  aria-label="Adjuntar archivos">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+
+          <!-- Send / Stop button - bottom right -->
+          <button id="stopBtn" type="button"
+                  class="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
+                         flex items-center justify-center
+                         bg-indigo-500/20 hover:bg-indigo-500/30
+                         text-indigo-600
+                         hover:opacity-90 active:scale-95
+                         transition-all duration-150 shadow-sm hidden"
+                  aria-label="Detener generación">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+
+          <button id="sendBtn" type="button"
+                  class="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
+                         flex items-center justify-center
+                         bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white
+                         hover:opacity-90 active:scale-95
+                         transition-all duration-150 shadow-sm
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Enviar mensaje">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
+          </button>
         </div>
       </div>
-    </form>
+    </div>
+  </div>
 
-    <div id="result" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-      <p id="resultMsg" class="text-sm text-green-800 font-medium">¡Skill creada exitosamente!</p>
+  <!-- ========== RESULT OVERLAY ========== -->
+  <div id="result" class="hidden fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 text-center space-y-4">
+      <div class="mx-auto w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <p id="resultMsg" class="text-sm text-gray-800 font-medium"></p>
       <button onclick="window.close()"
-              class="mt-3 text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
+              class="bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors">
         Aceptar
       </button>
     </div>
-  </main>
+  </div>
 
   <script>
     const API = "http://localhost:8000/api";
 
-    document.getElementById("skillForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const status = document.getElementById("status");
-      const btn = e.target.querySelector("button[type=submit]");
-      const resultDiv = document.getElementById("result");
-      const resultMsg = document.getElementById("resultMsg");
+    // ── Estado ──
+    let mensajes = [];
+    let name = "";
+    let attachedFiles = [];
+    let isProcessing = false;
+    let abortController = null;
+    let descripcionCache = "";
 
-      btn.disabled = true;
-      status.classList.remove("hidden");
-      resultDiv.classList.add("hidden");
+    // ── Elementos DOM ──
+    const setupDiv = document.getElementById("setup");
+    const chatContainer = document.getElementById("chatContainer");
+    const messagesInner = document.getElementById("messagesInner");
+    const messagesContainer = document.getElementById("messagesContainer");
+    const chatInput = document.getElementById("chatInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const attachBtn = document.getElementById("attachBtn");
+    const fileInput = document.getElementById("fileInput");
+    const fileChips = document.getElementById("fileChips");
+    const errEl = document.getElementById("errorMsg");
+    const form = document.getElementById("skillForm");
+    const nameInput = document.getElementById("name");
+    const descInput = document.getElementById("descripcion");
+    const resultDiv = document.getElementById("result");
+    const resultMsg = document.getElementById("resultMsg");
+
+    // ── Utilidades ──
+    function mostrarError(msg) { errEl.textContent = msg; errEl.classList.remove("hidden"); }
+    function ocultarError() { errEl.classList.add("hidden"); }
+
+    function scrollAlFinal() {
+      requestAnimationFrame(() => {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      });
+    }
+
+    // ── Auto-resize textarea ──
+    function autoResize() {
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 220) + "px";
+    }
+
+    // ── Archivos ──
+    const MAX_FILES = 5;
+    const MAX_TOTAL_SIZE = 10 * 1024 * 1024;
+
+    fileInput.addEventListener("change", () => {
+      const nuevos = Array.from(fileInput.files);
+      let warning = null;
+      const valid = [];
+      let currentTotal = attachedFiles.reduce((s, f) => s + f.size, 0);
+      for (const f of nuevos) {
+        if (valid.length + attachedFiles.length >= MAX_FILES) {
+          warning = "Máximo " + MAX_FILES + " archivos permitidos.";
+          break;
+        }
+        if (currentTotal + f.size > MAX_TOTAL_SIZE) {
+          warning = "Tamaño total excede 10 MB.";
+          break;
+        }
+        valid.push(f);
+        currentTotal += f.size;
+      }
+      if (warning) mostrarError(warning);
+      attachedFiles.push(...valid);
+      renderFileChips();
+      fileInput.value = "";
+    });
+
+    function renderFileChips() {
+      fileChips.innerHTML = "";
+      if (attachedFiles.length === 0) { fileChips.classList.add("hidden"); return; }
+      fileChips.classList.remove("hidden");
+      attachedFiles.forEach((f, i) => {
+        const chip = document.createElement("div");
+        chip.className = "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs bg-indigo-500/10 border border-indigo-500/20 text-gray-800";
+        chip.innerHTML =
+          '<span class="truncate max-w-[120px] sm:max-w-[200px]">' + f.name + '</span>' +
+          '<span class="text-gray-500 shrink-0">' + (f.size < 1048576 ? (f.size / 1024).toFixed(0) + ' KB' : (f.size / 1048576).toFixed(1) + ' MB') + '</span>' +
+          '<button onclick="eliminarArchivo(' + i + ')" class="shrink-0 rounded-full p-0.5 hover:bg-indigo-500/15 transition-colors" aria-label="Remove ' + f.name + '">&times;</button>';
+        fileChips.appendChild(chip);
+      });
+    }
+
+    window.eliminarArchivo = function(i) { attachedFiles.splice(i, 1); renderFileChips(); };
+    attachBtn.addEventListener("click", () => fileInput.click());
+
+    // ── Agregar mensaje como ChatInterface ──
+    function agregarMensaje(role, contenido, files) {
+      const wrapper = document.createElement("div");
+
+      if (role === "assistant") {
+        wrapper.className = "flex gap-3 sm:gap-4 items-start";
+        wrapper.dataset.role = "assistant";
+
+        // Avatar - Brain gradient (exacto ChatInterface)
+        const avatarDiv = document.createElement("div");
+        avatarDiv.className = "shrink-0";
+        avatarDiv.innerHTML =
+          '<div class="h-4 w-4 sm:h-10 sm:w-10 rounded-xl flex items-center justify-center bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white">' +
+          '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>' +
+          '<path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>' +
+          '<path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>' +
+          '</svg>' +
+          '</div>';
+        wrapper.appendChild(avatarDiv);
+
+        // Content
+        const contentDiv = document.createElement("div");
+        contentDiv.className = "flex-1 min-w-0 pt-1";
+        const bubble = document.createElement("div");
+        bubble.className = "rounded-2xl border border-gray-200 bg-white px-4 py-3 max-w-[85%] sm:max-w-[75%] shadow-sm text-sm text-gray-800";
+        bubble.textContent = contenido;
+        contentDiv.appendChild(bubble);
+        wrapper.appendChild(contentDiv);
+      } else {
+        wrapper.className = "flex gap-3 items-start justify-end";
+        wrapper.dataset.role = "user";
+
+        // Bubble
+        const bubble = document.createElement("div");
+        bubble.className = "rounded-2xl border border-gray-200 bg-white px-4 py-3 max-w-[85%] sm:max-w-[75%] shadow-sm text-sm text-gray-800";
+        bubble.textContent = contenido;
+        wrapper.appendChild(bubble);
+
+        // File chips
+        if (files && files.length > 0) {
+          const filesDiv = document.createElement("div");
+          filesDiv.className = "flex flex-wrap gap-1.5 mt-1.5";
+          files.forEach(f => {
+            const chip = document.createElement("span");
+            chip.className = "inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500";
+            chip.innerHTML =
+              '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> ' +
+              f.name;
+            filesDiv.appendChild(chip);
+          });
+          bubble.after(filesDiv);
+        }
+
+        // Avatar - User gray (exacto ChatInterface)
+        const avatarDiv = document.createElement("div");
+        avatarDiv.className = "w-10 h-10 sm:w-10 sm:h-10 rounded-full shrink-0 flex items-center justify-center bg-gray-100 text-gray-500";
+        avatarDiv.innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+        wrapper.appendChild(avatarDiv);
+      }
+
+      messagesInner.appendChild(wrapper);
+      scrollAlFinal();
+    }
+
+    // ── Typing indicator (exacto ChatInterface) ──
+    function mostrarTyping() {
+      ocultarTyping();
+      const typingDiv = document.createElement("div");
+      typingDiv.id = "typingIndicator";
+      typingDiv.className = "flex items-center gap-1.5 px-1";
+      typingDiv.role = "status";
+      typingDiv.setAttribute("aria-label", "Escribiendo...");
+      typingDiv.innerHTML =
+        '<span class="typing-dot h-2 w-2 rounded-full" style="background:#4f46e5"></span>' +
+        '<span class="typing-dot h-2 w-2 rounded-full" style="background:#4f46e5"></span>' +
+        '<span class="typing-dot h-2 w-2 rounded-full" style="background:#4f46e5"></span>' +
+        '<span class="text-xs ml-1" style="color:#6b7280">Pensando...</span>';
+      messagesInner.appendChild(typingDiv);
+      scrollAlFinal();
+    }
+
+    function ocultarTyping() {
+      const el = document.getElementById("typingIndicator");
+      if (el) el.remove();
+    }
+
+    // ── Procesar respuesta ──
+    function procesarRespuesta(data) {
+      ocultarTyping();
+      if (data.status === "question") {
+        agregarMensaje("assistant", data.question);
+        mensajes.push({ role: "assistant", content: data.question });
+        habilitarInput();
+      } else if (data.status === "success") {
+        let msg = data.message || "";
+        if (data.data && data.data.exist === "Sí" && data.data.skill) {
+          msg = "Ya existe la skill \u00ab" + data.data.skill + "\u00bb. " + (data.data.explicacion || data.message);
+        }
+        resultMsg.textContent = msg;
+        resultDiv.classList.remove("hidden");
+      } else {
+        mostrarError("Error: " + (data.message || "Error desconocido"));
+        habilitarInput();
+      }
+    }
+
+    function habilitarInput() {
+      sendBtn.disabled = false;
+      chatInput.disabled = false;
+      chatInput.focus();
+    }
+
+    // ── Enviar mensaje ──
+    async function enviarMensaje() {
+      const text = chatInput.value.trim();
+      if (!text || isProcessing) return;
+
+      agregarMensaje("user", text, attachedFiles.length > 0 ? attachedFiles.map(f => ({ name: f.name, size: f.size })) : undefined);
+      chatInput.value = "";
+      autoResize();
+      ocultarError();
+
+      mensajes.push({ role: "user", content: text });
+      attachedFiles = [];
+      renderFileChips();
+
+      isProcessing = true;
+      sendBtn.classList.add("hidden");
+      stopBtn.classList.remove("hidden");
+      mostrarTyping();
+
+      abortController = new AbortController();
 
       try {
-        const body = {
-          task: document.getElementById("task").value.trim(),
-          name: document.getElementById("name").value.trim() || null,
-          triggers: document.getElementById("triggers").value.trim() || null,
-          not_triggers: document.getElementById("notTriggers").value.trim() || null,
-          refs: document.getElementById("refs").value.trim() || null,
-        };
-
-        const resp = await fetch(`${API}/create/skill`, {
+        const resp = await fetch(API + "/create/skill", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            descripcion: descripcionCache,
+            name: name || null,
+            mensajes: mensajes,
+          }),
+          signal: abortController.signal,
         });
-
         const data = await resp.json();
-        status.classList.add("hidden");
-
-        if (data.status === "success") {
-          let msg = data.message;
-          if (data.data && data.data.exist === "Sí" && data.data.skill) {
-            msg = `Ya existe la skill «${data.data.skill}». ${data.data.explicacion || data.message}`;
-          }
-          resultMsg.textContent = msg;
-          resultDiv.classList.remove("hidden");
-          resultDiv.className = "mt-6 p-4 bg-green-50 border border-green-200 rounded-lg";
-          document.getElementById("skillForm").classList.add("hidden");
-        } else {
-          status.textContent = "Error: " + data.message;
-          status.className = "text-sm text-red-500";
-          btn.disabled = false;
-        }
+        procesarRespuesta(data);
       } catch (err) {
-        status.textContent = "Error de conexión: " + err.message;
-        status.className = "text-sm text-red-500";
-        btn.disabled = false;
+        ocultarTyping();
+        if (err.name === "AbortError") {
+          mensajes.pop();
+          const lastMsg = messagesInner.lastElementChild;
+          if (lastMsg && lastMsg.dataset.role === "user") lastMsg.remove();
+        } else {
+          mostrarError("Error de conexión: " + err.message);
+          habilitarInput();
+        }
+      } finally {
+        isProcessing = false;
+        stopBtn.classList.add("hidden");
+        sendBtn.classList.remove("hidden");
+        chatInput.focus();
+      }
+    }
+
+    // ── Eventos ──
+    sendBtn.addEventListener("click", enviarMensaje);
+
+    stopBtn.addEventListener("click", () => {
+      if (abortController) { abortController.abort(); abortController = null; }
+      ocultarTyping();
+    });
+
+    chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+    });
+    chatInput.addEventListener("input", autoResize);
+
+    // ── Validación nombre ──
+    const nameErr = document.getElementById("nameError");
+
+    function validarNombre() {
+      const val = nameInput.value;
+      if (!val) { nameErr.classList.add("hidden"); return true; }
+      if (val.includes(" ")) { nameErr.textContent = "No debe contener espacios."; nameErr.classList.remove("hidden"); return false; }
+      if (val !== val.toLowerCase()) { nameErr.textContent = "Debe estar todo en minúscula."; nameErr.classList.remove("hidden"); return false; }
+      if (!/^[a-z0-9-]+$/.test(val)) { nameErr.textContent = "Solo se permiten minúsculas, números y guiones."; nameErr.classList.remove("hidden"); return false; }
+      nameErr.classList.add("hidden");
+      return true;
+    }
+
+    // ── Envío formulario inicial ──
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      ocultarError();
+
+      name = nameInput.value.trim();
+      const desc = descInput.value.trim();
+
+      if (!desc) { mostrarError("Completá la descripción."); return; }
+      if (!name) { mostrarError("El nombre es obligatorio."); return; }
+      if (!validarNombre()) { mostrarError("Corregí el campo Nombre."); return; }
+
+      descripcionCache = desc;
+
+      setupDiv.classList.add("hidden");
+      chatContainer.classList.remove("hidden");
+
+      agregarMensaje("user", desc);
+      mensajes.push({ role: "user", content: desc });
+
+      isProcessing = true;
+      sendBtn.classList.add("hidden");
+      stopBtn.classList.remove("hidden");
+      mostrarTyping();
+
+      abortController = new AbortController();
+
+      try {
+        const resp = await fetch(API + "/create/skill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            descripcion: desc,
+            name: name || null,
+            mensajes: mensajes,
+          }),
+          signal: abortController.signal,
+        });
+        const data = await resp.json();
+        procesarRespuesta(data);
+      } catch (err) {
+        ocultarTyping();
+        if (err.name !== "AbortError") {
+          mostrarError("Error de conexión: " + err.message);
+          habilitarInput();
+        }
+      } finally {
+        isProcessing = false;
+        stopBtn.classList.add("hidden");
+        sendBtn.classList.remove("hidden");
       }
     });
   </script>

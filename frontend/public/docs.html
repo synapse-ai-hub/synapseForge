@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>synapseForge — Documentación</title>
-  <link rel="icon" type="image/png" href="/src/assets/logo_empresa.png">
+  <link rel="icon" type="image/png" href="https://github.com/synapse-ai-hub/sources/raw/main/logo.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,7 +12,7 @@
   <style>
     * { font-family: 'Inter', system-ui, sans-serif; }
     body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; }
-    article h2 { font-size: 1.875rem; font-weight: 700; margin-top: 3rem; margin-bottom: 1.25rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; color: #111827; scroll-margin-top: 1rem; }
+    article h2 { font-size: 1.875rem; font-weight: 700; margin-top: 3rem; margin-bottom: 1.25rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; color: #111827; scroll-margin-top: 7rem; }
     article h2:first-child { margin-top: 0; }
     article h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.75rem; margin-bottom: 0.75rem; color: #111827; }
     article h4 { font-size: 1rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #111827; }
@@ -35,44 +35,53 @@
     .sidebar-link:hover:not(.active) { background: #eedccc; color: #111827; }
     .sidebar-sub { padding-left: 1.5rem; font-size: 0.8rem; font-weight: 400; }
     .github-icon { width: 1.25rem; height: 1.25rem; fill: currentColor; }
+    /* Collapsible sections in sidebar */
+    .sidebar-section { margin-bottom: 0.25rem; }
+    .sidebar-section-header { display: flex; align-items: center; gap: 0.25rem; cursor: pointer; user-select: none; }
+    .sidebar-section-header .sidebar-link { flex: 1; min-width: 0; }
+    .collapse-icon { font-size: 0.6rem; color: #9ca3af; cursor: pointer; flex-shrink: 0; padding: 0.15rem 0.25rem; transition: color 0.15s; line-height: 1; }
+    .collapse-icon:hover { color: #6b7280; }
+    .sidebar-subs { list-style: none; padding: 0; margin: 0.125rem 0 0 0; }
+    .sidebar-subs.collapsed { display: none; }
+    .app-header { display: flex !important; }
     @media (max-width: 1023px) {
-      .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; width: 18rem; }
+      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; width: 18rem; }
       .sidebar.open { transform: translateX(0); }
       .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
       .sidebar-overlay.open { display: block; }
-      .mobile-header { display: flex !important; }
       main { padding-top: 5rem !important; }
     }
     @media (min-width: 1024px) {
-      .mobile-header { display: none !important; }
-      .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 30; width: 25rem; overflow-y: auto; }
-      main { margin-left: 10rem !important; }
+      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 30; width: 25rem; overflow-y: auto; }
+      main { margin-left: 25rem !important; padding-top: 95px !important; }
     }
   </style>
 </head>
 <body>
   <!-- Mobile Header -->
-  <header class="mobile-header" style="position: fixed; top: 0; left: 0; right: 0; z-index: 40; background: white; border-bottom: 1px solid #e5e7eb; align-items: center; justify-content: space-between; padding: 0.75rem 1rem;">
-    <div style="display: flex; align-items: center; gap: 0.75rem;">
-      <button onclick="toggleSidebar()" style="padding: 0.5rem; border-radius: 0.5rem; border: none; background: transparent; cursor: pointer;" aria-label="Menú">
-        <svg style="width: 1.5rem; height: 1.5rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-      </button>
-      <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
-      <span style="font-size: 1.13rem; font-weight: 700; color: #111827;">synapseForge</span>
+  <header class="app-header flex items-center shrink-0 bg-white px-4 border-b border-gray-200"
+          style="position: fixed; top: 0; left: 0; right: 0; z-index: 40; height:95px;">
+    <!-- Left: empty to balance center -->
+    <div class="sm:w-44"></div>
+
+    <!-- Center: logo + title -->
+    <div class="flex-1 flex items-center justify-center gap-2 sm:gap-3">
+      <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo_transparente.png" alt="Logo" class="h-9 sm:h-[95px] w-auto" onerror="this.style.display='none'">
+      <span class="text-lg sm:text-2xl font-semibold" style="color:#111827">synapseForge</span>
     </div>
+
+    <!-- Right: GitHub -->
+    <div class="flex items-center justify-end sm:w-44">
     <a href="https://github.com/synapse-ai-hub/synapseForge" target="_blank" rel="noopener noreferrer" style="display: flex; align-items: center; gap: 0.375rem; font-size: 0.875rem; color: #374151; text-decoration: none;" title="GitHub">
       <svg class="github-icon" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.305-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
       <span style="font-weight: 500;">GitHub</span>
     </a>
+    </div>
   </header>
 
   <div style="display: flex;">
     <!-- Sidebar -->
     <aside id="sidebar" class="sidebar lg-sidebar" style="width: 18rem; flex-shrink: 0; border-right: 1px solid #e5e7eb; background: white; overflow-y: auto;">
-      <div style="padding: 1.25rem; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem;">
-        <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo.png" alt="Logo" style="height: 3rem; width: auto;" onerror="this.style.display='none'">
-        <span style="font-size: 1.25rem; font-weight: 700; color: #111827;">synapseForge</span>
-      </div>
       <nav style="padding: 1rem;">
         <h3 style="font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; padding-left: 0.5rem;">Contenido</h3>
         <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25rem;" id="toc"></ul>
@@ -211,6 +220,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>skills/</code></td><td>Subcarpetas, cada una con un <code>SKILL.md</code> que define una skill</td></tr>
               <tr><td><code>tools/</code></td><td>Archivos <code>.py</code> individuales, cada uno una tool externa</td></tr>
               <tr><td><code>agents/</code></td><td>Archivos <code>.md</code> con la definición de agentes y sus permisos</td></tr>
+              <tr><td><code>knowledge/</code></td><td>Colecciones RAG (ChromaDB) creadas desde la interfaz de creación</td></tr>
               <tr><td><code>config.json</code></td><td>Configuración JSON de los servidores MCP disponibles</td></tr>
             </tbody>
           </table>
@@ -394,6 +404,15 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
         <section id="interfaz-usuario">
           <h2>Interfaz de usuario</h2>
           <p>La aplicación incluye una interfaz web moderna con chat, historial de conversaciones y un panel de configuración. La interfaz se abre automáticamente cuando ejecutás <code>synapseForge run</code>.</p>
+          <h3>Creación (modo desarrollador)</h3>
+          <p>El panel lateral incluye una sección <strong>Crear</strong> con 4 pestañas: <strong>Skills</strong>, <strong>Tools</strong>, <strong>Agentes</strong> y <strong>RAG</strong>. Cada una abre un formulario standalone en una nueva pestaña del navegador:</p>
+          <ul>
+            <li><strong>Skill</strong>: formulario con nombre, tarea, cuándo usarla, cuándo NO, y material de referencia. El LLM busca skills existentes que coincidan; si no encuentra, genera una nueva.</li>
+            <li><strong>Tool</strong>: formulario para crear una tool externa. El LLM genera el código Python con la estructura requerida.</li>
+            <li><strong>Agente</strong>: formulario para crear un agente con permisos, parámetros del modelo y prompt personalizado.</li>
+            <li><strong>RAG</strong>: formulario para crear una colección RAG subiendo archivos y URLs, procesada con ChromaDB.</li>
+          </ul>
+          <p>Cada formulario muestra un indicador de trabajo (tres bolitas animadas) mientras el backend procesa. Al finalizar, muestra un mensaje de éxito y un botón Aceptar que cierra la pestaña.</p>
           <h3>Panel de configuración</h3>
           <p>En el panel lateral derecho, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
           <h4>Proveedor y modelo</h4>
@@ -426,6 +445,10 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             </thead>
             <tbody>
               <tr><td>POST</td><td><code>/api/chat/stream</code></td><td>Enviar un mensaje al agente. La respuesta se recibe por streaming (SSE).</td></tr>
+              <tr><td>POST</td><td><code>/api/create/skill</code></td><td>Crear una skill mediante LLM (formulario standalone).</td></tr>
+              <tr><td>POST</td><td><code>/api/create/tool</code></td><td>Crear una tool externa mediante LLM.</td></tr>
+              <tr><td>POST</td><td><code>/api/create/agent</code></td><td>Crear un agente con permisos y prompt mediante LLM.</td></tr>
+              <tr><td>POST</td><td><code>/api/create/rag</code></td><td>Crear una colección RAG a partir de archivos y URLs.</td></tr>
               <tr><td>GET</td><td><code>/api/sessions</code></td><td>Listar todas las sesiones de chat.</td></tr>
               <tr><td>GET</td><td><code>/api/sessions/{id}</code></td><td>Cargar una sesión completa con todos sus mensajes.</td></tr>
               <tr><td>DELETE</td><td><code>/api/sessions/{id}</code></td><td>Eliminar una sesión y todos sus datos asociados.</td></tr>
@@ -499,6 +522,16 @@ synapseForge run .</code></pre>
             <li>Abrí los puertos necesarios en el firewall.</li>
             <li>Ajustá la configuración de CORS en el backend para permitir el origen desde donde vas a acceder.</li>
           </ol>
+        </section>
+
+        <section id="futuro-vercel">
+          <h2>Integración futura — Skills Vercel</h2>
+          <p>Se está planificando la integración con el ecosistema de <a href="https://github.com/vercel-labs/skills" target="_blank" rel="noopener noreferrer">Vercel Skills</a> (<code>npx skills</code>), que permite buscar, instalar y gestionar skills desde repositorios públicos. El flujo planeado funciona en dos etapas:</p>
+          <ol>
+            <li><strong>Búsqueda</strong>: ejecutar <code>npx skills find &lt;query&gt;</code> para descubrir skills disponibles en el ecosistema.</li>
+            <li><strong>Evaluación/Instalación</strong>: un LLM evalúa los resultados contra la necesidad del usuario. Si corresponde, instala la skill automáticamente desde su source.</li>
+          </ol>
+          <p>Esto permitirá ampliar el repositorio de skills sin tener que crearlas manualmente, aprovechando el ecosistema abierto de agent skills.</p>
         </section>
 
         <section id="deploy-cloud">
@@ -580,32 +613,60 @@ synapseForge run .</code></pre>
       var sections = document.querySelectorAll('article > section');
       var toc = document.getElementById('toc');
 
+      function toggleCollapse(sectionLi, icon) {
+        var subs = sectionLi.querySelector('.sidebar-subs');
+        if (!subs) return;
+        var isCollapsed = subs.classList.toggle('collapsed');
+        icon.textContent = isCollapsed ? '▶' : '▼';
+      }
+
+      function scrollToHeading(heading, href) {
+        pauseObserver();
+        setActiveLink(href);
+        var top = heading.getBoundingClientRect().top + window.scrollY - 110;
+        window.scrollTo({ behavior: 'smooth', top: top });
+        history.replaceState(null, '', href);
+        if (window.innerWidth < 1024) toggleSidebar(false);
+      }
+
       sections.forEach(function(section) {
         var id = section.id;
         var h2 = section.querySelector('h2');
         if (!id || !h2) return;
 
-        // Add section (h2) to TOC
-        var li = document.createElement('li');
-        var a = document.createElement('a');
-        a.href = '#' + id;
+        // Create section group
+        var sectionLi = document.createElement('li');
+        sectionLi.className = 'sidebar-section';
+
+        // Header row: click anywhere toggles collapse
+        var headerDiv = document.createElement('div');
+        headerDiv.className = 'sidebar-section-header';
+
+        // Section name (not a link — just text)
+        var a = document.createElement('span');
         a.className = 'sidebar-link';
         a.textContent = h2.textContent;
-        a.onclick = function(e) {
-          e.preventDefault();
-          pauseObserver();
-          setActiveLink('#' + id);
-          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          history.replaceState(null, '', '#' + id);
-          if (window.innerWidth < 1024) toggleSidebar(false);
-        };
-        li.appendChild(a);
-        toc.appendChild(li);
+        headerDiv.appendChild(a);
 
-        // Add subsections (h3) to TOC
+        // Collapse icon on the right (▶ by default = collapsed)
+        var icon = document.createElement('span');
+        icon.className = 'collapse-icon';
+        icon.textContent = '▶';
+        headerDiv.appendChild(icon);
+
+        // Click anywhere on the header → toggle collapse (no scroll)
+        headerDiv.onclick = function() {
+          toggleCollapse(sectionLi, icon);
+        };
+
+        sectionLi.appendChild(headerDiv);
+
+        // Subsections container (h3s) — collapsed by default
+        var subsUl = document.createElement('ul');
+        subsUl.className = 'sidebar-subs collapsed';
+
         var h3s = section.querySelectorAll('h3');
         h3s.forEach(function(h3) {
-          // Generate an ID for the h3 if it doesn't have one
           var subId = h3.id || (id + '-' + h3.textContent.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''));
           if (!h3.id) {
             h3.id = subId;
@@ -618,19 +679,18 @@ synapseForge run .</code></pre>
           subA.textContent = h3.textContent;
           subA.onclick = function(e) {
             e.preventDefault();
-            pauseObserver();
-            setActiveLink('#' + subId);
-            h3.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            history.replaceState(null, '', '#' + subId);
-            if (window.innerWidth < 1024) toggleSidebar(false);
+            scrollToHeading(h3, '#' + subId);
           };
           subLi.appendChild(subA);
-          toc.appendChild(subLi);
+          subsUl.appendChild(subLi);
         });
+
+        sectionLi.appendChild(subsUl);
+        toc.appendChild(sectionLi);
       });
 
       // Scroll spy — only update active class, do NOT move the sidebar itself
-      var allLinks = document.querySelectorAll('.sidebar-link');
+      var allLinks = document.querySelectorAll('.sidebar-link[href]');
       var allHeadings = [];
       allLinks.forEach(function(link) {
         var targetId = link.getAttribute('href').substring(1);
@@ -662,9 +722,29 @@ synapseForge run .</code></pre>
         var hashId = window.location.hash.substring(1);
         var hashEl = document.getElementById(hashId);
         if (hashEl) {
-          setTimeout(function() { hashEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+          setTimeout(function() {
+            var top = hashEl.getBoundingClientRect().top + window.scrollY - 110;
+            window.scrollTo({ behavior: 'smooth', top: top });
+          }, 100);
         }
       }
+    })();
+
+    // Prevent sidebar scroll from propagating to main content when at boundaries
+    (function() {
+      var sidebar = document.getElementById('sidebar');
+      if (!sidebar) return;
+      // No-op if sidebar doesn't need scrolling (no overflow)
+      if (sidebar.scrollHeight <= sidebar.clientHeight + 1) return;
+      sidebar.addEventListener('wheel', function(e) {
+        var atTop    = sidebar.scrollTop <= 0;
+        var atBottom = sidebar.scrollTop + sidebar.clientHeight >= sidebar.scrollHeight - 1;
+        var scrollingUp   = e.deltaY < 0;
+        var scrollingDown = e.deltaY > 0;
+        if ((atTop && scrollingUp) || (atBottom && scrollingDown)) {
+          e.preventDefault();
+        }
+      }, { passive: false });
     })();
 
     function toggleSidebar(force) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Wrench, Puzzle, Brain, Server, Cpu, Globe, Database } from "lucide-react";
+import { Wrench, Puzzle, Brain, Server, Cpu, Globe, Database, Trash2 } from "lucide-react";
 import configService, { type SkillInfo, type ToolInfo, type AgentInfo, type McpServerStatus } from "../services/configService";
 
 type AgentTab = "tools" | "skills" | "agents" | "mcp" | "rag";
@@ -46,11 +46,62 @@ export function AgentInfoTab() {
   );
 }
 
+// ─── Delete button with confirmation ──────────────────────────────
+
+function DeleteBtn({ label, onDelete }: { label: string; onDelete: () => Promise<void> }) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={async () => {
+            setDeleting(true);
+            try {
+              await onDelete();
+              // Success — confirm stays visible but disabled briefly
+              setTimeout(() => { setConfirming(false); setDeleting(false); }, 500);
+            } catch {
+              setDeleting(false);
+              setConfirming(false);
+            }
+          }}
+          className="text-xs bg-red-500 hover:bg-red-600 text-white px-2 py-0.5 rounded disabled:opacity-50"
+        >
+          {deleting ? "..." : "Sí"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded"
+        >
+          No
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      className="text-app-text-secondary hover:text-red-500 transition-colors shrink-0"
+      title={`Eliminar ${label}`}
+    >
+      <Trash2 size={14} />
+    </button>
+  );
+}
+
 // ─── Tools ────────────────────────────────────────────────────────
 
 function ToolsPanel() {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -70,15 +121,27 @@ function ToolsPanel() {
 
   return (
     <div className="space-y-1">
+      {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {tools.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay herramientas disponibles.</p>
       ) : (
         tools.map((t) => (
-          <div key={t.name} className="rounded-lg border border-app-border bg-white px-3 py-2">
-            <span className="text-sm font-medium text-app-text">{t.name}</span>
-            {t.description && (
-              <p className="text-xs text-app-text-secondary mt-0.5">{t.description}</p>
-            )}
+          <div key={t.name} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+            <div className="min-w-0">
+              <span className="text-sm font-medium text-app-text">{t.name}</span>
+              {t.description && (
+                <p className="text-xs text-app-text-secondary mt-0.5">{t.description}</p>
+              )}
+            </div>
+            <DeleteBtn
+              label={t.name}
+              onDelete={async () => {
+                await configService.deleteTool(t.name);
+                setTools((prev) => prev.filter((x) => x.name !== t.name));
+                setMsg(`Tool «${t.name}» eliminada.`);
+                setTimeout(() => setMsg(""), 3000);
+              }}
+            />
           </div>
         ))
       )}
@@ -91,10 +154,10 @@ function ToolsPanel() {
 function SkillsPanel() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     try {
-      setLoading(true);
       const data = await configService.getSkills();
       setSkills(data);
     } catch (err) {
@@ -104,21 +167,41 @@ function SkillsPanel() {
     }
   }, []);
 
+  // Cargar al montar y recargar cuando la ventana recupera el foco
+  // (por si se creó/borró una skill en otra pestaña)
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const onFocus = () => { setLoading(true); load(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
 
   if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
 
   return (
     <div className="space-y-1">
+      {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {skills.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay skills instaladas.</p>
       ) : (
         skills.map((s) => (
-          <div key={s.name} className="rounded-lg border border-app-border bg-white px-3 py-2">
-            <span className="text-sm font-medium text-app-text">{s.name}</span>
-            {s.description && (
-              <p className="text-xs text-app-text-secondary mt-0.5">{s.description}</p>
-            )}
+          <div key={s.name} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+            <div className="min-w-0">
+              <span className="text-sm font-medium text-app-text">{s.name}</span>
+              {s.description && (
+                <p className="text-xs text-app-text-secondary mt-0.5">{s.description}</p>
+              )}
+            </div>
+            <DeleteBtn
+              label={s.name}
+              onDelete={async () => {
+                await configService.deleteSkill(s.name);
+                setSkills((prev) => prev.filter((x) => x.name !== s.name));
+                setMsg(`Skill «${s.name}» eliminada.`);
+                setTimeout(() => setMsg(""), 3000);
+              }}
+            />
           </div>
         ))
       )}
@@ -131,6 +214,7 @@ function SkillsPanel() {
 function AgentsPanel() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -150,15 +234,27 @@ function AgentsPanel() {
 
   return (
     <div className="space-y-1">
+      {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {agents.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay agentes configurados.</p>
       ) : (
         agents.map((a) => (
-          <div key={a.name} className="rounded-lg border border-app-border bg-white px-3 py-2">
-            <span className="text-sm font-medium text-app-text">{a.name}</span>
-            {a.description && (
-              <p className="text-xs text-app-text-secondary mt-0.5">{a.description}</p>
-            )}
+          <div key={a.name} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+            <div className="min-w-0">
+              <span className="text-sm font-medium text-app-text">{a.name}</span>
+              {a.description && (
+                <p className="text-xs text-app-text-secondary mt-0.5">{a.description}</p>
+              )}
+            </div>
+            <DeleteBtn
+              label={a.name}
+              onDelete={async () => {
+                await configService.deleteAgent(a.name);
+                setAgents((prev) => prev.filter((x) => x.name !== a.name));
+                setMsg(`Agente «${a.name}» eliminado.`);
+                setTimeout(() => setMsg(""), 3000);
+              }}
+            />
           </div>
         ))
       )}
@@ -171,6 +267,7 @@ function AgentsPanel() {
 function McpPanel() {
   const [servers, setServers] = useState<McpServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -190,12 +287,13 @@ function McpPanel() {
 
   return (
     <div className="space-y-1">
+      {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {servers.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay servidores MCP configurados.</p>
       ) : (
         servers.map((s) => (
-          <div key={s.label} className="rounded-lg border border-app-border bg-white px-3 py-2">
-            <div className="flex items-center gap-2">
+          <div key={s.label} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+            <div className="flex items-center gap-2 min-w-0">
               {s.status === "connected" ? (
                 <Globe size={14} className="shrink-0 text-green-600" />
               ) : (
@@ -212,6 +310,15 @@ function McpPanel() {
                 {s.status === "connected" ? "Conectado" : s.status === "failed" ? "Error" : s.status}
               </span>
             </div>
+            <DeleteBtn
+              label={s.label}
+              onDelete={async () => {
+                await configService.deleteMcp(s.label);
+                setServers((prev) => prev.filter((x) => x.label !== s.label));
+                setMsg(`Servidor MCP «${s.label}» eliminado.`);
+                setTimeout(() => setMsg(""), 3000);
+              }}
+            />
           </div>
         ))
       )}
@@ -220,9 +327,47 @@ function McpPanel() {
 }
 
 function RagPanel() {
+  const [collections, setCollections] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await configService.listKnowledge();
+      setCollections(data);
+    } catch {
+      setCollections([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
+
   return (
     <div className="space-y-1">
-      <p className="text-sm text-app-text-secondary">RAG panel content goes here.</p>
+      {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
+      {collections.length === 0 ? (
+        <p className="text-sm text-app-text-secondary">No hay colecciones RAG.</p>
+      ) : (
+        collections.map((c) => (
+          <div key={c} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+            <span className="text-sm font-medium text-app-text">{c}</span>
+            <DeleteBtn
+              label={c}
+              onDelete={async () => {
+                await configService.deleteKnowledge(c);
+                setCollections((prev) => prev.filter((x) => x !== c));
+                setMsg(`Colección «${c}» eliminada.`);
+                setTimeout(() => setMsg(""), 3000);
+              }}
+            />
+          </div>
+        ))
+      )}
     </div>
   );
 }

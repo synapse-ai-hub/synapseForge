@@ -82,6 +82,13 @@ except ImportError as e:
     create_router = None
     logging.warning("backend.routes.create could not be imported.")
 
+try:
+    from backend.routes.agent_items import router as agent_items_router
+except ImportError as e:
+    log_error(str(e), source="main.py:agent_items_import")
+    agent_items_router = None
+    logging.warning("backend.routes.agent_items could not be imported.")
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -222,6 +229,9 @@ if metrics_router is not None:
 
 if create_router is not None:
     app.include_router(create_router, prefix="/api")
+
+if agent_items_router is not None:
+    app.include_router(agent_items_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

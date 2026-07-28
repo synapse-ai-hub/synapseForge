@@ -124,6 +124,7 @@ async def _evaluar_si_existe(
         model=agent._resolved_model,
         prompt=prompt,
         temperature=0.0,
+        top_p=0.6,
         max_tokens=5000,
         cleaned_output=True,
     )
@@ -186,7 +187,8 @@ async def _explicar_skill(tarea: str, skill_dir: Path) -> str | None:
     result = await agent.llm_process(
         model=agent._resolved_model,
         prompt=prompt,
-        temperature=0.0,
+        temperature=0.3,
+        top_p=0.8,
         max_tokens=5000,
         cleaned_output=True,
     )
@@ -211,13 +213,14 @@ async def _explicar_skill(tarea: str, skill_dir: Path) -> str | None:
 
 
 async def _generar_skill(
-    tarea: str,
+    conversacion: str,
     nombre: str | None = None,
-    triggers: str | None = None,
-    no_triggers: str | None = None,
-    refs: str | None = None,
 ) -> dict[str, Any]:
     """Genera una skill con el LLM usando el prompt ``generar_skill``.
+
+    Args:
+        conversacion: Historial completo de la conversación con el usuario.
+        nombre: Nombre sugerido para la skill.
 
     Returns:
         ``{"name": ..., "content": ...}``.
@@ -231,11 +234,8 @@ async def _generar_skill(
         raise RuntimeError("Prompt generar_skill.md no encontrado.")
 
     prompt = template.format(
-        tarea=tarea,
         nombre=nombre or "(inferir del contexto)",
-        triggers=triggers or "(no especificado)",
-        no_triggers=no_triggers or "(no especificado)",
-        refs=refs or "(sin material de referencia)",
+        conversacion=conversacion,
     )
 
     logger.info("Generando skill con LLM (%s)...", agent._resolved_model)
@@ -243,8 +243,9 @@ async def _generar_skill(
     result = await agent.llm_process(
         model=agent._resolved_model,
         prompt=prompt,
-        temperature=0.3,
-        max_tokens=10000,
+        temperature=0.4,
+        top_p=0.85,
+        max_tokens=15000,
         cleaned_output=True,
     )
 
@@ -252,14 +253,120 @@ async def _generar_skill(
         raise RuntimeError(f"Error del LLM: {result.get('message', 'sin respuesta')}")
 
     raw = result["data"]
+    # Safety: strip markdown code fences (```, ```markdown, ```yaml, etc.)
+    raw = re.sub(r"^```\w*\s*", "", raw.strip())
+    raw = re.sub(r"\s*```\s*$", "", raw)
     fm = _parse_frontmatter(raw)
     skill_name = (
         nombre
         or fm.get("name")
-        or re.sub(r"[^a-z0-9-]", "", tarea.lower().replace(" ", "-"))[:50]
         or "skill-generada"
     )
     return {"name": skill_name, "content": raw}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Iteración con LLM (preguntas → creación)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def iterar_skill(
+    descripcion: str,
+    nombre: str | None = None,
+    mensajes: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Itera con el LLM para refinar la skill.
+
+    El LLM puede responder con:
+    - ``{"action": "question", "question": "..."}`` → sigue preguntando.
+    - ``{"action": "create", "task": "...", "name": "...", "triggers": "...",
+         "not_triggers": "...", "refs": "..."}`` → pasa a crear.
+
+    Returns:
+        Dict con ``{status, message, data?, question?}``.
+    """
+    if not agent._resolved_model:
+        return {"status": "error", "message": "No hay modelo configurado."}
+
+    try:
+        template = agent.prompt("iterar_skill")
+    except FileNotFoundError:
+        return {"status": "error", "message": "Prompt iterar_skill.md no encontrado."}
+
+    # Formatear mensajes para el prompt
+    mensajes_text = ""
+    if mensajes:
+        partes = []
+        for m in mensajes:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            label = "Usuario" if role == "user" else "Asistente"
+            partes.append(f"**{label}**: {content}")
+        mensajes_text = "\n\n".join(partes)
+    else:
+        mensajes_text = "(Sin preguntas aún)"
+
+    prompt = template.format(
+        descripcion=descripcion,
+        nombre=nombre or "(inferir)",
+        mensajes=mensajes_text,
+    )
+
+    print("=" * 60)
+    print(">>> ITERAR SKILL - PROMPT:")
+    print(prompt)
+    print("=" * 60)
+
+    result = await agent.llm_process(
+        model=agent._resolved_model,
+        prompt=prompt,
+        temperature=0.3,
+        top_p=0.8,
+        max_tokens=5000,
+        cleaned_output=True,
+    )
+
+    print(">>> ITERAR SKILL - RESPUESTA CRUDA:")
+    print(" ", result)
+    print("=" * 60)
+
+    if result.get("status") != "success" or not result.get("data"):
+        return {"status": "error", "message": f"Error del LLM: {result.get('message', 'sin respuesta')}"}
+
+    raw = result["data"].strip()
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not m:
+        return {"status": "error", "message": "El LLM no devolvió JSON válido."}
+
+    try:
+        parsed = json.loads(m.group(0))
+    except Exception as e:
+        return {"status": "error", "message": f"Error parseando JSON: {e}"}
+
+    action = parsed.get("action")
+
+    if action == "question":
+        return {
+            "status": "question",
+            "message": parsed.get("question", ""),
+            "question": parsed.get("question", ""),
+        }
+
+    if action == "create":
+        # Tiene suficiente info → crear skill
+        return {
+            "status": "create",
+            "message": "Procediendo a crear la skill.",
+            "data": {
+                "task": parsed.get("task", descripcion),
+                "name": parsed.get("name", nombre),
+                "triggers": parsed.get("triggers"),
+                "not_triggers": parsed.get("not_triggers"),
+                "refs": parsed.get("refs"),
+            },
+        }
+
+    return {"status": "error", "message": f"Acción desconocida: {action}"}
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -270,11 +377,16 @@ async def _generar_skill(
 async def create_skill(
     task: str,
     name: str | None = None,
-    triggers: str | None = None,
-    not_triggers: str | None = None,
+    mensajes: list[dict] | None = None,
     refs: str | None = None,
 ) -> dict[str, Any]:
     """Busca si existe una skill que ya haga esto. Si no, la crea.
+
+    Args:
+        task: Descripción o tarea para evaluar skills existentes.
+        name: Nombre exacto para la skill.
+        mensajes: Historial completo de la conversación con el usuario.
+        refs: Material de referencia del usuario.
 
     Returns:
         Dict con ``{status, message, data: {exist, skill, explication?,
@@ -317,13 +429,23 @@ async def create_skill(
 
     # ── 3. Generar nueva skill ───────────────────────────────────────
     logger.info("No existe skill. Generando...")
+
+    # Formatear la conversación completa para el prompt
+    if mensajes:
+        partes = []
+        for m in mensajes:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            label = "Usuario" if role == "user" else "Asistente"
+            partes.append(f"**{label}**: {content}")
+        conversacion = "\n\n".join(partes)
+    else:
+        conversacion = f"**Usuario**: {task}"
+
     try:
         gen = await _generar_skill(
-            tarea=task,
+            conversacion=conversacion,
             nombre=name,
-            triggers=triggers,
-            no_triggers=not_triggers,
-            refs=refs,
         )
     except RuntimeError as e:
         return {"status": "error", "message": f"Error del LLM: {e}", "data": None}
@@ -333,9 +455,10 @@ async def create_skill(
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text(gen["content"], encoding="utf-8")
 
+    # Siempre crear carpeta references (vacía si no hay refs)
+    refs_dir = skill_dir / "references"
+    refs_dir.mkdir(exist_ok=True)
     if refs and refs.strip():
-        refs_dir = skill_dir / "references"
-        refs_dir.mkdir(exist_ok=True)
         (refs_dir / "referencias_usuario.md").write_text(refs, encoding="utf-8")
 
     logger.info(">>> SKILL GUARDADA EN: %s", skill_dir)

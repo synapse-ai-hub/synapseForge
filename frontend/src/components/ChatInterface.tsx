@@ -85,9 +85,9 @@ function generateId(): string {
 function TypingIndicator() {
   return (
     <div className="flex items-center gap-1.5 px-1" role="status" aria-label="Escribiendo...">
-      <span className="typing-dot h-2 w-2 rounded-full bg-app-primary-light" />
-      <span className="typing-dot h-2 w-2 rounded-full bg-app-primary-light" />
-      <span className="typing-dot h-2 w-2 rounded-full bg-app-primary-light" />
+      <span className="typing-dot h-2 w-2 rounded-full bg-app-primary" />
+      <span className="typing-dot h-2 w-2 rounded-full bg-app-primary" />
+      <span className="typing-dot h-2 w-2 rounded-full bg-app-primary" />
       <span className="text-xs text-app-text-secondary ml-1">
         Pensando...
       </span>
@@ -1161,7 +1161,7 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
         <div className="shrink-0">
           <div
             className="h-4 w-4 sm:h-10 sm:w-10 rounded-xl flex items-center justify-center
-                        bg-app-primary text-app-primary-text"
+                        bg-gradient-to-r from-app-primary to-app-gradient-secondary text-app-primary-text"
           >
             <Brain size={20} className="text-app-primary-text" />
           </div>

@@ -98,8 +98,8 @@ function TypingIndicator() {
 }
 
 /** Collapsible reasoning block — cada bloque de razonamiento del LLM. */
-function ReasoningBlock({ content }: { content: string }) {
-  const [open, setOpen] = useState(false);
+function ReasoningBlock({ content, defaultOpen }: { content: string; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
   const panelId = `reasoning-${useId()}`;
   const text = content?.trim() || "";
   if (!text) return null;
@@ -466,7 +466,8 @@ export function ChatInterface({
         switch (event.type) {
           case "router_status":
           case "reasoning":
-            accumulatedReasoning += `\n${event.content}`;
+            // Normalizar \n en los chunks de reasoning para evitar que se vean en líneas separadas
+            accumulatedReasoning += (event.content || '').replace(/\n+/g, ' ');
             updateReasoningBlock();
             setMessages((prev) =>
               prev.map((m) =>
@@ -1227,7 +1228,7 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
               {message.blocks.map((block, i) => {
                 if (block.type === "reasoning") {
                   if (!verboseMode) return null;
-                  return <ReasoningBlock key={i} content={block.content} />;
+                  return <ReasoningBlock key={i} content={block.content} defaultOpen={message.isStreaming} />;
                 }
                 if (block.type === "text") {
                   return (

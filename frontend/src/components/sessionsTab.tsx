@@ -84,7 +84,7 @@ export function SessionsTab({
                   }}
                   className={`group w-full text-left p-2.5 rounded-lg border cursor-pointer transition-colors ${
                     isActive
-                      ? "border-app-primary bg-white"
+                      ? "ring-2 ring-app-primary-light border-transparent bg-white"
                       : "border-transparent bg-white hover:bg-app-bg-tertiary"
                   }`}
                 >

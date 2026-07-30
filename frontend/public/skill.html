@@ -774,7 +774,7 @@
         }
 
         case "reasoning":
-          currentReasoning += event.content || "";
+          currentReasoning += (event.content || "").replace(/\n+/g, " ");
           mostrarRazonamiento();
           break;
 

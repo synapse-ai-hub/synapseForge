@@ -126,7 +126,7 @@ function ToolsPanel() {
         <p className="text-sm text-app-text-secondary">No hay herramientas disponibles.</p>
       ) : (
         tools.map((t) => (
-          <div key={t.name} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+          <div key={t.name} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
             <div className="min-w-0">
               <span className="text-sm font-medium text-app-text">{t.name}</span>
               {t.description && (
@@ -186,7 +186,7 @@ function SkillsPanel() {
         <p className="text-sm text-app-text-secondary">No hay skills instaladas.</p>
       ) : (
         skills.map((s) => (
-          <div key={s.name} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+          <div key={s.name} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
             <div className="min-w-0">
               <span className="text-sm font-medium text-app-text">{s.name}</span>
               {s.description && (
@@ -239,7 +239,7 @@ function AgentsPanel() {
         <p className="text-sm text-app-text-secondary">No hay agentes configurados.</p>
       ) : (
         agents.map((a) => (
-          <div key={a.name} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+          <div key={a.name} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
             <div className="min-w-0">
               <span className="text-sm font-medium text-app-text">{a.name}</span>
               {a.description && (
@@ -292,7 +292,7 @@ function McpPanel() {
         <p className="text-sm text-app-text-secondary">No hay servidores MCP configurados.</p>
       ) : (
         servers.map((s) => (
-          <div key={s.label} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+          <div key={s.label} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
             <div className="flex flex-col gap-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 {s.status === "connected" ? (
@@ -356,7 +356,7 @@ function RagPanel() {
         <p className="text-sm text-app-text-secondary">No hay colecciones RAG.</p>
       ) : (
         collections.map((c) => (
-          <div key={c} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
+          <div key={c} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
             <span className="text-sm font-medium text-app-text">{c}</span>
             <DeleteBtn
               label={c}

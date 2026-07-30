@@ -13,7 +13,7 @@ const buttonVariants = cva(
         gradient: "bg-gradient-to-r from-app-primary to-app-gradient-secondary text-app-primary-text hover:opacity-90",
         destructive: "bg-app-error text-white hover:bg-app-error/90",
         outline:
-          "border border-app-border bg-white hover:bg-app-bg-secondary",
+          "border border-app-border bg-white hover:border-app-primary-light hover:bg-app-bg-secondary",
         secondary:
           "bg-app-bg-secondary text-app-text hover:bg-app-bg-tertiary",
         ghost: "hover:bg-app-bg-secondary",

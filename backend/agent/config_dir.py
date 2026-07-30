@@ -146,6 +146,63 @@ def set_mcp_config(mcp_config: dict[str, Any]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# MCP JSON file (separate from main config.json)
+# ---------------------------------------------------------------------------
+
+_MCP_CONFIG_FILE = "mcp.json"
+
+
+def _mcp_path() -> Path:
+    """Return the path to ~/.config/synapseForge/mcp.json."""
+    return get_config_dir() / _MCP_CONFIG_FILE
+
+
+def load_mcp_servers() -> list[dict[str, Any]]:
+    """Load MCP servers from mcp.json (direct array).
+
+    Returns:
+        List of MCP server config dicts, or empty list if file doesn't exist.
+    """
+    path = _mcp_path()
+    if not path.is_file():
+        logger.info("No mcp.json found at %s, returning empty list", path)
+        return []
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            logger.info("Loaded %d MCP server(s) from mcp.json", len(data))
+            return data
+        logger.warning("mcp.json must be an array, got %s", type(data).__name__)
+        return []
+    except (json.JSONDecodeError, OSError) as e:
+        log_error(str(e), source="config_dir.py:load_mcp_servers")
+        logger.warning("Failed to load mcp.json: %s", e)
+        return []
+
+
+def save_mcp_servers(servers: list[dict[str, Any]]) -> bool:
+    """Save MCP servers to mcp.json.
+
+    Args:
+        servers: List of MCP server config dicts.
+
+    Returns:
+        True on success.
+    """
+    path = _mcp_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(servers, f, indent=2, ensure_ascii=False)
+        logger.info("Saved %d MCP server(s) to mcp.json", len(servers))
+        return True
+    except OSError as e:
+        log_error(str(e), source="config_dir.py:save_mcp_servers")
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Convenience paths for skills, tools, agents
 # ---------------------------------------------------------------------------
 

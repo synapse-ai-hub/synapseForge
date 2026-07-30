@@ -4,6 +4,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useId,
   type KeyboardEvent,
 } from "react";
 import {
@@ -18,6 +19,7 @@ import {
   BarChart3,
   Copy,
   ChevronDown,
+  ChevronRight,
   Loader2,
   LogOut,
   BookOpen,
@@ -91,6 +93,38 @@ function TypingIndicator() {
       <span className="text-xs text-app-text-secondary ml-1">
         Pensando...
       </span>
+    </div>
+  );
+}
+
+/** Collapsible reasoning block — cada bloque de razonamiento del LLM. */
+function ReasoningBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  const panelId = `reasoning-${useId()}`;
+  const text = content?.trim() || "";
+  if (!text) return null;
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex items-center gap-1 text-xs text-app-text-secondary hover:text-app-primary transition-colors"
+      >
+        {open
+          ? <ChevronDown className="h-3 w-3" aria-hidden="true" />
+          : <ChevronRight className="h-3 w-3" aria-hidden="true" />
+        }
+        Razonamiento
+      </button>
+      {open && (
+        <div
+          id={panelId}
+          className="mt-1 text-xs text-app-text-secondary bg-app-bg-tertiary rounded p-2 whitespace-pre-wrap"
+        >
+          {text}
+        </div>
+      )}
     </div>
   );
 }
@@ -406,6 +440,20 @@ export function ChatInterface({
     let accumulatedReasoning = "";
     let accumulatedBlocks: ContentBlock[] = [];
 
+    /** Helper: agrega/actualiza el último bloque reasoning con el contenido acumulado */
+    function updateReasoningBlock(): void {
+      const reasonText = accumulatedReasoning.trim();
+      if (!reasonText) return;
+      const last = accumulatedBlocks[accumulatedBlocks.length - 1];
+      if (last && last.type === "reasoning") {
+        // Ya hay un bloque reasoning al final, actualizarlo
+        last.content = reasonText;
+      } else {
+        // No hay bloque reasoning al final, agregarlo
+        accumulatedBlocks.push({ type: "reasoning", content: reasonText });
+      }
+    }
+
     try {
       const eventStream = chatService.sendMessage({
         message: text,
@@ -419,9 +467,10 @@ export function ChatInterface({
           case "router_status":
           case "reasoning":
             accumulatedReasoning += `\n${event.content}`;
+            updateReasoningBlock();
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, reasoning: accumulatedReasoning } : m,
+                m.id === assistantId ? { ...m, blocks: [...accumulatedBlocks] } : m,
               ),
             );
             break;
@@ -1120,17 +1169,21 @@ function ToolCallBlock({
             </div>
           )}
 
-{/* Result for non-task tools */}
+          {/* Result for non-task tools — renderizado como markdown */}
           {result && !isTask && (
             <div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
                 Resultado
               </div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] text-app-text">
-                {typeof result.result === "string"
-                  ? result.result
-                  : JSON.stringify(result.result, null, 2)}
-              </pre>
+              <div className="prose prose-sm max-w-none overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] text-app-text [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_p]:text-[11px] [&_li]:text-[11px] [&_code]:text-[11px]">
+                {(() => {
+                  const raw = typeof result.result === "string"
+                    ? result.result
+                    : JSON.stringify(result.result, null, 2);
+                  const html = marked.parse(raw, { async: false }) as string;
+                  return <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"] }) }} />;
+                })()}
+              </div>
             </div>
           )}
         </div>
@@ -1146,8 +1199,6 @@ function ToolCallBlock({
 /* ------------------------------------------------------------------ */
 
 function MessageRow({ message, verboseMode }: { message: Message; verboseMode: boolean }) {
-  const [showReasoning, setShowReasoning] = useState(false);
-  const panelId = `reasoning-${message.id}`;
   const isAssistant = message.type === "assistant";
 
   // Determine if the assistant is waiting for its first text chunk (affects spinner logic)
@@ -1169,45 +1220,15 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
 
         {/* Content */}
         <div className="flex-1 min-w-0 pt-1">
-          {/* Reasoning toggle */}
-          {message.reasoning && (
-            <div className="mb-2">
-              <button
-                onClick={() => setShowReasoning(!showReasoning)}
-                aria-expanded={showReasoning}
-                aria-controls={panelId}
-                className="flex items-center gap-1 text-xs text-app-text-secondary
-                           hover:text-app-primary transition-colors"
-              >
-                <svg
-                  className={`h-3 w-3 transition-transform ${showReasoning ? "rotate-90" : ""}`}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M9 18l6-6-6-6" />
-                </svg>
-                Razonamiento
-              </button>
-              {showReasoning && (
-                <div
-                  id={panelId}
-                  className="mt-1 text-xs text-app-text-secondary bg-app-bg-tertiary
-                            
-                             rounded-lg p-3 whitespace-pre-wrap border border-app-border
-                            "
-                >
-                  {message.reasoning}
-                </div>
-              )}
-            </div>
-          )}
 
-          {/* Blocks in order: text interleaved with tools */}
+          {/* Blocks in order: reasoning ↔ text interleaved with tools */}
           {message.blocks && message.blocks.length > 0 ? (
             <div className="space-y-2">
               {message.blocks.map((block, i) => {
+                if (block.type === "reasoning") {
+                  if (!verboseMode) return null;
+                  return <ReasoningBlock key={i} content={block.content} />;
+                }
                 if (block.type === "text") {
                   return (
                     <div key={i}>
@@ -1277,7 +1298,7 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
               Verbose ON  — typing only when no text AND no tool blocks (tools have own spinner). */}
           {message.isStreaming && (
             (!verboseMode) ||
-            (verboseMode && !message.blocks?.some((b) => b.type === "text") && !message.blocks?.some((b) => b.type === "tool"))
+            (verboseMode && (!message.blocks || message.blocks.length === 0))
           ) && <TypingIndicator />}
         </div>
       </div>

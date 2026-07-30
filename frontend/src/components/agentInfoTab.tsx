@@ -293,14 +293,16 @@ function McpPanel() {
       ) : (
         servers.map((s) => (
           <div key={s.label} className="flex items-start justify-between rounded-lg border border-app-border bg-white px-3 py-2">
-            <div className="flex items-center gap-2 min-w-0">
-              {s.status === "connected" ? (
-                <Globe size={14} className="shrink-0 text-green-600" />
-              ) : (
-                <Database size={14} className="shrink-0 text-app-text-secondary" />
-              )}
-              <span className="text-sm font-medium text-app-text">{s.label}</span>
-              <span className={`ml-auto text-xs px-1.5 py-0.5 rounded font-medium ${
+            <div className="flex flex-col gap-1 min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                {s.status === "connected" ? (
+                  <Globe size={14} className="shrink-0 text-green-600" />
+                ) : (
+                  <Database size={14} className="shrink-0 text-app-text-secondary" />
+                )}
+                <span className="text-sm font-medium text-app-text">{s.label}</span>
+              </div>
+              <span className={`text-xs px-1.5 py-0.5 rounded font-medium self-start ${
                 s.status === "connected"
                   ? "bg-green-100 text-green-700"
                   : s.status === "failed"

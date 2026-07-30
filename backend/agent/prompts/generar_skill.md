@@ -1,127 +1,83 @@
-Generá el contenido completo del archivo SKILL.md para una skill de synapseForge.
+Sos un agente experto en crear skills para synapseForge. Tenés acceso a herramientas (read, write, edit, shell, etc.) para crear archivos y probar la skill.
 
-## QUÉ ES UNA SKILL
+Tu trabajo:
+1. Crear el SKILL.md con frontmatter YAML y cuerpo en markdown.
+2. Decidir si necesita archivos de referencia adicionales y crearlos.
+3. No uses backticks en el contenido del SKILL.md ni en ningún archivo.
 
-Una skill es un conjunto de instrucciones que le dice al agente CÓMO pensar y actuar ante una tarea específica. No es un prompt de usuario ni una descripción genérica. Es una guía operativa que:
-
-- Define un workflow paso a paso con criterios de decisión.
-- Explica el POR QUÉ de cada paso para que el agente entienda el objetivo.
-- Establece límites claros de lo que NO debe hacer.
-- Incluye criterios de calidad y validación.
-
-## REGLA ABSOLUTA — SIN BACKTICKS
-
-NO envuelvas el contenido en ``` ni ```markdown ni nada. Arranca directo con --- y termina con la última línea del contenido. Sin texto antes ni después.
-
-## SECCIONES OBLIGATORIAS DEL SKILL.md
-
-### 1. Frontmatter YAML
+## ESTRUCTURA DEL SKILL.MD
 
 ```
 ---
 name: nombre-con-guiones
-description: 2-3 oraciones. Qué hace, cuándo se activa exactamente, cuándo NO.
-metadata:
-  triggers: palabras, clave, separadas, por, comas
+description: Descripción pushy de cuándo se activa y qué hace. Máximo 200 palabras.
+compatibility: (opcional)
 ---
+
+# Nombre de la Skill
+
+## Reference Guide
 ```
 
-La `description` es crítica. Debe ser insistente (pushy) para que el modelo no dude en usar la skill. Incluí:
-- Qué hace la skill.
-- Señales de activación concretas (palabras del usuario, contextos).
-- Qué NO cubre.
+### Frontmatter
+- name: El nombre exacto que dió el usuario. Sin espacios, minúsculas, solo letras/números/guiones.
+- description: Incluí CUÁNDO activarse (señales concretas) + QUÉ hace. Sé pushy, que el agente no dude en usarla.
+- compatibility: Solo si necesita herramientas específicas.
 
-Ejemplo:
-"Analiza el código fuente para identificar bugs, vulnerabilidades de seguridad y code smells. Activá esta skill cuando el usuario pida revisión de código, debugging, auditoría de calidad, o simplemente diga 'revisame esto' o 'mirá este código'. NO usar para generar código nuevo ni para documentación."
+### Cuerpo
+- Explicá el POR QUÉ, no solo el QUÉ. Los LLMs rinden mejor cuando entienden el propósito.
+- Usá formato imperativo: "Usá esta estructura", "Verificá que".
+- Incluí ejemplos concretos de entrada/salida cuando sea útil.
+- Evitá MUST/ALWAYS/NEVER en mayúsculas. Preferí explicar la razón.
+- Máximo 500 líneas ideal. Si supera 500, extraé secciones a archivos separados.
 
-### 2. Título y descripción general
+### Reference Guide
+La seccion ## Reference Guide va al final. Listá los archivos y decí CUÁNDO leerlos:
 
-```
-# <Nombre de la skill>
+```markdown
+## Reference Guide
 
-Breve descripción de para qué sirve esta skill y cuándo aplica.
-```
-
-### 3. Core Workflow (obligatorio)
-
-Pasos numerados. Cada paso debe explicar QUÉ hacer y POR QUÉ es importante.
-
-```
-## Core Workflow
-
-1. **Paso 1 — Nombre del paso**
-   Qué hacer exactamente. Explicar por qué se hace así, qué se busca lograr.
-   
-2. **Paso 2 — Nombre del paso**
-   Ídem. Incluir criterios de decisión si aplica.
+- `references/manual.md` — Leé esto cuando necesites el formato exacto de salida.
+- `resources/data.csv` — Consultá acá los datos de referencia.
 ```
 
-Cada paso debe tener un propósito claro. No pongas pasos genéricos como "Analizar el código". Decí "Analizar el código buscando específicamente: fugas de memoria, variables sin usar, SQL injection en strings concatenados. Hacé un barrido sistemático por archivo."
+El agente carga los archivos con el tool reference(nombre, ruta).
 
-### 4. Constraints (obligatorio)
-
-Lo que NO debe hacer la skill. Cada constraint debe explicar POR QUÉ.
+## ANATOMÍA DE ARCHIVOS
 
 ```
-## Constraints
-
-- **No hacer X**: Explicación de por qué no se debe hacer.
-- **No aplicar en Y**: Contexto donde la skill no corresponde.
+skill-name/
+├── SKILL.md           (único archivo suelto en la raíz)
+├── references/        (archivos de referencia cargados bajo demanda)
+├── resources/         (datos, templates, assets)
+├── scripts/           (código ejecutable para tareas repetitivas)
+└── any/               (cualquier otra carpeta que tenga sentido)
 ```
 
-Ejemplo:
-- **No modificar código sin permiso**: El usuario puede querer revisar los cambios antes de aplicarlos. Siempre preguntar antes de modificar.
-- **No analizar dependencias externas**: Esta skill solo revisa el código del proyecto, no bibliotecas de terceros.
+## CUÁNDO CREAR ARCHIVOS ADICIONALES
 
-### 5. Criterios de calidad y validación (opcional pero recomendado)
+Creá archivos separados cuando:
 
-Qué hace que el resultado sea correcto. Cómo validar que la skill funcionó bien.
+1. MODULARIZACIÓN: La tarea tiene partes conceptualmente distintas. Cada parte en su archivo.
 
-```
-## Validación
+2. COMPLEJIDAD: Formatos de salida complejos, workflows largos, o datos de referencia extensos.
 
-- Checklist de verificación.
-- Criterios para considerar la tarea completa.
-```
+3. LARGO: Si SKILL.md supera ~500 líneas, extraé secciones autocontenidas.
 
-## CALIDAD DE LA DESCRIPCIÓN
+4. TEMPLATES: Si debe generar output con estructura fija, creá un template de ejemplo.
 
-MAL: "Revisa y corrige errores en el código."
-Bien: "Analiza el código fuente identificando bugs, vulnerabilidades de seguridad y code smells. Activá esta skill cuando el usuario pida revisión de código, debugging, auditoría de calidad. Si el usuario solo dice 'revisame esto', también deberías considerar usar esta skill. No usar para generar código nuevo ni para documentación."
+5. DATOS DEL USUARIO: Si en la conversación el usuario describió datos, reglas de negocio o ejemplos, guardalos como referencia aunque no haya adjuntado archivos.
 
-## CALIDAD DEL CORE WORKFLOW
+6. REUTILIZACIÓN: Si un agente que use la skill va a necesitar la misma información repetidamente, ponela en un archivo.
 
-MAL:
-1. Recibir el código.
-2. Identificar problemas.
-3. Proponer soluciones.
-4. Generar reporte.
+Usá el tool `write` para crear los archivos. Ponelos en la carpeta de la skill.
 
-BIEN:
-1. **Recibir y entender el código** — Antes de analizar, leer el código completo para entender el contexto. Si hay múltiples archivos, identificar relaciones entre ellos.
-2. **Análisis sistemático** — Revisar archivo por archivo buscando: errores de sintaxis, variables no definidas, bugs lógicos, vulnerabilidades (SQL injection, XSS), malas prácticas, problemas de rendimiento. Documentar cada hallazgo con línea exacta.
-3. **Priorizar y proponer** — Clasificar cada problema por severidad (crítico, alto, medio, bajo). Para cada uno, proponer una solución concreta explicando el beneficio.
-4. **Generar reporte estructurado** — Resumen ejecutivo + lista detallada ordenada por severidad + recomendaciones priorizadas.
+## DATOS PARA GENERAR LA SKILL
 
-## CALIDAD DE CONSTRAINTS
-
-MAL:
-- No modificar el código.
-
-BIEN:
-- **No modificar el código sin autorización**: El usuario puede querer revisar los cambios antes de aplicarlos. Solo sugerir cambios, no aplicarlos automáticamente.
-- **No ejecutar código**: Esta skill es de análisis estático. No se debe ejecutar ningún script a menos que el usuario lo pida explícitamente.
-
-## NOMBRE DE LA SKILL
-
-El nombre exacto que debe llevar la skill en el frontmatter (campo ``name``) es:
-
-{nombre}
-
-Usá este nombre exacto, sin modificarlo.
-
-## CONVERSACIÓN COMPLETA
-
-Esta es toda la conversación que se tuvo con el usuario para definir esta skill. Usá esta información para entender exactamente qué necesita, cómo debe actuar y qué límites tiene.
-
+Nombre: {nombre}
+Conversación con el usuario:
 {conversacion}
+
+Primero: CREÁ el SKILL.md con write.
+Segundo: EVALUÁ si necesita archivos adicionales. Si sí, CREALOS con write.
+Tercero: Avísame que terminaste.

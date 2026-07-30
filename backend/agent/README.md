@@ -31,7 +31,7 @@ El módulo **Agent** es el núcleo del asistente conversacional. Implementa un b
 - **Contexto compactable**: Gestión inteligente de tokens con estrategias configurables (ask, cod, original) y límite de turnos.
 - **Soporte multi-proveedor**: Funciona con Groq (API) y Ollama (local) sin cambiar la lógica del loop.
 - **Permisos y prompts**: Resolución dinámica de herramientas y skills desde archivos markdown de agente.
-- **Configuración MCP centralizada**: `config.json` en `~/.config/synapseForge/` para servidores MCP (Model Context Protocol).
+- **Configuración MCP**: `mcp.json` en `~/.config/synapseForge/` para servidores MCP (Model Context Protocol).
 
 ---
 
@@ -41,7 +41,7 @@ El módulo **Agent** es el núcleo del asistente conversacional. Implementa un b
 - **Ejecución autónoma de herramientas**: El agente decide qué herramientas usar según la conversación, sin intervención manual.
 - **Contexto ajustable**: Evita sobrecargar el LLM con historial innecesario mediante compactación automática.
 - **Separación de responsabilidades**: Cada módulo (loop, sesión, contexto, configuración, permisos) tiene una función específica y desacoplada.
-- **Configuración MCP persistente**: Servidores MCP se guardan en `config.json` y sobreviven a reinicios.
+- **Configuración MCP persistente**: Servidores MCP se guardan en `mcp.json` y sobreviven a reinicios.
 - **Modelo/Proveedor/Contexto persistidos en SQLite**: Selección de modelo, proveedor y ventana de contexto se guardan en la tabla `config_kv` y se restauran al arrancar.
 
 ---
@@ -135,69 +135,90 @@ Directorio que contiene el archivo `agent.db` con las tablas:
 
 El agente utiliza **dos fuentes de configuración** separadas:
 
-### 1. `config.json` — Solo MCP
+### 1. `mcp.json` — Servidores MCP
 
 ```
-~/.config/synapseForge/config.json
+~/.config/synapseForge/mcp.json
 ```
 
-En Windows: `%APPDATA%\synapseForge\config.json`
+En Windows: `%USERPROFILE%\.config\synapseForge\mcp.json`
 
-Este archivo **solo** almacena la configuración de servidores MCP (Model Context Protocol). Se gestiona mediante `backend/agent/config_dir.py`.
+Este archivo almacena **exclusivamente** la configuración de servidores MCP (Model Context Protocol) como un **array** directo. Se gestiona mediante `backend/agent/config_dir.py` (funciones `load_mcp_servers()` / `save_mcp_servers()`).
 
-#### Estructura de `config.json`
+#### Estructura de `mcp.json`
 
 ```json
-{
-  "mcp": {
-    "timeout": 30,
-    "servers": {
-      "filesystem": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/ruta/permitida"],
-        "env": {}
-      },
-      "github": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-github"],
-        "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx" }
-      }
+[
+  {
+    "label": "nombre-servidor",
+    "transport": "stdio",
+    "command": ["node", "/ruta/al/servidor/index.js"],
+    "environment": {
+      "API_KEY": "valor"
     }
   }
-}
+]
 ```
 
-#### Campos soportados
+#### Campos soportados por cada servidor
 
 | Campo | Tipo | Descripción | Default |
 |-------|------|-------------|---------|
-| `mcp` | object | Configuración de servidores MCP | `{}` |
-| `mcp.timeout` | integer | Timeout en segundos para llamadas MCP | `30` |
-| `mcp.servers` | object | Mapa de servidores MCP por nombre | `{}` |
+| `label` | string | Identificador único del servidor | — |
+| `transport` | string | `"stdio"` (local) o `"http"` (remoto) | `"stdio"` |
+| `command` | string o list | Comando o lista de comandos para ejecutar | — |
+| `args` | list | Argumentos adicionales (solo si command es string) | `[]` |
+| `environment` | object | Variables de entorno para el subproceso | `{}` |
+| `server_url` | string | URL del servidor HTTP/SSE | — |
+| `headers` | object | Cabeceras HTTP para servidores remotos | `{}` |
+| `disabled` | bool | `true` para deshabilitar sin borrar | `false` |
 
-#### Ejemplo con MCP
+#### Ejemplos
+
+**Servidor stdio local (como NotebookLM):**
 
 ```json
-{
-  "mcp": {
-    "timeout": 30,
-    "servers": {
-      "filesystem": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/proyectos"],
-        "env": {}
-      },
-      "github": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-github"],
-        "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx" }
-      }
-    }
+[
+  {
+    "label": "notebooklm-local",
+    "transport": "stdio",
+    "command": ["node", "D:/.mcp/notebooklm-mcp/dist/index.js"]
   }
-}
+]
 ```
 
-> **Nota**: `model`, `provider`, `temperature`, `top_p`, `context_turns`, `ui_prefs` **NO** están en `config.json`. Se gestionan vía endpoints del frontend y se persisten en SQLite (`config_kv`).
+**Servidor stdio con variables de entorno:**
+
+```json
+[
+  {
+    "label": "trello-server",
+    "transport": "stdio",
+    "command": ["D:/.mcp/Scripts/python.exe", "-m", "trello_mcp"],
+    "environment": {
+      "TRELLO_API_KEY": "tu-api-key",
+      "TRELLO_TOKEN": "tu-token"
+    }
+  }
+]
+```
+
+**Servidor HTTP/SSE remoto:**
+
+```json
+[
+  {
+    "label": "groq-mcp",
+    "transport": "http",
+    "server_url": "https://api.groq.com/mcp/server/id",
+    "headers": {
+      "Authorization": "Bearer tu-token"
+    }
+  }
+]
+```
+
+> **Nota**: `model`, `provider`, `temperature`, `top_p`, `context_turns`, `ui_prefs` **NO** están en `mcp.json`. Se gestionan vía endpoints del frontend y se persisten en SQLite (`config_kv`).
 
 ---
 
@@ -335,7 +356,7 @@ async def execute(expresion: str) -> dict:
 
 ### 3. Tools MCP
 
-Los servidores MCP configurados en `config.json` exponen sus herramientas automáticamente. `tools.py` las descubre vía `mcp_helper.py` y las registra como tools nativas con prefijo `mcp_<server>_<tool>`. El agente las invoca igual que cualquier otra tool.
+Los servidores MCP configurados en `mcp.json` exponen sus herramientas automáticamente. `tools.py` las descubre vía `mcp_helper.py` y las registra como tools nativas con prefijo `mcp_<server>_<tool>`. El agente las invoca igual que cualquier otra tool.
 
 ### Carga y registro
 

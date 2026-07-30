@@ -17,6 +17,11 @@ export interface TextBlock {
   content: string;
 }
 
+export interface ReasoningBlock {
+  type: "reasoning";
+  content: string;
+}
+
 export interface ToolBlock {
   type: "tool";
   name: string;
@@ -24,12 +29,13 @@ export interface ToolBlock {
   result?: any;
 }
 
-export type ContentBlock = TextBlock | ToolBlock;
+export type ContentBlock = TextBlock | ReasoningBlock | ToolBlock;
 
 export interface SessionMessage {
   id: string;
   type: "user" | "assistant";
   content: string;
+  reasoning?: string | null;
   toolCalls?: Array<{ id?: string; name: string; args: Record<string, any> }> | null;
   toolResults?: Array<{ tool_call_id?: string; tool_name: string; result: any }> | null;
   blocks?: ContentBlock[] | null;

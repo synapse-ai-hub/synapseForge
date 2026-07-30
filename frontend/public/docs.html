@@ -96,6 +96,7 @@
 
         <section id="overview">
           <h2>Overview</h2>
+          <h3>¿Qué es synapseForge?</h3>
           <p><strong>synapseForge</strong> es un paquete de Python (distribuido en PyPI) que te permite crear proyectos completos de agentes de IA desde cero. Con un solo comando, generás un proyecto full-stack con backend, frontend, branding, dependencias y todo lo necesario para empezar a trabajar.</p>
           <p>El foco está puesto en que puedas dedicarte a definir el comportamiento del agente — sus skills, tools, sub-agentes y reglas de negocio — sin tener que armar la infraestructura técnica cada vez.</p>
           <h3>¿Qué obtenés al usar synapseForge?</h3>
@@ -110,6 +111,7 @@
 
         <section id="quickstart">
           <h2>Quickstart</h2>
+          <h3>Crear un proyecto</h3>
           <p>Crear un proyecto nuevo toma menos de un minuto. Asumiendo que ya tenés synapseForge instalado:</p>
           <pre><code># Inicializar un proyecto en el directorio actual
 synapseForge init .
@@ -166,6 +168,7 @@ pip install -e .</code></pre>
 
         <section id="crear-proyecto">
           <h2>Crear proyecto</h2>
+          <h3>El comando init</h3>
           <p>El comando <code>init</code> arma un proyecto completo. Por defecto usa el directorio actual; si le pasás una ruta, la crea si no existe.</p>
           <pre><code>synapseForge init                       # usa el directorio actual
 synapseForge init ./mi-proyecto         # ruta explícita
@@ -204,6 +207,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 
         <section id="configuracion-externa">
           <h2>Configuración externa del usuario</h2>
+          <h3>¿Qué es?</h3>
           <p>Además de los archivos del proyecto, synapseForge lee archivos del usuario desde una carpeta de configuración personal. Acá viven tus tools personalizadas, tus agentes definidos a medida, tus skills y la configuración de servidores MCP.</p>
           <h3>¿Dónde está esa carpeta?</h3>
           <ul>
@@ -229,6 +233,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 
         <section id="skills">
           <h2>Skills</h2>
+          <h3>¿Qué es una skill?</h3>
           <p>Una <strong>skill</strong> es un paquete de conocimiento o procedimiento que el agente puede usar cuando la tarea lo requiera. A diferencia de las tools (que ejecutan código), las skills proveen instrucciones, plantillas y convenciones que guían al modelo sobre cómo responder.</p>
           <h3>¿Cómo está organizada una skill?</h3>
           <p>Cada skill vive en su propia subcarpeta dentro de <code>~/.config/synapseForge/skills/</code>. El nombre de la carpeta es el nombre exacto de la skill:</p>
@@ -268,6 +273,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 
         <section id="tools">
           <h2>Tools (herramientas externas)</h2>
+          <h3>¿Qué es una tool?</h3>
           <p>Las <strong>tools externas</strong> son funciones Python que el agente puede invocar para hacer cosas concretas: consultar una base de datos, hacer una búsqueda web, enviar un mail, leer un archivo, etc. Cada tool es un archivo Python autocontenido que el sistema descubre, carga y registra automáticamente.</p>
           <h3>¿Cómo está organizada una tool?</h3>
           <p>Cada tool es un archivo <code>.py</code> suelto dentro de <code>~/.config/synapseForge/tools/</code>:</p>
@@ -346,6 +352,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 
         <section id="subagentes">
           <h2>Sub-agentes</h2>
+          <h3>¿Qué es un sub-agente?</h3>
           <p>El sistema permite que un agente delegue tareas a <strong>sub-agentes especializados</strong>. Cada sub-agente es una configuración completa con su propio prompt, sus propias tools permitidas, sus propias skills permitidas y sus propios parámetros del modelo.</p>
           <p>Esto te permite construir sistemas complejos donde cada agente se enfoca en lo que sabe hacer, en lugar de tener un solo agente gigante que intenta hacer todo.</p>
           <h3>¿Cómo se define un agente?</h3>
@@ -403,6 +410,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 
         <section id="interfaz-usuario">
           <h2>Interfaz de usuario</h2>
+          <h3>¿Qué incluye?</h3>
           <p>La aplicación incluye una interfaz web moderna con chat, historial de conversaciones y un panel de configuración. La interfaz se abre automáticamente cuando ejecutás <code>synapseForge run</code>.</p>
           <h3>Creación (modo desarrollador)</h3>
           <p>El panel lateral incluye una sección <strong>Crear</strong> con 4 pestañas: <strong>Skills</strong>, <strong>Tools</strong>, <strong>Agentes</strong> y <strong>RAG</strong>. Cada una abre un formulario standalone en una nueva pestaña del navegador:</p>
@@ -437,6 +445,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 
         <section id="api">
           <h2>API Reference</h2>
+          <h3>¿Qué expone el backend?</h3>
           <p>El backend expone una API HTTP con streaming para el chat, y endpoints REST para gestionar sesiones, configuración y otras operaciones.</p>
           <h3>Endpoints principales</h3>
           <table>
@@ -485,6 +494,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 
         <section id="deploy-local">
           <h2>Deploy en local</h2>
+          <h3>Introducción</h3>
           <p>El flujo de desarrollo local está pensado para ser lo más simple posible: un solo comando levanta todo.</p>
           <h3>Requisitos</h3>
           <ul>
@@ -526,6 +536,7 @@ synapseForge run .</code></pre>
 
         <section id="futuro-vercel">
           <h2>Integración futura — Skills Vercel</h2>
+          <h3>Integración con Vercel Skills</h3>
           <p>Se está planificando la integración con el ecosistema de <a href="https://github.com/vercel-labs/skills" target="_blank" rel="noopener noreferrer">Vercel Skills</a> (<code>npx skills</code>), que permite buscar, instalar y gestionar skills desde repositorios públicos. El flujo planeado funciona en dos etapas:</p>
           <ol>
             <li><strong>Búsqueda</strong>: ejecutar <code>npx skills find &lt;query&gt;</code> para descubrir skills disponibles en el ecosistema.</li>
@@ -536,6 +547,7 @@ synapseForge run .</code></pre>
 
         <section id="deploy-cloud">
           <h2>Deploy en cloud</h2>
+          <h3>Introducción</h3>
           <p>Para distribuir el agente como producto terminado, synapseForge incluye un comando que compila todo a un ejecutable standalone más el frontend, todo empaquetado en un zip listo para distribuir.</p>
           <h3>Build con el comando launch</h3>
           <pre><code>synapseForge launch ./mi-proyecto "MiApp"</code></pre>

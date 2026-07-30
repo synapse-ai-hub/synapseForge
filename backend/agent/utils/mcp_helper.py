@@ -1,6 +1,6 @@
 """MCP (Model Context Protocol) helper.
 
-Loads MCP server configurations from ``config.json`` (mcp section)
+Loads MCP server configurations from ``mcp.json`` (direct array)
 and provides functions to discover tools and execute tool calls over
 the MCP protocol (JSON-RPC over stdio).
 
@@ -30,7 +30,7 @@ _project_root = os.path.dirname(os.path.dirname(_current_dir))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from backend.agent.config_dir import get_mcp_config
+from backend.agent.config_dir import load_mcp_servers, save_mcp_servers
 from backend.agent.utils.error_logger import log_error
 
 logger = logging.getLogger(__name__)
@@ -40,37 +40,28 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 McpServerConfig = dict[str, Any]
-"""Structure of a single MCP server entry from ``config.json`` -> ``mcp.servers``.
+"""Structure of a single MCP server entry from ``mcp.json`` (array).
 
 Keys: ``label``, ``transport`` (``"stdio"`` or ``"http"``),
-``command``, ``args``, ``env``, ``description``, ``server_url``, ``headers``,
+``command`` (string or list), ``args``, ``env``/``environment``,
+``description``, ``server_url``, ``headers``,
 ``oauth``, ``disabled``, ``timeout``.
 """
 
 
 def load_mcp_config() -> list[McpServerConfig]:
-    """Load MCP server configurations from ``config.json`` (mcp section).
+    """Load MCP server configurations from ``mcp.json`` (direct array).
 
     Returns:
         List of MCP server config dicts, or empty list if not configured.
     """
-    mcp_config = get_mcp_config()
-    if not mcp_config:
-        logger.info("No MCP config found in config.json — skipping MCP config load.")
+    servers = load_mcp_servers()
+    if not servers:
+        logger.info("No MCP servers found in mcp.json — skipping MCP config load.")
         return []
 
-    servers = mcp_config.get("servers", {})
-    # Convert dict of servers to list, adding label to each
-    server_list = []
-    for label, config in servers.items():
-        if config.get("disabled"):
-            continue
-        server_config = dict(config)
-        server_config["label"] = label
-        server_list.append(server_config)
-
-    logger.info("Loaded %d MCP server(s) from config.json", len(server_list))
-    return server_list
+    logger.info("Loaded %d MCP server(s) from mcp.json", len(servers))
+    return servers
 
 
 # ---------------------------------------------------------------------------
@@ -112,9 +103,14 @@ class McpConnection:
         if self._process is not None:
             return
 
-        cmd = [self._config["command"]] + self._config.get("args", [])
+        cmd_raw = self._config.get("command", [])
+        if isinstance(cmd_raw, list):
+            cmd = cmd_raw
+        else:
+            cmd = [cmd_raw] + self._config.get("args", [])
+
         env = os.environ.copy()
-        env.update(self._config.get("env", {}))
+        env.update(self._config.get("environment", self._config.get("env", {})))
 
         logger.info("Starting MCP server: %s", " ".join(cmd))
         self._process = subprocess.Popen(
@@ -421,26 +417,25 @@ async def check_mcp_server_health(label: str, timeout: float = 10.0) -> dict[str
     """Check health of a single MCP server by label.
 
     Args:
-        label: Server label from config.json.
+        label: Server label from mcp.json.
         timeout: Connection timeout in seconds.
 
     Returns:
         Status dict with keys: label, status, tools_count, tools, error.
     """
-    mcp_config = get_mcp_config()
-    servers = mcp_config.get("servers", {})
-    config = servers.get(label)
+    servers = load_mcp_servers()
+    config = next((s for s in servers if s.get("label") == label), None)
     if not config:
         return {
             "label": label,
             "status": McpServerStatus.FAILED,
-            "error": f"Server '{label}' not found in config",
+            "error": f"Server '{label}' not found in mcp.json",
         }
 
     config_with_label = dict(config)
     config_with_label["label"] = label
 
-    if config_with_label.get("disabled"):
+    if config_with_label.get("disabled") or config_with_label.get("enabled") is False:
         return {
             "label": label,
             "status": McpServerStatus.DISABLED,
@@ -520,11 +515,11 @@ async def check_all_mcp_servers_health(timeout: float = 10.0) -> list[dict[str, 
     Returns:
         List of status dicts for each server.
     """
-    mcp_config = get_mcp_config()
-    servers = mcp_config.get("servers", {})
+    servers = load_mcp_servers()
     results = []
 
-    for label in servers.keys():
+    for server in servers:
+        label = server.get("label", "unknown")
         result = await check_mcp_server_health(label, timeout)
         results.append(result)
 

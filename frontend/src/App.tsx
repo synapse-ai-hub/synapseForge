@@ -49,6 +49,7 @@ function mapSessionMessages(raw: SessionMessage[]): Message[] {
     id: m.id,
     type: m.type,
     content: m.type === "user" ? m.content : "",
+    reasoning: m.reasoning ?? undefined,
     files: m.files ?? undefined,
     blocks: m.blocks ?? (
       // Fallback for old sessions without blocks: build from toolCalls + toolResults

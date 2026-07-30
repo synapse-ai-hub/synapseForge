@@ -138,6 +138,11 @@ def _build_blocks(messages: list[dict]) -> list[dict] | None:
     for msg in messages:
         role = msg.get("role")
         if role == "assistant":
+            # Reasoning block (si existe) — va ANTES del texto/tools porque en streaming
+            # el LLM razona antes de responder
+            reasoning = msg.get("reasoning")
+            if reasoning:
+                blocks.append({"type": "reasoning", "content": reasoning})
             content = msg.get("content") or ""
             if content:
                 blocks.append({"type": "text", "content": content})
@@ -233,11 +238,19 @@ async def get_session(session_id: str):
             if non_user:
                 blocks = _build_blocks(non_user)
                 if blocks:
+                    # Acumular reasoning de todos los mensajes assistant del turno
+                    # (puede haber reasoning en step de tool_calls y en step final)
+                    reasoning_parts = [
+                        m["reasoning"] for m in non_user
+                        if m.get("role") == "assistant" and m.get("reasoning")
+                    ]
+                    turn_reasoning = "\n\n".join(reasoning_parts) if reasoning_parts else None
                     mapped.append({
                         "id": f"turn-{tn}",
                         "type": "assistant",
                         "content": "",  # blocks replace flat content
                         "blocks": blocks,
+                        "reasoning": turn_reasoning,
                         "turn_number": tn,
                     })
 

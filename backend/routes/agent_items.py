@@ -33,6 +33,8 @@ from backend.agent.config_dir import (
     get_knowledge_dir,
     load_config,
     save_config,
+    load_mcp_servers,
+    save_mcp_servers,
 )
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.vector_db import VectorDB
@@ -191,18 +193,12 @@ async def delete_agent(name: str) -> JSONResponse:
 
 @router.delete("/mcp/{label:path}")
 async def delete_mcp_server(label: str) -> JSONResponse:
-    """Elimina un servidor MCP de la configuración.
-
-    Busca en ``config.json`` → ``mcp.servers`` el que tenga ``label``
-    coincidente y lo remueve.
-    """
+    """Elimina un servidor MCP de mcp.json."""
     if not label:
         return _make_response("error", "Label del servidor inválido.", 400)
 
-    config = load_config()
-    servers: list[dict[str, Any]] = config.get("mcp", {}).get("servers", [])
+    servers = load_mcp_servers()
 
-    # Buscar servidor por label (case-sensitive)
     found = None
     for s in servers:
         if s.get("label") == label:
@@ -213,11 +209,9 @@ async def delete_mcp_server(label: str) -> JSONResponse:
         return _make_response("error", f"Servidor MCP '{label}' no encontrado.", 404)
 
     servers.remove(found)
-    config.setdefault("mcp", {})["servers"] = servers
-
-    ok = save_config(config)
+    ok = save_mcp_servers(servers)
     if not ok:
-        return _make_response("error", f"No se pudo guardar la configuración al eliminar '{label}'.", 500)
+        return _make_response("error", f"No se pudo guardar mcp.json al eliminar '{label}'.", 500)
 
     logger.info("Servidor MCP eliminado: %s", label)
     return _make_response("success", f"Servidor MCP '{label}' eliminado.")

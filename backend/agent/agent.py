@@ -269,6 +269,7 @@ class Agent():
                           max_tokens: int | None = None,
                           cleaned_output: bool = True,
                           tools: list | None = None,
+                          json_format: bool = False,
                           **kwargs) -> ContractResponse:
         """Send a chat completion and return content + tool_calls.
 
@@ -286,6 +287,8 @@ class Agent():
             max_tokens: Max output tokens (``None`` = provider default).
             cleaned_output: Apply ``self.clean()`` to text content.
             tools: Tool definitions for function calling.
+            json_format: Force JSON output. For Groq: adds ``response_format={"type": "json_object"}``.
+                         For Ollama: adds ``format="json"`` to the request.
             **kwargs: Forwarded to the provider client.
 
         Returns:
@@ -325,6 +328,8 @@ class Agent():
                 if tools:
                     groq_kwargs["tools"] = tools
                     groq_kwargs["tool_choice"] = "auto"
+                if json_format:
+                    groq_kwargs["response_format"] = {"type": "json_object"}
                 response = await self.groq_client.chat.completions.create(
                     model=model,
                     messages=msgs,
@@ -363,6 +368,7 @@ class Agent():
                     model=model,
                     messages=msgs,
                     tools=tools if tools else None,
+                    format="json" if json_format else None,
                     options=options,
                     keep_alive=-1,
                 )
@@ -469,10 +475,14 @@ class Agent():
             if tools:
                 groq_kwargs["tools"] = tools
                 groq_kwargs["tool_choice"] = "auto"
+            # Groq: pedir reasoning como campo separado (delta.reasoning_content)
+            groq_kwargs["reasoning_format"] = "parsed"
 
             stream = await self.groq_client.chat.completions.create(**groq_kwargs)
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
+            in_think_tag = False  # <think> tag state machine
+            has_dedicated_thinking = False  # si vimos reasoning_content, no parseamos <think>
 
             async for chunk in stream:
                 if stream_cancel_event and stream_cancel_event.is_set():
@@ -495,13 +505,32 @@ class Agent():
                                 if tc.function.arguments:
                                     accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
 
-                    # Stream text content when available
+                    # Groq / OpenAI-compatible reasoning_content (parsed mode)
+                    if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        has_dedicated_thinking = True
+                        yield {'type': 'reasoning', 'content': delta.reasoning_content}
+                        await asyncio.sleep(0.02)
+
+                    # Stream text content
                     if delta and delta.content:
                         text = delta.content
-                        if cleaned_output:
-                            text = self.clean(text)
-                        yield {'type': 'chunk', 'content': text}
-                        await asyncio.sleep(0.02)
+                        if has_dedicated_thinking:
+                            # Ya tenemos reasoning por campo separado, content es solo answer
+                            if cleaned_output:
+                                text = self.clean(text)
+                            yield {'type': 'chunk', 'content': text}
+                            await asyncio.sleep(0.02)
+                        else:
+                            # Fallback: parsear <think> tags del content
+                            rzn, clean_text, in_think_tag = self._process_think_tags(text, in_think_tag)
+                            if rzn:
+                                yield {'type': 'reasoning', 'content': rzn}
+                                await asyncio.sleep(0.02)
+                            if clean_text:
+                                if cleaned_output:
+                                    clean_text = self.clean(clean_text)
+                                yield {'type': 'chunk', 'content': clean_text}
+                                await asyncio.sleep(0.02)
 
             # After stream finishes, yield tool_calls_detected if any were accumulated
             if accumulated_tool_calls:
@@ -533,33 +562,56 @@ class Agent():
                       'num_thread', 'num_gpu', 'stop'):
                 if k in kwargs:
                     options[k] = kwargs.pop(k)
-            stream = await self.ollama_client.chat(
-                model=model,
-                messages=msgs,
-                stream=True,
-                tools=tools if tools else None,
-                options=options,
-                keep_alive=-1,
-            )
+            # Ollama: intentar con think=True (modelos con thinking), fallback sin el flag
+            chat_kwargs = dict(model=model, messages=msgs, stream=True,
+                               tools=tools if tools else None,
+                               options=options, keep_alive=-1)
+
+            def _try_stream(use_think: bool):
+                """Crear stream con o sin think flag."""
+                if use_think:
+                    return self.ollama_client.chat(**chat_kwargs, think=True)
+                return self.ollama_client.chat(**chat_kwargs)
+
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
-            async for chunk in stream:
-                if stream_cancel_event and stream_cancel_event.is_set():
-                    yield {'type': 'aborted'}
-                    return
-                if chunk.message and chunk.message.content:
-                    text = chunk.message.content
-                    if cleaned_output:
-                        text = self.clean(text)
-                    yield {'type': 'chunk', 'content': text}
-                # Accumulate streaming tool_calls (Ollama sends them in chunks)
-                if chunk.message and chunk.message.tool_calls:
-                    for idx, tc in enumerate(chunk.message.tool_calls):
-                        if idx not in accumulated_tool_calls:
-                            accumulated_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
-                        # Ollama ToolCall may not have 'id' attribute
-                        tc_id = getattr(tc, 'id', None)
-                        if tc_id:
-                            accumulated_tool_calls[idx]["id"] = tc_id
+            in_think_tag = False  # |◊|            has_dedicated_thinking = False  # si vimos thinking field, no parseamos 
+            stream = None
+            try:
+                stream = await _try_stream(use_think=True)
+                async for chunk in stream:
+                    if stream_cancel_event and stream_cancel_event.is_set():
+                        yield {'type': 'aborted'}
+                        return
+                    # Ollama thinking (DeepSeek R1, gemma4, qwen3.5, etc.)
+                    if chunk.message and hasattr(chunk.message, 'thinking') and chunk.message.thinking:
+                        has_dedicated_thinking = True
+                        yield {'type': 'reasoning', 'content': chunk.message.thinking}
+                    # Stream text content
+                    if chunk.message and chunk.message.content:
+                        text = chunk.message.content
+                        if has_dedicated_thinking:
+                            # Ya tenemos thinking por campo separado, el content es solo answer
+                            if cleaned_output:
+                                text = self.clean(text)
+                            yield {'type': 'chunk', 'content': text}
+                        else:
+                            # Fallback: parsear  tags del content
+                            rzn, clean_text, in_think_tag = self._process_think_tags(text, in_think_tag)
+                            if rzn:
+                                yield {'type': 'reasoning', 'content': rzn}
+                            if clean_text:
+                                if cleaned_output:
+                                    clean_text = self.clean(clean_text)
+                                yield {'type': 'chunk', 'content': clean_text}
+                    # Accumulate streaming tool_calls (Ollama sends them in chunks)
+                    if chunk.message and chunk.message.tool_calls:
+                        for idx, tc in enumerate(chunk.message.tool_calls):
+                            if idx not in accumulated_tool_calls:
+                                accumulated_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
+                            # Ollama ToolCall may not have 'id' attribute
+                            tc_id = getattr(tc, 'id', None)
+                            if tc_id:
+                                accumulated_tool_calls[idx]["id"] = tc_id
                         if tc.function:
                             if tc.function.name:
                                 accumulated_tool_calls[idx]["name"] = tc.function.name
@@ -569,6 +621,52 @@ class Agent():
                                 if isinstance(args, dict):
                                     args = json.dumps(args, ensure_ascii=False)
                                 accumulated_tool_calls[idx]["arguments"] += args
+            except Exception as _ex:
+                err = str(_ex)
+                if "does not support thinking" in err:
+                    # Modelo no soporta thinking, reintentar sin el flag
+                    accumulated_tool_calls = {}
+                    in_think_tag = False
+                    has_dedicated_thinking = False
+                    stream = await self.ollama_client.chat(**chat_kwargs)
+                    async for chunk in stream:
+                        if stream_cancel_event and stream_cancel_event.is_set():
+                            yield {'type': 'aborted'}
+                            return
+                        if chunk.message and hasattr(chunk.message, 'thinking') and chunk.message.thinking:
+                            has_dedicated_thinking = True
+                            yield {'type': 'reasoning', 'content': chunk.message.thinking}
+                        if chunk.message and chunk.message.content:
+                            text = chunk.message.content
+                            if has_dedicated_thinking:
+                                if cleaned_output:
+                                    text = self.clean(text)
+                                yield {'type': 'chunk', 'content': text}
+                            else:
+                                rzn, clean_text, in_think_tag = self._process_think_tags(text, in_think_tag)
+                                if rzn:
+                                    yield {'type': 'reasoning', 'content': rzn}
+                                if clean_text:
+                                    if cleaned_output:
+                                        clean_text = self.clean(clean_text)
+                                    yield {'type': 'chunk', 'content': clean_text}
+                        if chunk.message and chunk.message.tool_calls:
+                            for idx, tc in enumerate(chunk.message.tool_calls):
+                                if idx not in accumulated_tool_calls:
+                                    accumulated_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
+                                tc_id = getattr(tc, 'id', None)
+                                if tc_id:
+                                    accumulated_tool_calls[idx]["id"] = tc_id
+                                if tc.function:
+                                    if tc.function.name:
+                                        accumulated_tool_calls[idx]["name"] = tc.function.name
+                                    if tc.function.arguments:
+                                        args = tc.function.arguments
+                                        if isinstance(args, dict):
+                                            args = json.dumps(args, ensure_ascii=False)
+                                        accumulated_tool_calls[idx]["arguments"] += args
+                else:
+                    raise
 
             # After stream finishes, yield tool_calls_detected if any were accumulated
             if accumulated_tool_calls:
@@ -588,6 +686,50 @@ class Agent():
                 yield {'type': 'tool_calls_detected', 'content': normalized}
 
     
+    def _process_think_tags(self, text: str, in_think: bool) -> tuple[str, str, bool]:
+        """Parse ``<think>...</think>`` tags from a streaming chunk.
+
+        Some providers (Groq raw mode, older Ollama models) embed reasoning
+        inside ``<think>`` tags in the content field instead of a dedicated
+        structured field.  This state-machine parser handles tags that span
+        multiple chunks.
+
+        Args:
+            text: Incoming chunk text.
+            in_think: ``True`` if we are currently inside a ``<think>``
+                tag from a previous chunk.
+
+        Returns:
+            Tuple of ``(reasoning_part, content_part, still_in_think)``.
+            Only one of ``reasoning_part`` / ``content_part`` will be
+        non-empty per call.
+        """
+        # ── state: still inside <think> from previous chunk ──
+        if in_think:
+            end_idx = text.find("</think>")
+            if end_idx == -1:
+                return (text, "", True)  # still inside
+            # </think> found in this chunk
+            before = text[:end_idx]
+            after = text[end_idx + len("</think>"):]
+            return (before, after, False)
+
+        # ── state: not inside <think> ──
+        start_idx = text.find("<think>")
+        if start_idx == -1:
+            return ("", text, False)  # no tag at all
+
+        before = text[:start_idx]
+        after_start = text[start_idx + len("<think>"):]
+        end_idx = after_start.find("</think>")
+        if end_idx == -1:
+            # tag started but not closed → we are now inside
+            return (after_start, before, True)
+
+        reasoning = after_start[:end_idx]
+        after_close = after_start[end_idx + len("</think>"):]
+        return (reasoning, before + after_close, False)
+
     def clean(self, text:str) -> str:
         '''
         Remove special Unicode characters and formatting artifacts from the provided text.

@@ -312,6 +312,7 @@ class SessionManager:
         session_id: str,
         role: str,
         content: str | None = None,
+        reasoning: str | None = None,
         tool_calls: list | None = None,
         tool_results: list | None = None,
         tool_call_id: str | None = None,
@@ -327,6 +328,7 @@ class SessionManager:
                 ``"user"``, ``"assistant"``, ``"tool"``.
             content: Text content of the message (optional for tool
                 roles).
+            reasoning: Reasoning / thinking trace for assistant messages.
             tool_calls: List of tool-call objects (serialised to JSON).
             tool_results: List of tool-result objects (serialised to
                 JSON).
@@ -351,13 +353,14 @@ class SessionManager:
 
                 conn.execute(
                     "INSERT INTO messages "
-                    "(session_id, role, content, tool_calls, tool_results, "
+                    "(session_id, role, content, reasoning, tool_calls, tool_results, "
                     "tool_call_id, tool_name, turn_number, step, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         role,
                         content,
+                        reasoning,
                         json.dumps(tool_calls) if tool_calls is not None else None,
                         json.dumps(tool_results) if tool_results is not None else None,
                         tool_call_id,

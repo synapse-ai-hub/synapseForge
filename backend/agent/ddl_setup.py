@@ -41,6 +41,7 @@ def setup_database(conn: sqlite3.Connection) -> None:
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT,
+            reasoning TEXT,
             tool_calls TEXT,
             tool_results TEXT,
             tool_call_id TEXT,

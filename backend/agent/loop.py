@@ -407,6 +407,7 @@ class AgentLoop:
 
                 # ---- 6a. Call LLM with streaming (single API call, detects tool_calls) ----
                 collected_content = ""
+                collected_reasoning = ""
                 tool_calls = None
 
                 try:
@@ -418,6 +419,9 @@ class AgentLoop:
                         if event["type"] == "chunk":
                             collected_content += event.get("content", "")
                             yield f"data: {json.dumps({'type': 'chunk', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
+                        elif event["type"] == "reasoning":
+                            collected_reasoning += event.get("content", "")
+                            yield f"data: {json.dumps({'type': 'reasoning', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
                         elif event["type"] == "tool_calls_detected":
                             tool_calls = event["content"]
                             break
@@ -425,7 +429,9 @@ class AgentLoop:
                             # Guardar respuesta parcial antes de terminar (patrón ProspectingAgent/opencode)
                             if collected_content:
                                 session_manager.save_message(
-                                    session_id, "assistant", content=collected_content, turn_number=turn_number, step=step
+                                    session_id, "assistant", content=collected_content,
+                                    reasoning=collected_reasoning or None,
+                                    turn_number=turn_number, step=step
                                 )
                             yield "data: [DONE]\n\n"
                             return
@@ -435,7 +441,9 @@ class AgentLoop:
                     # Guardar respuesta parcial antes de terminar con error
                     if collected_content:
                         session_manager.save_message(
-                            session_id, "assistant", content=collected_content, turn_number=turn_number, step=step
+                            session_id, "assistant", content=collected_content,
+                            reasoning=collected_reasoning or None,
+                            turn_number=turn_number, step=step
                         )
                     else:
                         session_manager.save_message(
@@ -463,6 +471,7 @@ class AgentLoop:
                     session_manager.save_message(
                         session_id, "assistant",
                         content=collected_content,
+                        reasoning=collected_reasoning or None,
                         tool_calls=tool_calls,
                         turn_number=turn_number,
                         step=step,
@@ -669,7 +678,9 @@ class AgentLoop:
                 # ---- 6c. No tool_calls → final response ----
                 cleaned = agent.clean(collected_content) if collected_content else None
                 session_manager.save_message(
-                    session_id, "assistant", content=cleaned, turn_number=turn_number, step=step,
+                    session_id, "assistant", content=cleaned,
+                    reasoning=collected_reasoning or None,
+                    turn_number=turn_number, step=step,
                 )
                 _t_before_done = _time.time()
                 # # logger.info("[DEBUG_TIEMPO_SSE] about to yield [DONE] — iteration=%d, t=%.3f", iteration, _t_before_done)

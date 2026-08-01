@@ -24,6 +24,28 @@
     .typing-dot:nth-child(1) { animation-delay: -0.32s; }
     .typing-dot:nth-child(2) { animation-delay: -0.16s; }
     .typing-dot:nth-child(3) { animation-delay: 0s; }
+
+    /* Línea de actividad (debajo del textarea) — barra indeterminada: track vacío + segmento con degradé que va y viene */
+    @keyframes activity-bar-slide {
+      0% { left: -35%; }
+      100% { left: 100%; }
+    }
+    .activity-bar {
+      height: 5px;
+      border-radius: 9999px;
+      background-color: #e5e7eb;
+      overflow: hidden;
+    }
+    .activity-bar::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 35%;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, #d31aba, #8b5cf6, #4f46e5);
+      animation: activity-bar-slide 1.6s ease-in-out infinite alternate;
+    }
   </style>
 </head>
 <body class="h-screen flex flex-col bg-gray-50 overflow-hidden">
@@ -163,6 +185,9 @@
                   aria-label="Enviar mensaje">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
           </button>
+
+          <!-- Línea de actividad — misma condición que el botón de detener (desde que se envía hasta que termina el turno). Dentro del wrapper relativo, pegada al borde inferior -->
+          <div id="activityBar" class="activity-bar absolute left-0 right-0 pointer-events-none hidden" style="bottom:-4px" aria-hidden="true"></div>
         </div>
       </div>
     </div>
@@ -197,6 +222,8 @@
     let showScrollButton = false;
     let userInteractionRef = false;
     let userInteractionTimeout = null;
+    let isProgrammaticScrollRef = false;
+    let programmaticScrollTimeout = null;
 
     // ── Elementos DOM ──
     const setupDiv = document.getElementById("setup");
@@ -206,6 +233,7 @@
     const chatInput = document.getElementById("chatInput");
     const sendBtn = document.getElementById("sendBtn");
     const stopBtn = document.getElementById("stopBtn");
+    const activityBar = document.getElementById("activityBar");
     const attachBtn = document.getElementById("attachBtn");
     const fileInput = document.getElementById("fileInput");
     const fileChips = document.getElementById("fileChips");
@@ -223,6 +251,12 @@
     // ── Scroll handlers (exacto ChatInterface) ──
     function scrollAlFinal(behavior) {
       if (!autoScrollEnabled) return;
+      isProgrammaticScrollRef = true;
+      if (programmaticScrollTimeout) clearTimeout(programmaticScrollTimeout);
+      programmaticScrollTimeout = setTimeout(() => {
+        isProgrammaticScrollRef = false;
+        programmaticScrollTimeout = null;
+      }, 350);
       requestAnimationFrame(() => {
         messagesContainer.scrollTo({
           top: messagesContainer.scrollHeight,
@@ -240,7 +274,7 @@
       } else {
         if (sbEl) sbEl.classList.remove("hidden");
       }
-      if (!userInteractionRef) {
+      if (!isProgrammaticScrollRef && !userInteractionRef) {
         autoScrollEnabled = nearBottom;
       }
     }
@@ -257,6 +291,12 @@
 
     function scrollToBottom() {
       autoScrollEnabled = true;
+      isProgrammaticScrollRef = true;
+      if (programmaticScrollTimeout) clearTimeout(programmaticScrollTimeout);
+      programmaticScrollTimeout = setTimeout(() => {
+        isProgrammaticScrollRef = false;
+        programmaticScrollTimeout = null;
+      }, 350);
       messagesContainer.scrollTo({ top: messagesContainer.scrollHeight, behavior: "smooth" });
       const sbEl = document.getElementById("scrollBottomBtn");
       if (sbEl) sbEl.classList.add("hidden");
@@ -393,9 +433,14 @@
     // ── Streaming: interleaved text+tool blocks, exacto ChatInterface ──
     let blocksContainer = null;   // Contenedor que se renderiza en orden (texto y tools intercalados)
     let currentTextBlock = null;  // Bloque de texto actual (recibe chunks)
+    let currentTextRaw = "";      // Texto crudo acumulado del bloque actual
     let toolCallSeq = 0;          // Contador de tool calls
     let toolCallElements = {};    // toolCallSeq → { element, statusEl, resultEl }
     let currentReasoning = "";    // Texto de razonamiento acumulado
+    // ── Detección de "lapsos muertos" (typing en gaps), exacto ChatInterface ──
+    let lastActivityAt = Date.now(); // Último evento SSE recibido
+    let deadCheckInterval = null;    // Intervalo de detección de inactividad
+    let toolCallingCount = 0;        // Tools sin resultado (spinner activo)
 
     function _makeTextBlock() {
       const div = document.createElement("div");
@@ -446,10 +491,10 @@
       btn.appendChild(chevron);
       wrapper.appendChild(btn);
 
-      // Expanded section
+      // Expanded section — auto-abierto durante runtime (isProcessing = streaming activo), cerrado al recargar
       const expanded = document.createElement("div");
       expanded.className = "tc-expanded mt-2 space-y-2";
-      expanded.style.display = "none";
+      expanded.style.display = isProcessing ? "" : "none";
 
       // Args
       if (args && Object.keys(args).length > 0) {
@@ -483,7 +528,10 @@
 
     function mostrarRazonamiento() {
       if (!currentReasoning) return;
-      // Crear wrapper SIN detener typing (a diferencia de agregarChunk)
+      // Al aparecer el razonamiento, sacar el typing (exacto ChatInterface: el razonamiento es contenido visible).
+      // Los lapsos muertos los re-muestra startDeadTypingCheck.
+      ocultarTyping();
+      // Crear el wrapper del bloque (sin pasar por agregarChunk)
       if (!blocksContainer) {
         const wrapper = document.createElement("div");
         wrapper.className = "flex gap-3 sm:gap-4 items-start";
@@ -515,47 +563,51 @@
         if (content) content.textContent = currentReasoning;
         return;
       }
-      // Crear el bloque colapsable (exacto ChatInterface)
+      // Crear el bloque colapsable (exacto ChatInterface — mismo estilo de tarjeta que las tools)
       rb = document.createElement("div");
       rb.id = "reasoning-block";
-      rb.className = "mb-2";
+      rb.className = "rounded-lg border border-gray-200 bg-gray-50 p-2.5";
 
       const btn = document.createElement("button");
-      btn.className = "flex items-center gap-1 text-xs text-gray-500 hover:text-[#4f46e5] transition-colors";
+      btn.className = "flex w-full items-center justify-between gap-2 text-left text-xs hover:text-[#4f46e5]";
       btn.type = "button";
       btn.onclick = function () {
         const panel = rb.querySelector(".reasoning-panel");
         if (panel) {
           const hidden = panel.style.display === "none";
           panel.style.display = hidden ? "" : "none";
-          btn.querySelector(".reasoning-chevron").classList.toggle("rotate-90");
+          btn.querySelector(".reasoning-chevron").classList.toggle("rotate-180");
         }
       };
 
+      const labelWrap = document.createElement("span");
+      labelWrap.className = "flex items-center gap-1 text-gray-500";
+      const label = document.createElement("span");
+      label.className = "font-medium";
+      label.textContent = "Razonamiento";
+      labelWrap.appendChild(label);
+
       const chevronSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      chevronSvg.setAttribute("width", "12");
-      chevronSvg.setAttribute("height", "12");
+      chevronSvg.setAttribute("width", "14");
+      chevronSvg.setAttribute("height", "14");
       chevronSvg.setAttribute("viewBox", "0 0 24 24");
       chevronSvg.setAttribute("fill", "none");
       chevronSvg.setAttribute("stroke", "currentColor");
       chevronSvg.setAttribute("stroke-width", "2");
-      chevronSvg.classList.add("reasoning-chevron", "transition-transform");
+      chevronSvg.classList.add("reasoning-chevron", "shrink-0", "transition-transform");
       const chevronPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      chevronPath.setAttribute("d", "M9 18l6-6-6-6");
+      chevronPath.setAttribute("d", "M6 9l6 6 6-6");
       chevronSvg.appendChild(chevronPath);
 
-      const label = document.createElement("span");
-      label.textContent = "Razonamiento";
-
+      btn.appendChild(labelWrap);
       btn.appendChild(chevronSvg);
-      btn.appendChild(label);
       rb.appendChild(btn);
 
       const panel = document.createElement("div");
-      panel.className = "reasoning-panel mt-1 text-xs text-gray-500 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap border border-gray-200";
+      panel.className = "reasoning-panel mt-2 text-xs text-gray-500 whitespace-pre-wrap break-words";
       // Auto-abierto durante runtime (isProcessing = streaming activo), cerrado por defecto al recargar
       panel.style.display = isProcessing ? "" : "none";
-      if (isProcessing) btn.querySelector(".reasoning-chevron")?.classList.add("rotate-90");
+      if (isProcessing) btn.querySelector(".reasoning-chevron")?.classList.add("rotate-180");
       const content = document.createElement("div");
       content.className = "reasoning-content";
       content.textContent = currentReasoning;
@@ -596,17 +648,15 @@
         scrollAlFinal();
       }
       if (!currentTextBlock) {
+        currentTextRaw = "";
         currentTextBlock = _makeTextBlock();
         blocksContainer.appendChild(currentTextBlock);
       }
-      // Append HTML — mantenemos el markdown fluyendo
-      const safe = DOMPurify.sanitize(marked.parse(texto, { async: false }), { ADD_ATTR: ["target"] });
-      // En vez de innerHTML (rompe streaming), append usando range
-      const temp = document.createElement("div");
-      temp.innerHTML = safe;
-      while (temp.firstChild) {
-        currentTextBlock.appendChild(temp.firstChild);
-      }
+      // Acumular el texto crudo y re-renderizar el markdown COMPLETO (exacto ChatInterface).
+      // Renderizar cada chunk como markdown individual rompía el texto en bloques <p> por palabra.
+      currentTextRaw += texto;
+      const safe = DOMPurify.sanitize(marked.parse(currentTextRaw, { async: false }), { ADD_ATTR: ["target"] });
+      currentTextBlock.innerHTML = safe;
       scrollAlFinal();
     }
 
@@ -618,6 +668,7 @@
       }
       // Finalizar el text block actual
       currentTextBlock = null;
+      toolCallingCount++;
       const id = toolCallSeq++;
       const { wrapper, statusSpan, resultDiv, resultContent } = _makeToolCallBlock(id, name, args || {});
       blocksContainer.appendChild(wrapper);
@@ -630,6 +681,7 @@
       for (const id in toolCallElements) {
         const entry = toolCallElements[id];
         if (entry.resultDiv.style.display !== "none") continue; // ya tiene resultado
+        toolCallingCount = Math.max(0, toolCallingCount - 1);
         const isError = typeof result === "string" && (
           result.toLowerCase().includes("error") || result.toLowerCase().includes("fail")
         );
@@ -650,9 +702,11 @@
         const texto = blocksContainer.textContent || "";
         blocksContainer = null;
         currentTextBlock = null;
+        currentTextRaw = "";
         toolCallElements = {};
         toolCallSeq = 0;
         currentReasoning = "";
+        toolCallingCount = 0;
         return texto;
       }
       return "";
@@ -678,6 +732,25 @@
     function ocultarTyping() {
       const el = document.getElementById("typingIndicator");
       if (el) el.remove();
+    }
+
+    // ── Detección de lapsos muertos (typing en gaps), exacto ChatInterface ──
+    function startDeadTypingCheck() {
+      stopDeadTypingCheck();
+      lastActivityAt = Date.now();
+      deadCheckInterval = setInterval(() => {
+        const typingEl = document.getElementById("typingIndicator");
+        const isDead = Date.now() - lastActivityAt > 600 && toolCallingCount === 0;
+        if (isDead && !typingEl) mostrarTyping();
+        else if (!isDead && typingEl) ocultarTyping();
+      }, 250);
+    }
+
+    function stopDeadTypingCheck() {
+      if (deadCheckInterval) {
+        clearInterval(deadCheckInterval);
+        deadCheckInterval = null;
+      }
     }
 
     // ── Leer archivos como texto ──
@@ -736,6 +809,9 @@
 
     // ── Manejar eventos SSE ──
     function onSSEEvent(event) {
+      // Marcar actividad: cualquier evento reinicia el contador de lapsos muertos
+      lastActivityAt = Date.now();
+
       switch (event.type) {
         case "chunk":
           agregarChunk(event.content);
@@ -836,7 +912,9 @@
       isProcessing = true;
       sendBtn.classList.add("hidden");
       stopBtn.classList.remove("hidden");
+      activityBar.classList.remove("hidden");
       mostrarTyping();
+      startDeadTypingCheck();
 
       abortController = new AbortController();
 
@@ -865,8 +943,11 @@
           habilitarInput();
         }
       } finally {
+        stopDeadTypingCheck();
+        ocultarTyping();
         isProcessing = false;
         stopBtn.classList.add("hidden");
+        activityBar.classList.add("hidden");
         sendBtn.classList.remove("hidden");
       }
     }
@@ -928,7 +1009,9 @@
       isProcessing = true;
       sendBtn.classList.add("hidden");
       stopBtn.classList.remove("hidden");
+      activityBar.classList.remove("hidden");
       mostrarTyping();
+      startDeadTypingCheck();
 
       abortController = new AbortController();
 
@@ -953,8 +1036,11 @@
           habilitarInput();
         }
       } finally {
+        stopDeadTypingCheck();
+        ocultarTyping();
         isProcessing = false;
         stopBtn.classList.add("hidden");
+        activityBar.classList.add("hidden");
         sendBtn.classList.remove("hidden");
       }
     });

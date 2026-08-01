@@ -11,6 +11,12 @@ import configService from "./services/configService";
 
 export type { ContentBlock };
 
+/** Paso ordenado dentro de la tarjeta de un sub-agente (orden exacto de eventos). */
+export type SubagentStep =
+  | { kind: "reasoning"; content: string }
+  | { kind: "text"; content: string }
+  | { kind: "tool"; name: string; args: Record<string, any>; result?: any };
+
 export interface SubagentEvent {
   child_session_id: string;
   agent_name: string;
@@ -18,6 +24,8 @@ export interface SubagentEvent {
   tool_results?: Array<{ name: string; result: any }>;
   content?: string;
   reasoning?: string;
+  /** Pasos en el orden EXACTO en que ocurrieron los eventos (runtime y recarga). */
+  steps?: SubagentStep[];
 }
 
 export interface Message {
@@ -145,8 +153,7 @@ function App() {
   }, []);
 
   const handleNewChat = useCallback(() => {
-    const id = generateId();
-    setCurrentSessionId(id);
+    setCurrentSessionId(null);
     setMessages([WELCOME_MESSAGE]);
     setIsStreaming(false);
     setRefreshTrigger((t) => t + 1);

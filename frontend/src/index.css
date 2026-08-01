@@ -148,3 +148,36 @@ body {
 .typing-dot:nth-child(3) {
   animation-delay: 0s;
 }
+
+/* ===== Línea de actividad (debajo del textarea) — barra indeterminada: track vacío + segmento con degradé que va y viene ===== */
+@keyframes activity-bar-slide {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.activity-bar {
+  height: 5px;
+  border-radius: 9999px;
+  background-color: var(--color-app-border);
+  overflow: hidden;
+}
+
+.activity-bar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    var(--color-app-primary),
+    var(--color-app-primary-light),
+    var(--color-app-primary)
+  );
+  animation: activity-bar-slide 1.6s ease-in-out infinite alternate;
+}

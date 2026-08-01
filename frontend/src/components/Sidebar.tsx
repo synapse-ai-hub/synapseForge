@@ -54,6 +54,7 @@ export function Sidebar({
 }: SidebarProps) {
   const [tab, setTab] = useState<SidebarTab>("sessions");
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [pendingSessions, setPendingSessions] = useState<ChatSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -75,11 +76,42 @@ export function Sidebar({
     loadSessions();
   }, [loadSessions]);
 
-  // Recargar en silencio cuando se abre el sidebar, cambia el tab o refreshTrigger
+  // Crear tarjeta pending cuando se inicia una nueva sesión.
+  // Si activeSessionId pasa de un valor a null (usuario hace New Chat),
+  // limpiar las pending que no se hayan confirmado (siguen en pending).
+  useEffect(() => {
+    if (activeSessionId) {
+      setPendingSessions(prev => {
+        if (prev.some(p => p.session_id === activeSessionId)) return prev;
+        if (sessions.some(s => s.session_id === activeSessionId)) return prev;
+        const now = new Date().toISOString();
+        return [{ session_id: activeSessionId, title: "Nueva conversación", preview: "Generando...", created_at: now, updated_at: now, message_count: 0 }, ...prev];
+      });
+    } else {
+      // Usuario hizo New Chat: limpiar pending que no se confirmaron en backend
+      setPendingSessions([]);
+    }
+  }, [activeSessionId]);
+
+  // Refrescar al cambiar a la pestaña sessions
+  useEffect(() => {
+    if (tab !== "sessions") return;
+    sessionService.listSessions()
+      .then((data) => {
+        setSessions(data);
+        setPendingSessions(prev => prev.filter(p => !data.some(s => s.session_id === p.session_id)));
+      })
+      .catch((err) => console.error("Error refrescando sesiones:", err));
+  }, [tab]);
+
+  // Refrescar en silencio cuando cambia refreshTrigger
   useEffect(() => {
     if (tab === "sessions") {
       sessionService.listSessions()
-        .then((data) => setSessions(data))
+        .then((data) => {
+          setSessions(data);
+          setPendingSessions(prev => prev.filter(p => !data.some(s => s.session_id === p.session_id)));
+        })
         .catch((err) => console.error("Error refrescando sesiones:", err));
     }
   }, [refreshTrigger]);
@@ -89,8 +121,14 @@ export function Sidebar({
     if (!window.confirm("¿Eliminar esta conversación?")) return;
     try {
       setDeletingId(id);
-      await sessionService.deleteSession(id);
-      setSessions((prev) => prev.filter((s) => s.session_id !== id));
+      // Si es pending (no existe en backend), solo remover local
+      const isPending = pendingSessions.some(p => p.session_id === id);
+      if (isPending) {
+        setPendingSessions(prev => prev.filter(p => p.session_id !== id));
+      } else {
+        await sessionService.deleteSession(id);
+        setSessions((prev) => prev.filter((s) => s.session_id !== id));
+      }
       if (activeSessionId === id) {
         onNewChat();
       }
@@ -162,7 +200,7 @@ export function Sidebar({
             onSelectSession={onSelectSession}
             onNewChat={onNewChat}
             refreshTrigger={refreshTrigger}
-            sessions={sessions}
+            sessions={[...pendingSessions, ...sessions]}
             isLoading={isLoading}
             deletingId={deletingId}
             handleDelete={handleDelete}

@@ -19,7 +19,6 @@ import {
   BarChart3,
   Copy,
   ChevronDown,
-  ChevronRight,
   Loader2,
   LogOut,
   BookOpen,
@@ -29,7 +28,7 @@ import DOMPurify from "dompurify";
 import LogoImage from "../assets/logo_cliente.png";
 import chatService from "../services/chatService";
 import { Button } from "./ui/button";
-import type { Message, SubagentEvent, ContentBlock } from "../App";
+import type { Message, SubagentEvent, SubagentStep, ContentBlock } from "../App";
 
 /* ------------------------------------------------------------------ */
 /*  Exported welcome message for App initialization                   */
@@ -97,30 +96,33 @@ function TypingIndicator() {
   );
 }
 
-/** Collapsible reasoning block — cada bloque de razonamiento del LLM. */
+/** Collapsible reasoning block — cada bloque de razonamiento del LLM, con el mismo estilo de tarjeta que las tools. */
 function ReasoningBlock({ content, defaultOpen }: { content: string; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   const panelId = `reasoning-${useId()}`;
   const text = content?.trim() || "";
   if (!text) return null;
   return (
-    <div>
+    <div className="rounded-lg border border-app-border bg-app-bg-tertiary p-2.5">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex items-center gap-1 text-xs text-app-text-secondary hover:text-app-primary transition-colors"
+        className="flex w-full items-center justify-between gap-2 text-left text-xs hover:text-app-primary"
       >
-        {open
-          ? <ChevronDown className="h-3 w-3" aria-hidden="true" />
-          : <ChevronRight className="h-3 w-3" aria-hidden="true" />
-        }
-        Razonamiento
+        <span className="flex items-center gap-1 text-app-text-secondary">
+          <span className="font-medium">Razonamiento</span>
+        </span>
+        <ChevronDown
+          size={14}
+          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
       {open && (
         <div
           id={panelId}
-          className="mt-1 text-xs text-app-text-secondary bg-app-bg-tertiary rounded p-2 whitespace-pre-wrap"
+          className="mt-2 text-xs text-app-text-secondary whitespace-pre-wrap break-words"
         >
           {text}
         </div>
@@ -255,14 +257,23 @@ export function ChatInterface({
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userInteractionRef = useRef(false);
-  const userInteractionTimeoutRef = useRef<number | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollTimeoutRef = useRef<number | null>(null);
 
   const scrollToBraintom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (messagesContainerRef.current) {
+      isProgrammaticScrollRef.current = true;
       messagesContainerRef.current.scrollTo({
         top: messagesContainerRef.current.scrollHeight,
         behavior,
       });
+      if (programmaticScrollTimeoutRef.current) {
+        clearTimeout(programmaticScrollTimeoutRef.current);
+      }
+      programmaticScrollTimeoutRef.current = window.setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+        programmaticScrollTimeoutRef.current = null;
+      }, 350);
     }
   }, []);
 
@@ -278,31 +289,28 @@ export function ChatInterface({
     const nearBraintom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
     setShowScrollButton(!nearBraintom);
 
-    // Solo cambiar autoScroll si NO hay interacción de usuario reciente
-    if (!userInteractionRef.current) {
+    // Solo cambiar autoScroll si NO es scroll programático Y NO hay interacción de usuario
+    if (!isProgrammaticScrollRef.current && !userInteractionRef.current) {
       setAutoScrollEnabled(nearBraintom);
     }
   }, []);
 
   const handleMessagesWheel = useCallback(() => {
-    // Marcar interacción de usuario
     userInteractionRef.current = true;
     setAutoScrollEnabled(false);
-
-    // Limpiar flag después de 500ms
-    if (userInteractionTimeoutRef.current) {
-      clearTimeout(userInteractionTimeoutRef.current);
-    }
-    userInteractionTimeoutRef.current = window.setTimeout(() => {
+    setTimeout(() => {
       userInteractionRef.current = false;
-      userInteractionTimeoutRef.current = null;
     }, 500);
   }, []);
 
-  /* ---- abort stream on unmount ---- */
+  /* ---- cleanup on unmount ---- */
   useEffect(() => {
     return () => {
       chatService.cancelStream();
+      if (programmaticScrollTimeoutRef.current) {
+        clearTimeout(programmaticScrollTimeoutRef.current);
+        programmaticScrollTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -581,6 +589,7 @@ export function ChatInterface({
                     tool_results: [],
                     content: "",
                     reasoning: "",
+                    steps: [],
                   };
                 }
                 const child = events[childId];
@@ -595,6 +604,14 @@ export function ChatInterface({
                         args: innerEvent.content?.args || {},
                       },
                     ];
+                    updatedChild.steps = [
+                      ...(child.steps || []),
+                      {
+                        kind: "tool",
+                        name: innerEvent.content?.name || "unknown",
+                        args: innerEvent.content?.args || {},
+                      },
+                    ];
                     break;
                   case "tool_result":
                     updatedChild.tool_results = [
@@ -604,12 +621,43 @@ export function ChatInterface({
                         result: innerEvent.content?.result || "",
                       },
                     ];
+                    {
+                      const steps = [...(child.steps || [])];
+                      for (let i = steps.length - 1; i >= 0; i--) {
+                        const step = steps[i];
+                        if (step.kind === "tool" && step.result === undefined) {
+                          steps[i] = { ...step, result: innerEvent.content?.result ?? "" };
+                          break;
+                        }
+                      }
+                      updatedChild.steps = steps;
+                    }
                     break;
                   case "chunk":
                     updatedChild.content = (child.content || "") + (innerEvent.content || "");
+                    {
+                      const steps = [...(child.steps || [])];
+                      const last = steps[steps.length - 1];
+                      if (last && last.kind === "text") {
+                        steps[steps.length - 1] = { ...last, content: last.content + (innerEvent.content || "") };
+                      } else {
+                        steps.push({ kind: "text", content: innerEvent.content || "" });
+                      }
+                      updatedChild.steps = steps;
+                    }
                     break;
                   case "reasoning":
                     updatedChild.reasoning = (child.reasoning || "") + (innerEvent.content || "");
+                    {
+                      const steps = [...(child.steps || [])];
+                      const last = steps[steps.length - 1];
+                      if (last && last.kind === "reasoning") {
+                        steps[steps.length - 1] = { ...last, content: last.content + (innerEvent.content || "") };
+                      } else {
+                        steps.push({ kind: "reasoning", content: innerEvent.content || "" });
+                      }
+                      updatedChild.steps = steps;
+                    }
                     break;
                 }
 
@@ -921,9 +969,18 @@ export function ChatInterface({
                            disabled:opacity-40 disabled:cursor-not-allowed"
                  aria-label="Enviar mensaje"
               >
-                <Send size={14} className="text-app-primary-text" />
+                 <Send size={14} className="text-app-primary-text" />
               </button>
             )}
+          {/* Línea de actividad — misma condición que el botón de detener: desde que se envía hasta que termina el turno.
+              Dentro del wrapper relativo del textarea, pegada al borde inferior. */}
+          {isStreaming && (
+            <div
+              className="activity-bar absolute left-0 right-0 pointer-events-none"
+              style={{ bottom: "-4px" }}
+              aria-hidden="true"
+            />
+          )}
           </div>
         </div>
       </div>
@@ -950,8 +1007,11 @@ function ToolCallBlock({
   subagentEvents?: Record<string, SubagentEvent>;
   isLatestTool?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  // Abierto por defecto durante streaming (runtime), cerrado por defecto al recargar
+  const [open, setOpen] = useState(isStreaming ?? false);
   const [childTools, setChildTools] = useState<Array<{ tool: string; parameters?: Record<string, any>; result?: any }>>([]);
+  const [childContentFallback, setChildContentFallback] = useState<string>("");
+  const [childStepsFallback, setChildStepsFallback] = useState<SubagentStep[]>([]);
   const fetchedRef = useRef(false);
 
   // Determine status: 'calling' | 'success' | 'error'
@@ -1032,9 +1092,11 @@ function ToolCallBlock({
       const data = await response.json();
       if (data?.data?.messages) {
         const tools: Array<{ tool: string; parameters?: Record<string, any>; result?: any }> = [];
+        const textParts: string[] = [];
+        const fetchedSteps: SubagentStep[] = [];
         data.data.messages.forEach((msg: any) => {
           if (msg.type !== "assistant") return;
-          // New blocks format
+          // New blocks format — los blocks ya vienen en orden exacto desde el backend
           if (msg.blocks) {
             msg.blocks.forEach((b: any) => {
               if (b.type === "tool") {
@@ -1043,6 +1105,17 @@ function ToolCallBlock({
                   parameters: b.args ?? {},
                   result: b.result,
                 });
+                fetchedSteps.push({
+                  kind: "tool",
+                  name: b.name ?? "unknown",
+                  args: (b.args ?? {}) as Record<string, any>,
+                  result: b.result,
+                });
+              } else if (b.type === "text" && b.content) {
+                textParts.push(b.content);
+                fetchedSteps.push({ kind: "text", content: b.content });
+              } else if (b.type === "reasoning" && b.content) {
+                fetchedSteps.push({ kind: "reasoning", content: b.content });
               }
             });
           }
@@ -1054,10 +1127,22 @@ function ToolCallBlock({
                 parameters: tc.args ?? {},
                 result: msg.toolResults?.[i]?.result,
               });
+              fetchedSteps.push({
+                kind: "tool",
+                name: tc.name ?? "unknown",
+                args: (tc.args ?? {}) as Record<string, any>,
+                result: msg.toolResults?.[i]?.result,
+              });
             });
           }
         });
         setChildTools(tools);
+        if (textParts.length > 0) {
+          setChildContentFallback(textParts.join("\n\n"));
+        }
+        if (fetchedSteps.length > 0) {
+          setChildStepsFallback(fetchedSteps);
+        }
       }
     } catch {
       // Silently fail - child tools just won't show
@@ -1091,11 +1176,21 @@ function ToolCallBlock({
   // Child tools to display: real-time if available, otherwise lazy-fetched
   const displayChildTools = realtimeChildTools ?? childTools;
 
-  // Child text content (from real-time chunks)
+  // Child text content (real-time from chunks, or lazy-fetched on reload)
   const childContent = useMemo(() => {
-    if (!childSessionId || !subagentEvents?.[childSessionId]) return null;
+    if (!childSessionId || !subagentEvents?.[childSessionId]) {
+      return childContentFallback || null;
+    }
     return subagentEvents[childSessionId].content || null;
-  }, [childSessionId, subagentEvents]);
+  }, [childSessionId, subagentEvents, childContentFallback]);
+
+  // Child steps en el orden EXACTO de eventos: runtime (subagentEvents) o recarga (fallback).
+  const childSteps = useMemo<SubagentStep[]>(() => {
+    if (childSessionId && subagentEvents?.[childSessionId]?.steps?.length) {
+      return subagentEvents[childSessionId].steps as SubagentStep[];
+    }
+    return childStepsFallback;
+  }, [childSessionId, subagentEvents, childStepsFallback]);
 
   return (
     <div className="rounded-lg border border-app-border bg-app-bg-tertiary p-2.5">
@@ -1129,26 +1224,21 @@ function ToolCallBlock({
             </div>
           )}
 
-          {/* Child text content (real-time from sub-agent chunks) */}
-          {isTask && childContent && (
-            <div className="border-t border-app-border pt-2">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
-                Respuesta del sub-agente
-              </div>
-              <div className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] text-app-text">
-                {childContent}
-              </div>
-            </div>
-          )}
-
-          {/* Child tools (for task) - real-time if streaming, otherwise lazy-fetched */}
-          {isTask && displayChildTools.length > 0 && (
+          {/* Child steps (for task) — orden EXACTO de eventos (runtime y recarga) */}
+          {isTask && childSteps.length > 0 && (
             <div className="border-t border-app-border pt-2 space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
-                Herramientas del sub-agente
-              </div>
-              {displayChildTools.map((ct, i) => {
-                const childStatus = getChildStatus(ct.result);
+              {childSteps.map((step, i) => {
+                if (step.kind === "reasoning") {
+                  return <ReasoningBlock key={i} content={step.content} defaultOpen={isStreaming} />;
+                }
+                if (step.kind === "text") {
+                  return (
+                    <div key={i} className="overflow-x-auto rounded-md bg-white p-2">
+                      <MarkdownRenderer content={step.content} />
+                    </div>
+                  );
+                }
+                const childStatus = getChildStatus(step.result);
                 return (
                   <div key={i} className="ml-3 pl-2 border-l-2 border-app-border space-y-1">
                     <div className="flex items-center gap-1 text-[11px]">
@@ -1157,16 +1247,59 @@ function ToolCallBlock({
                         {childStatus === "error" && "✗"}
                         {childStatus === "calling" && "⏳"}
                       </span>
-                      <span className="font-medium">{ct.tool}</span>
+                      <span className="font-medium">{step.name}</span>
                     </div>
-                    {ct.parameters && Object.keys(ct.parameters).length > 0 && (
+                    {step.args && Object.keys(step.args).length > 0 && (
                       <pre className="ml-4 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-1.5 text-[10px] text-app-text">
-                        {JSON.stringify(ct.parameters, null, 2)}
+                        {JSON.stringify(step.args, null, 2)}
                       </pre>
                     )}
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Fallback (sin steps): tools agrupadas + respuesta, para sesiones legacy */}
+          {isTask && childSteps.length === 0 && (displayChildTools.length > 0 || childContent) && (
+            <div className="border-t border-app-border pt-2 space-y-2">
+              {displayChildTools.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
+                    Herramientas del sub-agente
+                  </div>
+                  {displayChildTools.map((ct, i) => {
+                    const childStatus = getChildStatus(ct.result);
+                    return (
+                      <div key={i} className="ml-3 pl-2 border-l-2 border-app-border space-y-1">
+                        <div className="flex items-center gap-1 text-[11px]">
+                          <span className={childStatusColors[childStatus]}>
+                            {childStatus === "success" && "✓"}
+                            {childStatus === "error" && "✗"}
+                            {childStatus === "calling" && "⏳"}
+                          </span>
+                          <span className="font-medium">{ct.tool}</span>
+                        </div>
+                        {ct.parameters && Object.keys(ct.parameters).length > 0 && (
+                          <pre className="ml-4 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-1.5 text-[10px] text-app-text">
+                            {JSON.stringify(ct.parameters, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {childContent && (
+                <div className="border-t border-app-border pt-2">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
+                    Respuesta del sub-agente
+                  </div>
+                  <div className="overflow-x-auto rounded-md bg-white p-2">
+                    <MarkdownRenderer content={childContent} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1205,6 +1338,31 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
   // Determine if the assistant is waiting for its first text chunk (affects spinner logic)
   const hasTextBlock = message.blocks?.some((b) => b.type === "text");
   const waitingForChunk = message.isStreaming && !hasTextBlock;
+
+  // Detección de "lapsos muertos": el stream está activo pero no llega contenido nuevo.
+  // El typing aparece cuando no hay actividad reciente (gaps entre razonamiento/tools/respuesta).
+  const lastActivityRef = useRef(Date.now());
+  const [deadTyping, setDeadTyping] = useState(false);
+
+  useEffect(() => {
+    lastActivityRef.current = Date.now();
+    setDeadTyping(false);
+  }, [message.blocks, message.isStreaming]);
+
+  useEffect(() => {
+    if (!message.isStreaming) {
+      setDeadTyping(false);
+      return;
+    }
+    const id = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > 600) setDeadTyping(true);
+    }, 250);
+    return () => clearInterval(id);
+  }, [message.isStreaming]);
+
+  // Tool en "calling" (spinner activo): el spinner cubre el estado, no se muestra typing
+  const lastBlock = message.blocks && message.blocks.length > 0 ? message.blocks[message.blocks.length - 1] : null;
+  const isCallingTool = !!lastBlock && lastBlock.type === "tool" && (lastBlock as any).result === undefined && message.isStreaming;
 
   if (isAssistant) {
     return (
@@ -1295,11 +1453,12 @@ function MessageRow({ message, verboseMode }: { message: Message; verboseMode: b
           )}
 
           {/* TypingIndicator:
-              Verbose OFF — always show typing during streaming (user sees activity).
-              Verbose ON  — typing only when no text AND no tool blocks (tools have own spinner). */}
+              Verbose OFF — typing while no text block yet (tools are invisible, user needs feedback).
+              Verbose ON  — typing en lapsos muertos (sin actividad reciente) y sin tool en calling. */}
           {message.isStreaming && (
-            (!verboseMode) ||
-            (verboseMode && (!message.blocks || message.blocks.length === 0))
+            verboseMode
+              ? (!isCallingTool && (!message.blocks || message.blocks.length === 0 || deadTyping))
+              : (!message.blocks || !message.blocks.some(b => b.type === "text"))
           ) && <TypingIndicator />}
         </div>
       </div>

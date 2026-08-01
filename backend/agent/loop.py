@@ -233,7 +233,7 @@ class AgentLoop:
             # parameters dict comes from agent frontmatter (via task tool or router)
             temperature = 0.0
             top_p = 0.5
-            max_tokens = 3000
+            max_tokens = 8192
             if parameters:
                 temperature = parameters.get("temperature", temperature)
                 top_p = parameters.get("top_p", top_p)
@@ -377,12 +377,15 @@ class AgentLoop:
                     title_result = await agent.llm_process(
                         model=model,
                         prompt=title_prompt,
-                        max_tokens=300,
+                        max_tokens=2000,
                         temperature=temperature,
                         top_p=top_p,
                     )
                     raw_title = title_result.get("data", "") if isinstance(title_result, dict) else ""
                     title = (raw_title or "").strip().replace('"', "").replace("'", "")
+                    if not title:
+                        # Fallback: usar el primer mensaje del usuario truncado
+                        title = user_message[:80].strip()
                     if title:
                         try:
                             session_manager.update_session_title(session_id, title)

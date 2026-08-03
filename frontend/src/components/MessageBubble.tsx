@@ -176,7 +176,7 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
           <span
             className="inline-block w-2 h-4 ml-1 bg-app-primary-light animate-pulse"
             role="status"
-            aria-label="Pensando..."
+            aria-label="Trabajando..."
           />
         )}
       </div>

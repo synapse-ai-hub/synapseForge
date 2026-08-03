@@ -1,0 +1,42 @@
+:root {
+  --color-app-bg: #ffffff;
+  --color-app-bg-secondary: #f3f4f6; /* gray-100 */
+  --color-app-bg-tertiary: #f9fafb; /* bg-gray-50 de las tarjetas (tools/reasoning) */
+  --color-app-border: #e5e7eb; /* border-gray-200 */
+  --color-app-text: #1f2937; /* text-gray-800 */
+  --color-app-text-secondary: #6b7280; /* text-gray-500 */
+  --color-app-primary: #4f46e5; /* indigo-600 */
+  --color-app-primary-light: #8b5cf6; /* violet-500 */
+  --color-app-primary-text: #ffffff;
+  --color-app-gradient-secondary: #8b5cf6;
+}
+
+/* Markdown — colores exactos del skill.html actual */
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid #d4d4d4;
+}
+.markdown-content th {
+  background-color: #ebebeb;
+}
+.markdown-content code {
+  background-color: #ebebeb;
+}
+.markdown-content pre {
+  background-color: #ebebeb;
+}
+.markdown-content a {
+  color: #4f46e5;
+}
+.markdown-content blockquote {
+  border-left: 4px solid #d4d4d4;
+  color: #5c5c5c;
+}
+
+/* Línea de actividad — colores de la empresa (exacto skill.html) */
+.activity-bar {
+  background-color: #e5e7eb;
+}
+.activity-bar::before {
+  background: linear-gradient(90deg, #fb923c, #d31aba, #8b5cf6, #4f46e5);
+}

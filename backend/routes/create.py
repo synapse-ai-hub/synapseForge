@@ -44,6 +44,9 @@ router = APIRouter(prefix="/create", tags=["create"])
 
 _SKILLS_DIR = get_skills_dir()
 
+# Mensaje user-friendly para errores: el detalle técnico NUNCA llega a la UI.
+_FRIENDLY_ERROR = "No se pudo crear la skill. Ocurrió un error durante el proceso. Verificá la configuración e intentá de nuevo."
+
 
 # ── Modelos de request / response ─────────────────────────────────────
 
@@ -174,7 +177,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
     """Streaming endpoint para crear skills. Retorna SSE events."""
     logger.info(
         "POST /api/create/skill — descripcion='%s' name=%s mensajes=%d",
-        req.descripcion[:80], req.name,
+        req.descripcion, req.name,
         len(req.mensajes) if req.mensajes else 0,
     )
 
@@ -196,7 +199,8 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         try:
             template = agent.prompt("iterar_skill")
         except FileNotFoundError:
-            yield _sse({"type": "error", "content": "Prompt iterar_skill.md no encontrado."})
+            logger.exception("Prompt iterar_skill.md no encontrado.")
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
         prompt = template.format(
@@ -232,7 +236,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                         tool_calls_data = tc.get("args", {})
                         print(">>> CREATE SKILL - Tool call interview:")
                         print(f"  name: {tc.get('name')}")
-                        print(f"  args: {json.dumps(tool_calls_data, ensure_ascii=False)[:500]}")
+                        print(f"  args: {json.dumps(tool_calls_data, ensure_ascii=False)}")
                     break
 
                 elif event["type"] == "aborted":
@@ -240,18 +244,25 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     return
 
         except Exception as e:
-            logger.exception("Error en streaming interview")
-            yield _sse({"type": "error", "content": f"Error: {e}"})
+            logger.exception("Error en streaming interview: %s", e)
+            print(f">>> CREATE SKILL - Error técnico (interview): {e}")
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
         # ── Fallback: si no hubo tool call, intentar parsear JSON ──
         if not tool_calls_data:
-            logger.warning("No tool call recibida. Content: %s", collected_content[:300])
+            logger.warning("No tool call recibida. Content: %s", collected_content)
             parsed = _try_parse_json(collected_content)
             if parsed:
                 tool_calls_data = parsed
+            elif collected_content.strip():
+                # El LLM respondió en texto natural sin llamar a la tool: esa es la
+                # respuesta de la entrevista (el front ya la mostró). No se envía nada
+                # extra al front; finaliza al terminar el stream.
+                print(">>> CREATE SKILL - Sin tool call: el texto plano es la respuesta de la entrevista.")
+                return
             else:
-                yield _sse({"type": "error", "content": "El LLM no devolvió una respuesta estructurada válida."})
+                yield _sse({"type": "error", "content": "El LLM no devolvió una respuesta válida."})
                 return
 
         action = tool_calls_data.get("action")
@@ -260,20 +271,21 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         if action == "question":
             question_text = tool_calls_data.get("question", "")
             print(">>> CREATE SKILL - Acción: question")
-            print(f"  Pregunta: {question_text[:200]}")
+            print(f"  Pregunta: {question_text}")
             yield _sse({"type": "skill_action", "content": {"action": "question", "question": question_text}})
             return
 
         # ── CREATE ──
         if action != "create":
-            yield _sse({"type": "error", "content": f"Acción desconocida: {action}"})
+            logger.warning("Acción desconocida del LLM: %s", action)
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
         print(">>> CREATE SKILL - Acción: create")
         task = tool_calls_data.get("task", descripcion)
         name = nombre or tool_calls_data.get("name")
         refs = tool_calls_data.get("refs")
-        print(f"  Task: {task[:200]}")
+        print(f"  Task: {task}")
         print(f"  Name: {name}")
 
         # ════════════════════════════════════════════════════════════════
@@ -303,13 +315,16 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         try:
             sys_prompt_template = agent.prompt("generar_skill")
         except FileNotFoundError:
-            yield _sse({"type": "error", "content": "Prompt generar_skill.md no encontrado."})
+            logger.exception("Prompt generar_skill.md no encontrado.")
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
         conversacion = _formatear_mensajes(mensajes)
+        carpeta_skill = str(_SKILLS_DIR / (name or "skill"))
         sys_prompt = sys_prompt_template.format(
             nombre=name or "(inferir del contexto)",
             conversacion=conversacion,
+            carpeta=carpeta_skill,
         )
 
         user_msg = "Ejecutá tu tarea. Creá el SKILL.md y los archivos necesarios. Cuando termines, indicame qué creaste."
@@ -318,7 +333,9 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         try:
             tools = list(agent.tools.tools_registry(_AGENT_TOOLS_PERMS))
         except AttributeError as e:
-            yield _sse({"type": "error", "content": f"Error obteniendo tools: {e}"})
+            logger.exception("Error obteniendo tools: %s", e)
+            print(f">>> CREATE SKILL - Error técnico (tools): {e}")
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
         tool_names = [t.get("function", {}).get("name", "?") for t in tools]
@@ -365,8 +382,9 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                         return
 
             except Exception as e:
-                logger.exception("Error en streaming create agent")
-                yield _sse({"type": "error", "content": f"Error: {e}"})
+                logger.exception("Error en streaming create agent: %s", e)
+                print(f">>>> CREATE SKILL - Error técnico (create): {e}")
+                yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
                 return
 
             print(f">>> CREATE SKILL - LLM: content_len={len(collected_content)}, tool_calls={len(tool_calls) if tool_calls else 0}")
@@ -408,7 +426,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     if not isinstance(result_content, str):
                         result_content = json.dumps(result_content)
 
-                    print(f">>> CREATE SKILL - Tool result: {tc_name} -> {str(result_content)[:200]}")
+                    print(f">>> CREATE SKILL - Tool result: {tc_name} -> {str(result_content)}")
                     yield _sse({"type": "tool_result", "content": {"name": tc_name, "result": result_content}})
 
                     msgs.append({
@@ -453,7 +471,14 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                 "data": {"exist": "No", "skill": skill_name_creado, "skill_dir": str(skill_dir)},
             }})
         else:
-            yield _sse({"type": "error", "content": "El agente no creó ningún skill."})
+            # El agente terminó la creación (escribió los archivos). Mostrar el cartel de éxito.
+            nombre_creado = skill_name_creado or name or "skill"
+            print(f">>> CREATE SKILL - Skill creada: {nombre_creado}")
+            yield _sse({"type": "skill_result", "content": {
+                "status": "success",
+                "message": f"Skill '{nombre_creado}' creada exitosamente.",
+                "data": {"exist": "No", "skill": nombre_creado, "skill_dir": str(skill_dir or _SKILLS_DIR / nombre_creado)},
+            }})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

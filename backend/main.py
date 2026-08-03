@@ -310,7 +310,8 @@ if os.path.isdir(_frontend_dist):
 
     @app.api_route("/{path:path}", methods=["GET"])
     async def serve_spa(path: str) -> FileResponse:
-        """Catch-all: any non-API GET path serves index.html (SPA routing)."""
+        """Catch-all: sirve archivos reales del dist (skill.html, docs.html, ...)
+        o el index.html (SPA routing)."""
         if path.startswith("api/") or path in (
             "health",
             "openapi.json",
@@ -320,6 +321,14 @@ if os.path.isdir(_frontend_dist):
             return JSONResponse(
                 {"detail": "Not Found"}, status_code=404
             )
+        # Servir archivos reales del dist si existen (skill.html, docs.html, etc.)
+        candidate = os.path.normpath(os.path.join(_frontend_dist, path))
+        if (
+            path
+            and candidate.startswith(_frontend_dist)
+            and os.path.isfile(candidate)
+        ):
+            return FileResponse(candidate)
         return FileResponse(os.path.join(_frontend_dist, "index.html"))
 else:
     logger.info(

@@ -163,6 +163,7 @@ export function Sidebar({
         />
         <div className="flex flex-col min-w-0">
           <span className="text-base font-semibold text-app-text truncate">
+            {/* @ts-ignore */}
             <empresa>nombre_empresa</empresa>
           </span>
           <span className="text-xs text-app-text-secondary truncate leading-tight">synapseForge</span>

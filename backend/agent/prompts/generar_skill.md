@@ -72,6 +72,21 @@ Creá archivos separados cuando:
 
 Usá el tool `write` para crear los archivos. Ponelos en la carpeta de la skill.
 
+## CARPETA DE LA SKILL (ruta absoluta)
+
+TODOS los archivos de la skill van DENTRO de esta carpeta exacta (usá la ruta absoluta tal cual):
+
+```
+{carpeta}
+```
+
+- `SKILL.md` → `{carpeta}/SKILL.md`
+- `references/` → `{carpeta}/references/`
+- `resources/` → `{carpeta}/resources/`
+- `scripts/` → `{carpeta}/scripts/`
+
+Pasá siempre la ruta completa al tool `write` (por ejemplo `{carpeta}/SKILL.md`). No uses rutas relativas ni inventes directorios fuera de esa carpeta.
+
 ## DATOS PARA GENERAR LA SKILL
 
 Nombre: {nombre}

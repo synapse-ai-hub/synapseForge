@@ -234,9 +234,9 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     if tcs:
                         tc = tcs[0]
                         tool_calls_data = tc.get("args", {})
-                        print(">>> CREATE SKILL - Tool call interview:")
-                        print(f"  name: {tc.get('name')}")
-                        print(f"  args: {json.dumps(tool_calls_data, ensure_ascii=False)}")
+                        # print(">>> CREATE SKILL - Tool call interview:")
+                        # print(f"  name: {tc.get('name')}")
+                        # print(f"  args: {json.dumps(tool_calls_data, ensure_ascii=False)}")
                     break
 
                 elif event["type"] == "aborted":
@@ -245,7 +245,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
 
         except Exception as e:
             logger.exception("Error en streaming interview: %s", e)
-            print(f">>> CREATE SKILL - Error técnico (interview): {e}")
+            # print(f">>> CREATE SKILL - Error técnico (interview): {e}")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
@@ -259,7 +259,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                 # El LLM respondió en texto natural sin llamar a la tool: esa es la
                 # respuesta de la entrevista (el front ya la mostró). No se envía nada
                 # extra al front; finaliza al terminar el stream.
-                print(">>> CREATE SKILL - Sin tool call: el texto plano es la respuesta de la entrevista.")
+                # print(">>> CREATE SKILL - Sin tool call: el texto plano es la respuesta de la entrevista.")
                 return
             else:
                 yield _sse({"type": "error", "content": "El LLM no devolvió una respuesta válida."})
@@ -270,8 +270,8 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         # ── QUESTION ──
         if action == "question":
             question_text = tool_calls_data.get("question", "")
-            print(">>> CREATE SKILL - Acción: question")
-            print(f"  Pregunta: {question_text}")
+            # print(">>> CREATE SKILL - Acción: question")
+            # print(f"  Pregunta: {question_text}")
             yield _sse({"type": "skill_action", "content": {"action": "question", "question": question_text}})
             return
 
@@ -281,12 +281,12 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
-        print(">>> CREATE SKILL - Acción: create")
+        # print(">>> CREATE SKILL - Acción: create")
         task = tool_calls_data.get("task", descripcion)
         name = nombre or tool_calls_data.get("name")
         refs = tool_calls_data.get("refs")
-        print(f"  Task: {task}")
-        print(f"  Name: {name}")
+        # print(f"  Task: {task}")
+        # print(f"  Name: {name}")
 
         # ════════════════════════════════════════════════════════════════
         # FASE 2: EVALUAR si ya existe una skill que cubra la tarea
@@ -297,7 +297,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
 
         if decision and decision.get("exist") == "Sí":
             skill_name = decision.get("skill")
-            print(f">>> CREATE SKILL - Ya existe: {skill_name}")
+            # print(f">>> CREATE SKILL - Ya existe: {skill_name}")
             yield _sse({"type": "skill_result", "content": {
                 "status": "success",
                 "message": f"Ya existe la skill '{skill_name}' que cubre esta tarea.",
@@ -308,7 +308,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         # ════════════════════════════════════════════════════════════════
         # FASE 3: CREAR — ejecutar agente con tools, stremeando events
         # ════════════════════════════════════════════════════════════════
-        print(">>> CREATE SKILL - No existe. Lanzando agente creador...")
+        # print(">>> CREATE SKILL - No existe. Lanzando agente creador...")
         yield _sse({"type": "skill_action", "content": {"action": "creating"}})
 
         # Build the generate prompt
@@ -334,12 +334,12 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             tools = list(agent.tools.tools_registry(_AGENT_TOOLS_PERMS))
         except AttributeError as e:
             logger.exception("Error obteniendo tools: %s", e)
-            print(f">>> CREATE SKILL - Error técnico (tools): {e}")
+            # print(f">>> CREATE SKILL - Error técnico (tools): {e}")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
         tool_names = [t.get("function", {}).get("name", "?") for t in tools]
-        print(f">>> CREATE SKILL - Tools: {tool_names}")
+        # print(f">>> CREATE SKILL - Tools: {tool_names}")
 
         # ── 3b. Loop de tool calling EXACTO ChatInterface (loop.py) ──
         msgs: list[dict[str, Any]] = [
@@ -351,7 +351,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         iteration = 0
         while iteration < max_iter:
             iteration += 1
-            print(f">>> CREATE SKILL - Iteración {iteration}/{max_iter}")
+            # print(f">>> CREATE SKILL - Iteración {iteration}/{max_iter}")
 
             collected_content = ""
             tool_calls = None
@@ -383,11 +383,11 @@ async def post_create_skill_stream(req: CreateSkillRequest):
 
             except Exception as e:
                 logger.exception("Error en streaming create agent: %s", e)
-                print(f">>>> CREATE SKILL - Error técnico (create): {e}")
+                # print(f">>>> CREATE SKILL - Error técnico (create): {e}")
                 yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
                 return
 
-            print(f">>> CREATE SKILL - LLM: content_len={len(collected_content)}, tool_calls={len(tool_calls) if tool_calls else 0}")
+            # print(f">>> CREATE SKILL - LLM: content_len={len(collected_content)}, tool_calls={len(tool_calls) if tool_calls else 0}")
 
             # ── Procesar tool_calls ──
             if tool_calls:
@@ -404,7 +404,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     tc_name = tc.get("name", "")
                     tc_args = tc.get("args", {})
 
-                    print(f">>> CREATE SKILL - Tool call: {tc_name}")
+                    # print(f">>> CREATE SKILL - Tool call: {tc_name}")
                     yield _sse({"type": "tool_call", "content": {"name": tc_name, "args": tc_args}})
 
                     # Ejecutar tool
@@ -426,7 +426,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     if not isinstance(result_content, str):
                         result_content = json.dumps(result_content)
 
-                    print(f">>> CREATE SKILL - Tool result: {tc_name} -> {str(result_content)}")
+                    # print(f">>> CREATE SKILL - Tool result: {tc_name} -> {str(result_content)}")
                     yield _sse({"type": "tool_result", "content": {"name": tc_name, "result": result_content}})
 
                     msgs.append({
@@ -438,7 +438,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                 # Continuar loop → siguiente iteración stremea la respuesta con tools results
             else:
                 # Sin tool calls → terminó
-                print(">>> CREATE SKILL - Sin tool calls, finalizando.")
+                # print(">>> CREATE SKILL - Sin tool calls, finalizando.")
                 break
 
         # ════════════════════════════════════════════════════════════════
@@ -464,7 +464,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             _copiar_referencias(skill_dir, mensajes, refs)
 
         if skill_name_creado and skill_dir:
-            print(f">>> CREATE SKILL - Skill creada: {skill_name_creado}")
+            # print(f">>> CREATE SKILL - Skill creada: {skill_name_creado}")
             yield _sse({"type": "skill_result", "content": {
                 "status": "success",
                 "message": f"Skill '{skill_name_creado}' creada exitosamente.",
@@ -473,7 +473,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         else:
             # El agente terminó la creación (escribió los archivos). Mostrar el cartel de éxito.
             nombre_creado = skill_name_creado or name or "skill"
-            print(f">>> CREATE SKILL - Skill creada: {nombre_creado}")
+            # print(f">>> CREATE SKILL - Skill creada: {nombre_creado}")
             yield _sse({"type": "skill_result", "content": {
                 "status": "success",
                 "message": f"Skill '{nombre_creado}' creada exitosamente.",

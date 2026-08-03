@@ -148,7 +148,7 @@ function MarkdownRenderer({ content }: { content: string }) {
   if (!content) return null;
   try {
     const html = marked.parse(content, { async: false }) as string;
-    const sanitized = DOMPurify.sanitize(html, { ADD_ATTR: ["target"] });
+    const sanitized = DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] });
     return (
       <div
         className="markdown-content text-sm leading-relaxed text-app-text"
@@ -158,6 +158,11 @@ function MarkdownRenderer({ content }: { content: string }) {
   } catch {
     return <>{content}</>;
   }
+}
+
+/** Agrega target="_blank" rel="noopener noreferrer" a todos los links. */
+function openLinksInNewTab(html: string): string {
+  return html.replace(/<a\s+href=/g, '<a target="_blank" rel="noopener noreferrer" href=');
 }
 
 /* ------------------------------------------------------------------ */
@@ -487,7 +492,7 @@ function ToolCallBlock({
                     ? result.result
                     : JSON.stringify(result.result, null, 2);
                   const html = marked.parse(raw, { async: false }) as string;
-                  return <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html, { ADD_ATTR: ["target"] }) }} />;
+                  return <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] }) }} />;
                 })()}
               </div>
             </div>

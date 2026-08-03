@@ -95,10 +95,10 @@ async def iterar_skill(
         mensajes=mensajes_text,
     )
 
-    print("=" * 60)
-    print(">>> ITERAR SKILL - PROMPT:")
-    print(prompt)
-    print("=" * 60)
+    # print("=" * 60)
+    # print(">>> ITERAR SKILL - PROMPT:")
+    # print(prompt)
+    # print("=" * 60)
 
     result = await agent.llm_process(
         model=agent._resolved_model,
@@ -110,9 +110,9 @@ async def iterar_skill(
         json_format=True,
     )
 
-    print(">>> ITERAR SKILL - RESPUESTA CRUDA:")
-    print(" ", result)
-    print("=" * 60)
+    # print(">>> ITERAR SKILL - RESPUESTA CRUDA:")
+    # print(" ", result)
+    # print("=" * 60)
 
     if result.get("status") != "success" or not result.get("data"):
         return {"status": "error", "message": f"Error del LLM: {result.get('message', 'sin respuesta')}"}

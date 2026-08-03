@@ -27,6 +27,7 @@
 }
 .markdown-content a {
   color: #4f46e5;
+  text-decoration: underline;
 }
 .markdown-content blockquote {
   border-left: 4px solid #d4d4d4;

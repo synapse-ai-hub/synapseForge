@@ -109,8 +109,11 @@ body {
   padding: 0;
 }
 .markdown-content a {
-  color: var(--color-app-primary);
+  background-color: var(--color-app-primary);
+  color: var(--color-app-primary-text);
   text-decoration: underline;
+  padding: 0 2px;
+  border-radius: 3px;
 }
 .markdown-content blockquote {
   border-left: 4px solid var(--color-app-border);

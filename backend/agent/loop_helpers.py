@@ -30,11 +30,25 @@ from backend.agent.permissions import get_agent_prompt, list_agents
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.skill_loader import format_skills_section
 from backend.instances import agent
+from backend.agent.config_dir import get_agents_dir
 
 logger = logging.getLogger(__name__)
 
 _CONFIG_BASE_URL = os.getenv("CONFIG_BASE_URL", "http://127.0.0.1:8000/api/config")
 _SESSION_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(_current_dir)), "backend", "agent", "agent_db", "agent.db")
+
+
+def _mandatory_block() -> str:
+    """Load the MANDATORY rules block from ``prompts/mandatory.md``.
+
+    Returns:
+        The block content, or ``""`` if the prompt file is missing.
+    """
+    try:
+        return agent.prompt("mandatory")
+    except FileNotFoundError:
+        logger.warning("Prompt mandatory.md no encontrado; no se inyecta MANDATORY.")
+        return ""
 
 
 def load_context_text() -> str:
@@ -105,16 +119,29 @@ def build_system_prompt(agent_name: str | None = None) -> str:
     Returns:
         The system prompt string.
     """
+
+    # Date
+    fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+    
     if agent_name is not None:
         result = get_agent_prompt(agent_name)
         if result.get("status") == "success":
-            return result.get("data", "") or ""
+            base = result.get("data", "") or ""
+            mandatory = _mandatory_block()
+            if mandatory:
+                
+                system_prompt =  f"{base}\n\n---\n\n## MANDATORY:\n{mandatory}\n\n---\n\n## Fecha\n{fecha}"
+                # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{system_prompt}\n{"#"*80}\n\n\n')
+                return system_prompt
+
+            # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{base}\n{"#"*80}\n\n\n')
+            return base
         logger.warning(
             "Agent '%s' no encontrado; usando system prompt del router.", agent_name
         )
 
 # Router: base prompt from AGENT.md if it exists, else system_prompt.md
-    from backend.agent.config_dir import get_agents_dir
+    
 
     agent_md_path = get_agents_dir() / "AGENT.md"
     
@@ -134,8 +161,7 @@ def build_system_prompt(agent_name: str | None = None) -> str:
 
     
 
-    # Date
-    fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+    
 
     # Agents from the agents folder
     agents_result = list_agents()
@@ -154,17 +180,25 @@ def build_system_prompt(agent_name: str | None = None) -> str:
     parts = []
     if base_prompt:
         parts.append(base_prompt)
-    parts.append(f"## Fecha\n{fecha}")
+    
     if agents_str:
         parts.append(f"## Agentes\n{agents_str}")
 
-    # Append context files content (mini-RAG)
+    # Append context files content 
     context_text = load_context_text()
     if context_text:
         parts.append(f"## Contexto\n{context_text}")
 
-    final_prompt = "\n\n".join(parts)
-    
+    # Reglas obligatorias inyectadas al final del prompt de todos los agentes
+    mandatory = _mandatory_block()
+    if mandatory:
+        parts.append(f"## MANDATORY:\n{mandatory}")
+
+    parts.append(f"## Fecha\n{fecha}")
+
+    final_prompt = "\n\n---\n\n".join(parts)
+
+    # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{final_prompt}\n{"#"*80}\n\n\n')
     return final_prompt
 
 

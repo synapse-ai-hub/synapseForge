@@ -125,10 +125,10 @@ async def _evaluar_si_existe(
 
     prompt = template.format(tarea=tarea, skills=skills_text)
 
-    print("=" * 60)
-    print(">>> EVALUAR SKILLS - PROMPT AL LLM:")
-    print(prompt)
-    print("=" * 60)
+    # print("=" * 60)
+    # print(">>> EVALUAR SKILLS - PROMPT AL LLM:")
+    # print(prompt)
+    # print("=" * 60)
 
     result = await agent.llm_process(
         model=agent._resolved_model,
@@ -139,9 +139,9 @@ async def _evaluar_si_existe(
         cleaned_output=True,
     )
 
-    print(">>> EVALUAR SKILLS - RESPUESTA CRUDA DEL LLM:")
-    print("  result brute:", result)
-    print("=" * 60)
+    # print(">>> EVALUAR SKILLS - RESPUESTA CRUDA DEL LLM:")
+    # print("  result brute:", result)
+    # print("=" * 60)
 
     if result.get("status") != "success" or not result.get("data"):
         logger.warning("Error del LLM: %s", result.get("message"))
@@ -154,8 +154,8 @@ async def _evaluar_si_existe(
         return None
     try:
         parsed = json.loads(m.group(0))
-        print(">>> EVALUAR SKILLS - JSON PARSED:", parsed)
-        print("=" * 60)
+        # print(">>> EVALUAR SKILLS - JSON PARSED:", parsed)
+        # print("=" * 60)
         return parsed
     except Exception as e:
         logger.warning("Error parseando JSON: %s", e)

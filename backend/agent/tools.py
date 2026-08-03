@@ -27,6 +27,8 @@ from ddgs import DDGS
 import imaplib
 import smtplib
 import asyncio
+import httpx
+from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -798,11 +800,10 @@ class Tools:
         """
         try:
             url = url.replace("http://", "https://")
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "Mozilla/5.0"}
-            )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                content = resp.read().decode("utf-8", errors="replace")
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                resp.raise_for_status()
+                content = resp.text
 
             if format == "html":
                 return make_success_response(
@@ -949,10 +950,22 @@ class Tools:
                 message=f"Agent '{agent_name}' not found.",
                 usage=zero_usage(),
             )
-        system_prompt = prompt_result.get("data", "") or ""
+        base = prompt_result.get("data", "") or ""
 
         # 2. Create an integrated child session (parent_id = current session)
         from backend.instances import agent, session_manager
+
+        # System prompt del subagente: MANDATORY + Fecha (misma lógica que build_system_prompt)
+        try:
+            mandatory = agent.prompt("mandatory")
+        except FileNotFoundError:
+            mandatory = ""
+        fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+        if mandatory:
+            system_prompt = f"{base}\n\n---\n\n## MANDATORY:\n{mandatory}\n\n---\n\n## Fecha:\n{fecha}"
+        else:
+            system_prompt = base
+        # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{system_prompt}\n{"#"*80}\n\n\n')
 
         parent_id = getattr(self, "_current_session_id", None)
         depth = getattr(self, "_current_depth", 0)

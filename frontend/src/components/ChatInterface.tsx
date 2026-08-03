@@ -118,6 +118,7 @@ export function ChatInterface({
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userInteractionRef = useRef(false);
+  const wheelUpRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimeoutRef = useRef<number | null>(null);
 
@@ -150,18 +151,34 @@ export function ChatInterface({
     const nearBraintom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
     setShowScrollButton(!nearBraintom);
 
-    // Solo cambiar autoScroll si NO es scroll programático Y NO hay interacción de usuario
-    if (!isProgrammaticScrollRef.current && !userInteractionRef.current) {
+    // Scroll de usuario (rueda): manda aunque haya un scroll programático en curso.
+    if (userInteractionRef.current) {
+      // Subiendo con la rueda: el autoscroll queda apagado aunque sea mínimo.
+      // Bajando: se reactiva recién al llegar al umbral del fondo.
+      setAutoScrollEnabled(wheelUpRef.current ? false : nearBraintom);
+      return;
+    }
+    // Solo cambiar autoScroll si NO es scroll programático.
+    if (!isProgrammaticScrollRef.current) {
       setAutoScrollEnabled(nearBraintom);
     }
   }, []);
 
-  const handleMessagesWheel = useCallback(() => {
+  const handleMessagesWheel = useCallback((e: { deltaY: number }) => {
+    // Marcar interacción de usuario (sincrónico) para que el scroll handler mande.
     userInteractionRef.current = true;
-    setAutoScrollEnabled(false);
     setTimeout(() => {
       userInteractionRef.current = false;
-    }, 500);
+    }, 300);
+
+    // Subir con la rueda desactiva el autoscroll SIEMPRE (aunque sea mínimo).
+    if (e.deltaY < 0) {
+      wheelUpRef.current = true;
+      setAutoScrollEnabled(false);
+    } else {
+      // Bajando: el autoscroll se reactiva recién al llegar al fondo.
+      wheelUpRef.current = false;
+    }
   }, []);
 
   /* ---- cleanup on unmount ---- */
@@ -702,6 +719,7 @@ export function ChatInterface({
             <button
               type="button"
               onClick={() => {
+                wheelUpRef.current = false;
                 setAutoScrollEnabled(true);
                 scrollToBraintom("smooth");
               }}

@@ -56,9 +56,9 @@ async def run_skill_agent(
         return {"status": "error", "message": f"Error obteniendo tools: {e}"}
 
     tool_names = [t.get("function", {}).get("name", "?") for t in tools]
-    print("=" * 60)
-    print(">>> SKILL AGENT - Tools disponibles:", tool_names)
-    print("=" * 60)
+    # print("=" * 60)
+    # print(">>> SKILL AGENT - Tools disponibles:", tool_names)
+    # print("=" * 60)
     logger.info("Tools: %s", ", ".join(tool_names))
 
     # ── 2. Construir mensajes ─────────────────────────────────────────
@@ -69,7 +69,7 @@ async def run_skill_agent(
 
     # ── 3. Loop de tool calling ───────────────────────────────────────
     for iteration in range(_MAX_ITERATIONS):
-        print(f"\n--- SKILL AGENT - Iteración {iteration + 1}/{_MAX_ITERATIONS} ---")
+        # print(f"\n--- SKILL AGENT - Iteración {iteration + 1}/{_MAX_ITERATIONS} ---")
         logger.info("Iteración %d / %d", iteration + 1, _MAX_ITERATIONS)
 
         llama_result = await agent.llm_process(
@@ -89,22 +89,22 @@ async def run_skill_agent(
         content = llama_result.get("data", "")
         tool_calls = llama_result.get("tool_calls")
 
-        print(">>> SKILL AGENT - Respuesta del LLM:")
-        print("  content:", content[:500] if content else "(vacío)")
+        # print(">>> SKILL AGENT - Respuesta del LLM:")
+        # print("  content:", content[:500] if content else "(vacío)")
         if tool_calls:
             for tc in tool_calls:
                 print(f"  tool_call: {tc.get('name')}({json.dumps(tc.get('args', {}), ensure_ascii=False)[:200]})")
         else:
             print("  tool_calls: ninguna")
-        print("=" * 60)
+        # print("=" * 60)
 
         # ── 3a. Sin tool calls → fin del loop ─────────────────────────
         if not tool_calls:
-            print(">>> SKILL AGENT - Sin tool calls, finalizando.")
+            # print(">>> SKILL AGENT - Sin tool calls, finalizando.")
             logger.info("Sin tool calls, finalizando.")
-            print(">>> SKILL AGENT - Contenido completo devuelto:")
-            print(content)
-            print("=" * 60)
+            # print(">>> SKILL AGENT - Contenido completo devuelto:")
+            # print(content)
+            # print("=" * 60)
             return {
                 "status": "success",
                 "message": "Agente finalizado.",
@@ -125,8 +125,8 @@ async def run_skill_agent(
             tc_name = tc.get("name", "")
             tc_args = tc.get("args", {})
 
-            print(f">>> SKILL AGENT - Ejecutando tool: {tc_name}")
-            print(f"  args: {json.dumps(tc_args, ensure_ascii=False)[:300]}")
+            # print(f">>> SKILL AGENT - Ejecutando tool: {tc_name}")
+            # print(f"  args: {json.dumps(tc_args, ensure_ascii=False)[:300]}")
             logger.info("Ejecutando tool: %s (id=%s)", tc_name, tc_id)
 
             try:
@@ -150,9 +150,9 @@ async def run_skill_agent(
             if not isinstance(result_content, str):
                 result_content = json.dumps(result_content)
 
-            print(f">>> SKILL AGENT - Resultado de {tc_name} ({elapsed:.2f}s):")
-            print(f"  {str(result_content)[:300]}")
-            print("-" * 40)
+            # print(f">>> SKILL AGENT - Resultado de {tc_name} ({elapsed:.2f}s):")
+            # print(f"  {str(result_content)[:300]}")
+            # print("-" * 40)
 
             messages.append({
                 "role": "tool",
@@ -161,7 +161,7 @@ async def run_skill_agent(
             })
 
     # ── 4. Safety net: superó el máximo de iteraciones ────────────────
-    print(f">>> SKILL AGENT - Máximo de iteraciones alcanzado ({_MAX_ITERATIONS})")
+    # print(f">>> SKILL AGENT - Máximo de iteraciones alcanzado ({_MAX_ITERATIONS})")
     logger.warning("Máximo de iteraciones alcanzado (%d)", _MAX_ITERATIONS)
     return {
         "status": "success",

@@ -74,6 +74,7 @@ export function SkillInterface() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const userInteractionRef = useRef(false);
+  const wheelUpRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimeoutRef = useRef<number | null>(null);
 
@@ -105,17 +106,34 @@ export function SkillInterface() {
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
     setShowScrollButton(!nearBottom);
-    if (!isProgrammaticScrollRef.current && !userInteractionRef.current) {
+    // Scroll de usuario (rueda): manda aunque haya un scroll programático en curso.
+    if (userInteractionRef.current) {
+      // Subiendo con la rueda: el autoscroll queda apagado aunque sea mínimo.
+      // Bajando: se reactiva recién al llegar al umbral del fondo.
+      setAutoScrollEnabled(wheelUpRef.current ? false : nearBottom);
+      return;
+    }
+    // Solo cambiar autoScroll si NO es scroll programático.
+    if (!isProgrammaticScrollRef.current) {
       setAutoScrollEnabled(nearBottom);
     }
   }, []);
 
-  const handleMessagesWheel = useCallback(() => {
+  const handleMessagesWheel = useCallback((e: { deltaY: number }) => {
+    // Marcar interacción de usuario (sincrónico) para que el scroll handler mande.
     userInteractionRef.current = true;
-    setAutoScrollEnabled(false);
     setTimeout(() => {
       userInteractionRef.current = false;
-    }, 500);
+    }, 300);
+
+    // Subir con la rueda desactiva el autoscroll SIEMPRE (aunque sea mínimo).
+    if (e.deltaY < 0) {
+      wheelUpRef.current = true;
+      setAutoScrollEnabled(false);
+    } else {
+      // Bajando: el autoscroll se reactiva recién al llegar al fondo.
+      wheelUpRef.current = false;
+    }
   }, []);
 
   /* ---- heartbeat (el watchdog del backend mata el server sin heartbeat) ---- */
@@ -639,6 +657,7 @@ export function SkillInterface() {
                 <button
                   type="button"
                   onClick={() => {
+                    wheelUpRef.current = false;
                     setAutoScrollEnabled(true);
                     scrollToBottom("smooth");
                   }}

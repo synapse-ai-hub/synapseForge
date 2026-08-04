@@ -35,6 +35,7 @@ import logging
 import os
 import sys
 import time as _time
+import yaml
 from typing import Any, AsyncGenerator
 
 import urllib.request
@@ -120,6 +121,31 @@ _ROUTER_TOOLS = [
     }
 ]
 """Tool schema list for the router agent (``task`` + ``help``)."""
+
+
+def _load_router_permissions() -> dict | None:
+    """Load the router's permissions from ``~/.config/synapseForge/config.yaml``.
+
+    Reads the ``permissions`` section (same structure as agent frontmatter:
+    ``tool``, ``skill`` and ``task`` sub-blocks).
+
+    Returns:
+        The ``permissions`` dict, or ``None`` if the file does not exist,
+        has no ``permissions`` section, or cannot be read.
+    """
+    from backend.agent.config_dir import get_config_dir
+
+    cfg_path = get_config_dir() / "config.yaml"
+    if not cfg_path.is_file():
+        return None
+    try:
+        with open(cfg_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        log_error(str(exc), source="loop.py:_load_router_permissions")
+        return None
+    perms = data.get("permissions")
+    return perms if isinstance(perms, dict) else None
 
 
 class AgentLoop:
@@ -317,9 +343,23 @@ class AgentLoop:
             
             # --- 3. Resolve tools ---
             if agent_name is None:
-                # Router puro: no consulta registry, no pasa por permisos.
-                # Solo task, a la verga todo lo demas.
-                tools = _ROUTER_TOOLS
+                # Router: si existe config.yaml con permissions, se aplican.
+                # Si no existe, solo task (como hoy). Task siempre presente.
+                router_perms = _load_router_permissions()
+                if router_perms is None:
+                    tools = _ROUTER_TOOLS
+                else:
+                    tool_permissions = dict(router_perms.get("tool", {}))
+                    task_perms = router_perms.get("task")
+                    if isinstance(task_perms, dict) and task_perms:
+                        tool_permissions["task"] = task_perms
+                    else:
+                        tool_permissions["task"] = "allow"
+                    try:
+                        tools = list(agent.tools.tools_registry(tool_permissions))
+                    except AttributeError as e:
+                        log_error(str(e), source="loop.py:run(tools)")
+                        tools = _ROUTER_TOOLS
             else:
                 try:
                     tools = list(agent.tools.tools_registry(tool_permissions))

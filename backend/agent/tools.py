@@ -51,6 +51,7 @@ from backend.agent.permissions import (
 from backend.agent.utils.mcp_helper import get_mcp_tools, is_mcp_tool, execute_mcp_tool
 from backend.agent.utils.skill_loader import format_skills_section, find_skill_folder, parse_skill_md
 from backend.agent.utils.email_parser import parse_email
+from backend.agent.config_dir import get_agents_dir
 
 from dotenv import load_dotenv
 
@@ -955,14 +956,31 @@ class Tools:
         # 2. Create an integrated child session (parent_id = current session)
         from backend.instances import agent, session_manager
 
-        # System prompt del subagente: MANDATORY + Fecha (misma lógica que build_system_prompt)
+        # System prompt del subagente: Behavior (AGENT.md) + MANDATORY + Fecha
         try:
             mandatory = agent.prompt("mandatory")
         except FileNotFoundError:
             mandatory = ""
+
+        # AGENT.md (comportamiento general) se inyecta antes de MANDATORY
+        behavior_text = ""
+        agent_md_path = get_agents_dir() / "AGENT.md"
+        if agent_md_path.is_file():
+            try:
+                with open(agent_md_path, encoding="utf-8") as f:
+                    behavior_text = f.read()
+            except (OSError, UnicodeDecodeError) as exc:
+                log_error(str(exc), source="tools.py:task(behavior)")
+
         fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
-        if mandatory:
-            system_prompt = f"{base}\n\n---\n\n## MANDATORY:\n{mandatory}\n\n---\n\n## Fecha:\n{fecha}"
+        if behavior_text or mandatory:
+            parts = [base] if base else []
+            if behavior_text:
+                parts.append(f"## Behavior\n{behavior_text}")
+            if mandatory:
+                parts.append(f"## MANDATORY:\n{mandatory}")
+            parts.append(f"## Fecha:\n{fecha}")
+            system_prompt = "\n\n---\n\n".join(parts)
         else:
             system_prompt = base
         # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{system_prompt}\n{"#"*80}\n\n\n')

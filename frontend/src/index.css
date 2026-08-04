@@ -64,6 +64,9 @@ body {
   margin-bottom: 0.75rem;
   padding-left: 1.5rem;
 }
+.markdown-content ol {
+  list-style: decimal;
+}
 .markdown-content li {
   margin-bottom: 0.25rem;
 }

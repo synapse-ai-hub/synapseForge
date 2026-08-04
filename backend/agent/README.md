@@ -98,6 +98,7 @@ Resuelve en tiempo de ejecución:
 - Skills habilitadas (`get_skill_permissions`).
 - Contenido del system prompt (`get_agent_prompt`).
 - Filtrado de herramientas/skills según el agente activo.
+- Permisos del agente principal (router) desde `config.yaml` (ver `loop.py`).
 
 ### 7. `contract.py` — Contratos de respuesta
 
@@ -118,8 +119,11 @@ Contiene módulos de soporte genéricos para el funcionamiento del agente:
 
 ### 9. `prompts/` — Prompts del sistema
 
-Almacena el prompt base del agente en formato markdown:
-- `system_prompt.md` — Prompt del sistema que define el comportamiento, personalidad y reglas del agente.
+Almacena los prompts del agente en formato markdown:
+- `system_prompt.md` — Prompt base del router.
+- `mandatory.md` — Reglas `## MANDATORY:` inyectadas al final del system prompt de todos los agentes.
+- `help.md` — Documentación interna para la tool `help`.
+- `title.md`, `generar_skill.md`, `evaluar_skills.md` — Prompts auxiliares.
 
 ### 10. `agent_db/` — Base de datos SQLite
 
@@ -143,7 +147,7 @@ El agente utiliza **dos fuentes de configuración** separadas:
 
 En Windows: `%USERPROFILE%\.config\synapseForge\mcp.json`
 
-Este archivo almacena **exclusivamente** la configuración de servidores MCP (Model Context Protocol) como un **array** directo. Se gestiona mediante `backend/agent/config_dir.py` (funciones `load_mcp_servers()` / `save_mcp_servers()`).
+Este archivo almacena **exclusivamente** la configuración de servidores MCP (Model Context Protocol) como un **array** directo. Se gestiona mediante `backend/agent/config_dir.py` (funciones `load_mcp_servers()` / `save_mcp_servers()`). La conexión se realiza con el SDK oficial `mcp` (`mcp_helper.py`), con timeout por servidor y health check: si un servidor falla, se aísla y el resto del sistema sigue funcionando.
 
 #### Estructura de `mcp.json`
 
@@ -219,6 +223,30 @@ Este archivo almacena **exclusivamente** la configuración de servidores MCP (Mo
 ```
 
 > **Nota**: `model`, `provider`, `temperature`, `top_p`, `context_turns`, `ui_prefs` **NO** están en `mcp.json`. Se gestionan vía endpoints del frontend y se persisten en SQLite (`config_kv`).
+
+---
+
+### 1b. `AGENT.md` — Comportamiento general
+
+`AGENT.md` (si existe en `~/.config/synapseForge/agents/`) se inyecta como sección `## Behavior` en el system prompt de **todos** los agentes (router y sub-agentes), **antes** de `## MANDATORY:`. No reemplaza el system prompt: `system_prompt.md` es siempre la base del router, y cada sub-agente usa su propio `.md`. Sirve para comportamiento general del proyecto (compatibilidad con opencode/claude code).
+
+### 1c. `config.yaml` — Permisos del router
+
+El agente principal (router) no tiene tools ni skills directas por defecto — solo `task`. Si existe `~/.config/synapseForge/config.yaml`, sus permisos se toman de ahí (misma lógica que el frontmatter de los agentes):
+
+```yaml
+permissions:
+  tool:
+    read: allow
+  skill:
+    mi_skill: allow
+  task:
+    explorador: allow
+```
+
+- Si el archivo **no existe** → el router queda solo con `task`.
+- Si existe → usa **solo** los permisos explícitos del yaml.
+- `task` está **siempre** disponible: si el yaml no lo lista, se permite para todos los sub-agentes; si lo lista, solo para los indicados.
 
 ---
 
@@ -356,7 +384,7 @@ async def execute(expresion: str) -> dict:
 
 ### 3. Tools MCP
 
-Los servidores MCP configurados en `mcp.json` exponen sus herramientas automáticamente. `tools.py` las descubre vía `mcp_helper.py` y las registra como tools nativas con prefijo `mcp_<server>_<tool>`. El agente las invoca igual que cualquier otra tool.
+Los servidores MCP configurados en `mcp.json` exponen sus herramientas automáticamente. `tools.py` las descubre vía `mcp_helper.py` (usando el SDK oficial `mcp`) y las registra como tools nativas con prefijo `mcp_<server>_<tool>`. El agente las invoca igual que cualquier otra tool. Cada servidor tiene un timeout propio: si falla, se aísla y el resto del sistema sigue funcionando.
 
 ### Carga y registro
 
@@ -443,7 +471,8 @@ backend/agent/
 │   ├─ help.md              # Documentación interna para tool help
 │   ├─ title.md             # Prompt para generar títulos de sesión
 │   ├─ generar_skill.md     # Prompt para crear skills con LLM
-│   └─ evaluar_skills.md    # Prompt para evaluar skills existentes
+│   ├─ evaluar_skills.md    # Prompt para evaluar skills existentes
+│   └─ mandatory.md         # Reglas ## MANDATORY: inyectadas a todos los agentes
 ├─ utils/                   # Utilidades auxiliares
 │   ├─ clean_memory.py      # Liberación de modelos
 │   ├─ model_resolver.py    # Resolución del modelo activo

@@ -33,6 +33,29 @@ Cuando el agente principal delega una tarea a un sub-agente mediante `task`, el 
 
 Esto significa que un sub-agente solo puede usar lo que su archivo de definición le permite. No tiene acceso a tools no declaradas.
 
+### AGENT.md — Comportamiento general
+
+El archivo `AGENT.md` (si existe en `~/.config/synapseForge/agents/`) se inyecta como sección `## Behavior` en el system prompt de **todos** los agentes (el principal y los sub-agentes), **antes** de la sección `## MANDATORY:`. No reemplaza el prompt de nadie: sirve para definir el comportamiento general del proyecto (compatibilidad con opencode/claude code).
+
+
+### Permisos del agente principal (`config.yaml`)
+
+El agente principal no tiene tools ni skills directas por defecto — solo puede delegar mediante `task`. Si existe `~/.config/synapseForge/config.yaml`, sus permisos se toman de ahí:
+
+```yaml
+permissions:
+  tool:
+    read: allow
+  skill:
+    mi_skill: allow
+  task:
+    explorador: allow
+```
+
+- Si el archivo **no existe** → el agente principal queda solo con `task` (delegación siempre disponible).
+- Si existe → usa **solo** los permisos explícitos del yaml.
+- `task` está **siempre** disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.
+
 ---
 
 ## Tools externas
@@ -101,6 +124,27 @@ Se pueden subir archivos desde el panel de Configuración en la sección **Instr
 Formatos soportados: PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY.
 
 Son útiles para proveer información de referencia permanente: manuales de empresa, reglas de negocio, documentación técnica, etc.
+
+---
+
+## MCP (Model Context Protocol)
+
+Los servidores MCP se configuran en `~/.config/synapseForge/mcp.json` como un array JSON:
+
+```json
+[
+  {
+    "label": "nombre-servidor",
+    "transport": "stdio",
+    "command": ["node", "/ruta/al/servidor/index.js"]
+  }
+]
+```
+
+- `stdio` para servidores locales, `http` (con `server_url`) para remotos.
+- Sus tools se descubren automáticamente al iniciar y se exponen como tools del agente.
+- Cada servidor tiene un timeout propio: si falla o no responde, se aísla (se marca en rojo en la interfaz) y el resto del sistema sigue funcionando.
+- El estado de cada servidor se ve en la pestaña **MCP** de la configuración: `connected` (verde) o `failed` (rojo).
 
 ---
 

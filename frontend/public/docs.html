@@ -218,14 +218,15 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>¿Qué hay adentro?</h3>
           <table>
             <thead>
-              <tr><th>Carpeta</th><th>Contenido</th></tr>
+              <tr><th>Carpeta / Archivo</th><th>Contenido</th></tr>
             </thead>
             <tbody>
               <tr><td><code>skills/</code></td><td>Subcarpetas, cada una con un <code>SKILL.md</code> que define una skill</td></tr>
               <tr><td><code>tools/</code></td><td>Archivos <code>.py</code> individuales, cada uno una tool externa</td></tr>
-              <tr><td><code>agents/</code></td><td>Archivos <code>.md</code> con la definición de agentes y sus permisos</td></tr>
+              <tr><td><code>agents/</code></td><td>Archivos <code>.md</code> con la definición de agentes y sus permisos, más <code>AGENT.md</code> opcional para el comportamiento general</td></tr>
               <tr><td><code>knowledge/</code></td><td>Colecciones RAG (ChromaDB) creadas desde la interfaz de creación</td></tr>
-              <tr><td><code>config.json</code></td><td>Configuración JSON de los servidores MCP disponibles</td></tr>
+              <tr><td><code>mcp.json</code></td><td>Configuración de los servidores MCP disponibles (array JSON)</td></tr>
+              <tr><td><code>config.yaml</code></td><td>(Opcional) Permisos del agente principal: tools, skills y sub-agentes a los que puede delegar</td></tr>
             </tbody>
           </table>
           <p>Todo esto se lee en tiempo de ejecución, así que podés agregar, modificar o quitar archivos sin reinstalar nada. Solo necesitás reiniciar el backend para que los cambios tomen efecto.</p>
@@ -350,6 +351,28 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </ul>
         </section>
 
+        <section id="mcp">
+          <h2>MCP (Model Context Protocol)</h2>
+          <h3>¿Qué es MCP?</h3>
+          <p>MCP (<em>Model Context Protocol</em>) es un protocolo estándar que permite conectar el agente con servidores externos que exponen herramientas y datos. Cada servidor MCP aporta tools que el agente puede invocar igual que cualquier otra herramienta.</p>
+          <h3>¿Cómo se configuran los servidores?</h3>
+          <p>Los servidores MCP se configuran en <code>~/.config/synapseForge/mcp.json</code> como un array JSON:</p>
+          <pre><code>[
+  {
+    "label": "nombre-servidor",
+    "transport": "stdio",
+    "command": ["node", "/ruta/al/servidor/index.js"]
+  }
+]</code></pre>
+          <p><code>stdio</code> es para servidores locales; <code>http</code> (con <code>server_url</code>) para servidores remotos.</p>
+          <h3>Estado y tolerancia a fallos</h3>
+          <ul>
+            <li>Las tools de cada servidor se descubren automáticamente al iniciar y se registran como tools del agente.</li>
+            <li>Cada servidor tiene su propio timeout: si falla o no responde, <strong>se aísla</strong> — se marca en rojo en la interfaz y el resto del sistema sigue funcionando normalmente.</li>
+            <li>El estado de cada servidor se muestra en la pestaña <strong>MCP</strong> del panel de configuración: <strong>Conectado</strong> (verde) o <strong>Error</strong> (rojo).</li>
+          </ul>
+        </section>
+
         <section id="subagentes">
           <h2>Sub-agentes</h2>
           <h3>¿Qué es un sub-agente?</h3>
@@ -403,9 +426,23 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li>El agente queda disponible para ser invocado por otros agentes (incluido el principal) usando el comando de delegación de tareas.</li>
             <li>Reiniciá el backend para que el nuevo agente se cargue en el sistema.</li>
           </ol>
-          <h3>AGENT.md — system prompt del router</h3>
-          <p>El archivo <code>AGENT.md</code> (si existe en <code>~/.config/synapseForge/agents/</code>) se usa como <strong>system prompt del agente principal (router)</strong>. Si no existe, se usa el system prompt por defecto incluido en el paquete. El router es el agente que recibe los mensajes del usuario y decide a qué sub-agente delegar.</p>
-          <p>El <code>AGENT.md</code> no es documentación — es el prompt que define el comportamiento del agente principal. Podés usarlo para personalizar el rol, las reglas y el estilo de respuesta del router.</p>
+          <h3>AGENT.md — comportamiento general</h3>
+          <p>El archivo <code>AGENT.md</code> (si existe en <code>~/.config/synapseForge/agents/</code>) se inyecta como sección <code>## Behavior</code> en el system prompt de <strong>todos</strong> los agentes (el principal y los sub-agentes), <strong>antes</strong> de la sección <code>## MANDATORY:</code>. No reemplaza el system prompt de nadie: el principal usa <code>system_prompt.md</code> y cada sub-agente usa su propio <code>.md</code>. Sirve para definir el comportamiento general del proyecto (compatibilidad con opencode/claude code).</p>
+          <p>Además, al final del system prompt de todos los agentes se inyecta la sección <code>## MANDATORY:</code> con las reglas obligatorias de fidelidad: ejecutar el objetivo del usuario sin agregar ni inventar nada, formular preguntas si hay dudas, e iterar con tools o sub-agentes hasta cumplirlo.</p>
+          <h3>Permisos del agente principal (<code>config.yaml</code>)</h3>
+          <p>El agente principal no tiene tools ni skills directas por defecto — solo puede delegar tareas mediante <code>task</code>. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se toman de ahí:</p>
+          <pre><code>permissions:
+  tool:
+    read: allow
+  skill:
+    mi_skill: allow
+  task:
+    explorador: allow</code></pre>
+          <ul>
+            <li>Si el archivo <strong>no existe</strong> → el agente principal queda solo con <code>task</code> (delegación siempre disponible).</li>
+            <li>Si existe → usa <strong>solo</strong> los permisos explícitos del yaml (misma lógica que el frontmatter de los agentes).</li>
+            <li><code>task</code> está <strong>siempre</strong> disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.</li>
+          </ul>
         </section>
 
         <section id="interfaz-usuario">

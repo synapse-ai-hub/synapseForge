@@ -164,11 +164,11 @@ en la misma iteración.
 
 ## Orden de implementación sugerido
 
-1. Tarea 2 (MANDATORY) — base de comportamiento para todos los agentes.
-2. Tarea 1 (AGENT.md inyectado).
-3. Tarea 5 (permisos desde config.yaml).
-4. Tarea 3 (init verifica modelos + default local = qwen).
-5. Tarea 4 (explicación de colores).
-6. Tarea 6 (actualizar documentación) — junto con cada cambio, no al final.
+1. Tarea 2 (MANDATORY) — base de comportamiento para todos los agentes. [x]
+2. Tarea 1 (AGENT.md inyectado). [x]
+3. Tarea 5 (permisos desde config.yaml). [x]
+4. Tarea 3 (init verifica modelos + default local = qwen). [ ]
+5. Tarea 4 (explicación de colores). [ ]
+6. Tarea 6 (actualizar documentación) — junto con cada cambio, no al final. [ ]
 
 > Esperar indicaciones del usuario antes de modificar cualquier cosa.

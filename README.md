@@ -47,12 +47,12 @@ El usuario instala el paquete, ejecuta `synapseforge init`, completa los datos e
 - **`synapseforge run`**: Levanta `uvicorn --reload` (backend) + `npm run dev` (frontend) + abre el navegador. Ctrl+C mata ambos.
 - **Pipeline de 10 pasos**: Input GUI → template → venv → pip install → npm install → config → logos → `.ico` → colores (extracción automática con colorthief si no se ingresan) → placeholders XML en todo el proyecto.
 - **Sistema de colores dual**: Build-time (placeholders XML en `config/replace.json`) + Runtime (`frontend/public/colors.json` cargado en `main.tsx`). 8 variables configurables, el resto fijas.
-- **Framework de agentes completo**: AgentLoop (while True → LLM → tools → continue), Tools Registry (nativas + externas dinámicas + MCP), SessionManager (SQLite WAL), Permissions (allow/deny/ask + wildcards), Skills (SKILL.md + references), MCP (stdio/HTTP + health check).
+- **Framework de agentes completo**: AgentLoop (while True → LLM → tools → continue), Tools Registry (nativas + externas dinámicas + MCP), SessionManager (SQLite WAL), Permissions (allow/deny/ask + wildcards + `config.yaml` para el router), Skills (SKILL.md + references), MCP (SDK oficial `mcp`, stdio/HTTP + timeout + health check).
 - **Archivos de contexto**: Subida de PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY → extracción de texto (pdfminer + OCR fallback) → inyección en system prompt del agente.
 - **Métricas de uso**: Endpoints para sesiones, tokens por modelo/proveedor, estadísticas agregadas. Dashboard en frontend (`MetricsModal` con tabs: Overview, Sessions, Tools, Errors).
 - **Extracción de texto robusta**: Módulo compartido `file_text_extractor.py` soporta texto plano, Markdown, CSV, JSON, XML, YAML, Python, DOCX, DOC, XLSX, XLS, PDF. OCR **best-effort**: si falla por deps faltantes, devuelve lo que extrajo pdfminer.
 - **Modo desktop app**: Heartbeat cada 10s desde frontend → watchdog en backend (3 min sin heartbeat = exit). Endpoint `/api/shutdown` para botón "Salir".
-- **Configuración de usuario** (`~/.config/synapseForge/`): tools personalizadas, skills, agentes con permisos, config MCP.
+- **Configuración de usuario** (`~/.config/synapseForge/`): tools personalizadas, skills, agentes con permisos, `AGENT.md` (comportamiento general → `## Behavior`), `config.yaml` (permisos del router), servidores MCP (`mcp.json`).
 - **Docker**: `Dockerfile` multi-stage (Node 20 build → Python 3.12 slim runtime) + `docker-compose.yml` con `VITE_MODE=prod`.
 
 ---
@@ -123,20 +123,21 @@ synapseForge/
 │     ├─ __init__.py
 │     ├─ agent.py                #   Agent class (Groq/Ollama, streaming SSE, tool calling)
 │     ├─ tools.py                #   Registry: nativas + externas (~/.config/synapseForge/tools/) + MCP
-│     ├─ loop.py                 #   AgentLoop: while True → LLM → tool_calls → execute → continue
-│     ├─ loop_helpers.py         #   build_system_prompt (inyecta context_files), fetch_context_window, execute_tool
-│     ├─ session.py              #   SessionManager (SQLite WAL, historial, config_kv, error_log)
-│     ├─ permissions.py          #   Permisos por agente (tool/skill/task allow/deny/ask + wildcards)
+│  ├─ loop.py                 #   AgentLoop: while True → LLM → tool_calls → execute → continue (permisos del router desde config.yaml)
+│  ├─ loop_helpers.py         #   build_system_prompt (base + agentes + contexto + AGENT.md → ## Behavior + ## MANDATORY: + fecha), fetch_context_window, execute_tool
+│  ├─ session.py              #   SessionManager (SQLite WAL, historial, config_kv, error_log)
+│  ├─ permissions.py          #   Permisos por agente (tool/skill/task allow/deny/ask + wildcards)
 │     ├─ config_dir.py           #   Descubrimiento ~/.config/synapseForge/
 │     ├─ contract.py             #   ContractResponse, UsageReport, StreamingResponse
 │     ├─ ddl_setup.py            #   Inicialización tablas SQLite
 │     ├─ agent_db/               #   SQLite runtime (se crea al iniciar)
-│     ├─ prompts/
-│     │  ├─ system_prompt.md     #   Prompt base del router (con checklist de fidelidad)
-│     │  ├─ help.md              #   Documentación interna para tool `help`
-│     │  ├─ title.md             #   Prompt para generar títulos de sesión
-│     │  ├─ generar_skill.md     #   Prompt para crear skills con LLM
-│     │  └─ evaluar_skills.md    #   Prompt para evaluar skills existentes
+│  ├─ prompts/
+│  │  ├─ system_prompt.md     #   Prompt base del router
+│  │  ├─ help.md              #   Documentación interna para tool `help`
+│  │  ├─ title.md             #   Prompt para generar títulos de sesión
+│  │  ├─ generar_skill.md     #   Prompt para crear skills con LLM
+│  │  ├─ evaluar_skills.md    #   Prompt para evaluar skills existentes
+│  │  └─ mandatory.md         #   Reglas `## MANDATORY:` inyectadas a todos los agentes
 │     ├─ utils/
 │  │  ├─ __init__.py
 │  │  ├─ clean_memory.py      #   Liberación modelos GPU/CPU
@@ -144,7 +145,7 @@ synapseForge/
 │  │  ├─ skill_loader.py      #   Carga y formateo SKILL.md para system prompt
 │  │  ├─ skill_creator.py     #   Creación de skills vía LLM (evaluación + generación)
 │  │  ├─ email_parser.py      #   Parseo emails (headers, body, adjuntos)
-│  │  ├─ mcp_helper.py        #   MCP stdio/HTTP, tool discovery, health check
+│  │  ├─ mcp_helper.py        #   MCP con SDK oficial (mcp), stdio/HTTP, timeout, tool discovery, health check
 │  │  ├─ subagent_logger.py   #   Logger custom nivel SUBAGENT
 │  │  └─ error_logger.py      #   Log de errores a SQLite (error_log table)
 │  └─ README.md
@@ -340,7 +341,7 @@ El template incluye un framework completo de agentes en `backend/agent/`:
 |--------|-------------|
 | `agent.py` | Agent class: conexión Groq/Ollama, streaming SSE, tool calling nativo |
 | `loop.py` | AgentLoop: while True → LLM → tool_calls → execute → continue (max 25 iteraciones, max 3 profundidad sub-agentes) |
-| `loop_helpers.py` | `build_system_prompt` (inyecta context_files + fecha + agentes), `fetch_context_window_turns`, `execute_tool` |
+| `loop_helpers.py` | `build_system_prompt` (base + agentes + contexto + AGENT.md → `## Behavior` + `## MANDATORY:` + fecha), `fetch_context_window_turns`, `execute_tool` |
 | `tools.py` | Tools Registry: nativas (read, write, websearch, webfetch, parser, email, reference, task, help) + externas dinámicas (`~/.config/synapseForge/tools/`) + MCP (`execute_mcp_tool`) |
 | `session.py` | SessionManager: SQLite WAL, historial, config_kv (modelo, proveedor, context_window), error_log |
 | `permissions.py` | Permisos por agente (tool/skill/task allow/deny/ask + wildcards), filtrado en runtime |
@@ -352,7 +353,7 @@ El template incluye un framework completo de agentes en `backend/agent/`:
 | `utils/model_resolver.py` | Resolución y validación modelo activo |
 | `utils/skill_loader.py` | Carga y formateo SKILL.md para system prompt |
 | `utils/email_parser.py` | Parseo emails (headers, body, adjuntos) |
-| `utils/mcp_helper.py` | MCP stdio/HTTP, tool discovery, health check |
+| `utils/mcp_helper.py` | MCP con SDK oficial (`mcp`), stdio/HTTP, timeout por servidor, tool discovery, health check |
 | `utils/subagent_logger.py` | Logger custom nivel SUBAGENT |
 | `utils/error_logger.py` | Log de errores a SQLite (session_id, turn_number, exception, source) |
 
@@ -374,9 +375,11 @@ El template incluye un framework completo de agentes en `backend/agent/`:
 ~/.config/synapseForge/
 ├── skills/                 # Skills instaladas (carpeta por skill con SKILL.md + references/)
 ├── tools/                  # Tools instaladas (.py con TOOL_NAME, execute())
-├── agents/                 # Agentes (.md con frontmatter YAML + permisos + prompt body)
+├── agents/                 # Agentes (.md con frontmatter YAML + permisos + prompt body) + AGENT.md (comportamiento general)
 ├── knowledge/              # Colecciones RAG (ChromaDB) — creadas desde la UI de creación
-└── config.json             # Config MCP: servers, timeout, transport
+├── config.json             # Config principal (MCP, UI prefs, etc.)
+├── mcp.json                # Servidores MCP (array JSON: label, transport, command, env)
+└── config.yaml             # Permisos del router (tool/skill/task) — opcional
 ```
 
 **Formato agente (`.md` en `agents/`):**
@@ -398,6 +401,32 @@ parameters:
 ---
 # System prompt del agente (cuerpo del markdown)
 ```
+
+### AGENT.md — Comportamiento general
+
+`AGENT.md` (si existe en `~/.config/synapseForge/agents/`) se inyecta como sección `## Behavior` en el system prompt de **todos** los agentes (router y sub-agentes), **antes** de `## MANDATORY:`. No reemplaza el system prompt: `system_prompt.md` es siempre la base del router, y cada sub-agente usa su propio `.md`. Sirve para definir el comportamiento general del proyecto (compatibilidad con opencode/claude code).
+
+### Reglas `## MANDATORY:`
+
+Al final del system prompt de **todos** los agentes se inyecta la sección `## MANDATORY:` (desde `backend/agent/prompts/mandatory.md`) con las reglas obligatorias de fidelidad: extraer el objetivo fiel del usuario, no inventar ni agregar nada, formular preguntas si hay dudas, e iterar con tools/sub-agentes hasta cumplir el objetivo.
+
+### Permisos del router (`config.yaml`)
+
+El agente principal (router) no tiene tools ni skills directas por defecto — solo `task` (delegación). Si existe `~/.config/synapseForge/config.yaml`, sus permisos se toman de ahí:
+
+```yaml
+permissions:
+  tool:
+    read: allow
+  skill:
+    mi_skill: allow
+  task:
+    explorador: allow
+```
+
+- Si el archivo **no existe** → el router queda solo con `task` (delegación siempre disponible).
+- Si existe → el router usa **solo** los permisos explícitos del yaml (misma lógica que el frontmatter de los agentes).
+- `task` está **siempre** disponible: si el yaml no lo lista, se permite para todos los sub-agentes; si lo lista, solo para los sub-agentes indicados.
 
 ### Manejo de contexto
 

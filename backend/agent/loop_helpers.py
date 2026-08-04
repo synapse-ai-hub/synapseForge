@@ -105,9 +105,9 @@ def fetch_context_window_turns() -> int:
 def build_system_prompt(agent_name: str | None = None) -> str:
     """Build the system prompt for an agent.
 
-    - If *agent_name* is ``None`` (router): look for ``AGENT.md`` in the
-      agents config directory. If it exists, use it as the base prompt.
-      Otherwise fall back to ``system_prompt.md`` via ``agent.prompt``.
+    - If *agent_name* is ``None`` (router): ``system_prompt.md`` is always the
+      base prompt. If ``AGENT.md`` exists in the agents config directory, it is
+      injected as a ``## Behavior`` section before ``## MANDATORY:``.
       In both cases, append the current date and the list of available
       agents (from the agents folder). No placeholders, no ``.format()``.
     - If *agent_name* is provided (sub-agent): resolve the system prompt
@@ -128,9 +128,26 @@ def build_system_prompt(agent_name: str | None = None) -> str:
         if result.get("status") == "success":
             base = result.get("data", "") or ""
             mandatory = _mandatory_block()
-            if mandatory:
-                
-                system_prompt =  f"{base}\n\n---\n\n## MANDATORY:\n{mandatory}\n\n---\n\n## Fecha\n{fecha}"
+
+            # AGENT.md (comportamiento general) se inyecta antes de MANDATORY
+            behavior_text = ""
+            agent_md_path = get_agents_dir() / "AGENT.md"
+            if agent_md_path.is_file():
+                try:
+                    with open(agent_md_path, encoding="utf-8") as f:
+                        behavior_text = f.read()
+                except (OSError, UnicodeDecodeError) as exc:
+                    logger.warning("Error al leer AGENT.md: %s; no se inyecta Behavior.", exc)
+                    log_error(str(exc), source="loop_helpers.py:build_system_prompt")
+
+            if behavior_text or mandatory:
+                parts = [base] if base else []
+                if behavior_text:
+                    parts.append(f"## Behavior\n{behavior_text}")
+                if mandatory:
+                    parts.append(f"## MANDATORY:\n{mandatory}")
+                parts.append(f"## Fecha\n{fecha}")
+                system_prompt = "\n\n---\n\n".join(parts)
                 # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{system_prompt}\n{"#"*80}\n\n\n')
                 return system_prompt
 
@@ -140,24 +157,8 @@ def build_system_prompt(agent_name: str | None = None) -> str:
             "Agent '%s' no encontrado; usando system prompt del router.", agent_name
         )
 
-# Router: base prompt from AGENT.md if it exists, else system_prompt.md
-    
-
-    agent_md_path = get_agents_dir() / "AGENT.md"
-    
-    if agent_md_path.is_file():
-        try:
-            base_prompt = agent_md_path.read_text(encoding="utf-8")
-            
-            logger.info("Usando AGENT.md como system prompt del router.")
-        except (OSError, UnicodeDecodeError) as exc:
-            
-            logger.warning("Error al leer AGENT.md: %s; usando system_prompt.md.", exc)
-            log_error(str(exc), source="loop_helpers.py:build_system_prompt")
-            base_prompt = agent.prompt("system_prompt")
-    else:
-        
-        base_prompt = agent.prompt("system_prompt")
+# Router: system_prompt.md es SIEMPRE la base; AGENT.md se inyecta como ## Behavior.
+    base_prompt = agent.prompt("system_prompt")
 
     
 
@@ -188,6 +189,17 @@ def build_system_prompt(agent_name: str | None = None) -> str:
     context_text = load_context_text()
     if context_text:
         parts.append(f"## Contexto\n{context_text}")
+
+    # AGENT.md (comportamiento general) se inyecta antes de MANDATORY
+    agent_md_path = get_agents_dir() / "AGENT.md"
+    if agent_md_path.is_file():
+        try:
+            with open(agent_md_path, encoding="utf-8") as f:
+                behavior_text = f.read()
+            parts.append(f"## Behavior\n{behavior_text}")
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Error al leer AGENT.md: %s; no se inyecta Behavior.", exc)
+            log_error(str(exc), source="loop_helpers.py:build_system_prompt")
 
     # Reglas obligatorias inyectadas al final del prompt de todos los agentes
     mandatory = _mandatory_block()

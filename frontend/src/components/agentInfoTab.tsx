@@ -6,6 +6,22 @@ type AgentTab = "tools" | "skills" | "agents" | "mcp" | "rag";
 
 export function AgentInfoTab() {
   const [tab, setTab] = useState<AgentTab>("tools");
+  const [mcpServers, setMcpServers] = useState<McpServerStatus[]>([]);
+  const [mcpLoading, setMcpLoading] = useState(true);
+
+  const loadMcp = useCallback(async () => {
+    try {
+      setMcpLoading(true);
+      const data = await configService.getMcp();
+      setMcpServers(data);
+    } catch (err) {
+      console.error("Error cargando MCP:", err);
+    } finally {
+      setMcpLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadMcp(); }, [loadMcp]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -39,7 +55,7 @@ export function AgentInfoTab() {
         {tab === "tools" && <ToolsPanel />}
         {tab === "skills" && <SkillsPanel />}
         {tab === "agents" && <AgentsPanel />}
-        {tab === "mcp" && <McpPanel />}
+        {tab === "mcp" && <McpPanel servers={mcpServers} loading={mcpLoading} onRefresh={loadMcp} />}
         {tab === "rag" && <RagPanel />}
       </div>
     </div>
@@ -264,24 +280,8 @@ function AgentsPanel() {
 
 // ─── MCP ──────────────────────────────────────────────────────────
 
-function McpPanel() {
-  const [servers, setServers] = useState<McpServerStatus[]>([]);
-  const [loading, setLoading] = useState(true);
+function McpPanel({ servers, loading, onRefresh }: { servers: McpServerStatus[]; loading: boolean; onRefresh: () => Promise<void> }) {
   const [msg, setMsg] = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await configService.getMcp();
-      setServers(data);
-    } catch (err) {
-      console.error("Error cargando MCP:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
 
   if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
 
@@ -316,7 +316,7 @@ function McpPanel() {
               label={s.label}
               onDelete={async () => {
                 await configService.deleteMcp(s.label);
-                setServers((prev) => prev.filter((x) => x.label !== s.label));
+                await onRefresh();
                 setMsg(`Servidor MCP «${s.label}» eliminado.`);
                 setTimeout(() => setMsg(""), 3000);
               }}

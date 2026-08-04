@@ -38,3 +38,6 @@ sentence-transformers>=3.0.0
 # --- Utilities ---
 python-dotenv>=1.2.0
 pyyaml>=6.0
+
+# --- MCP (Model Context Protocol) ---
+mcp>=1.0.0

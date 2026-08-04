@@ -195,7 +195,8 @@ function ToolCallBlock({
   const isTask = toolCall.tool === "task";
   const hasResult = !!result;
   const isError = hasResult && result.result && (
-    (typeof result.result === "string" && result.result.toLowerCase().includes("error")) ||
+    (typeof result.result === "string" && isTask && /state="error"/.test(result.result)) ||
+    (typeof result.result === "string" && !isTask && result.result.toLowerCase().includes("error")) ||
     (typeof result.result === "object" && result.result !== null && "error" in result.result)
   );
   

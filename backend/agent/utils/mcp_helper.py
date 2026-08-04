@@ -2,7 +2,7 @@
 
 Loads MCP server configurations from ``mcp.json`` (direct array)
 and provides functions to discover tools and execute tool calls over
-the MCP protocol (JSON-RPC over stdio).
+the MCP protocol using the official ``mcp`` SDK (same approach as opencode).
 
 Usage::
 
@@ -18,12 +18,14 @@ Usage::
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import os
-import subprocess
 import sys
 from typing import Any
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
@@ -65,158 +67,89 @@ def load_mcp_config() -> list[McpServerConfig]:
 
 
 # ---------------------------------------------------------------------------
-# JSON-RPC communication with stdio-based MCP servers
+# stdio transport helpers (official MCP SDK)
 # ---------------------------------------------------------------------------
 
-class McpConnection:
-    """Manages a stdio connection to an MCP server process.
 
-    Launches the subprocess once and keeps it alive for multiple
-    JSON-RPC requests (``tools/list``, ``tools/call``, etc.).
+def _build_stdio_params(config: McpServerConfig) -> StdioServerParameters:
+    """Build ``StdioServerParameters`` from an MCP server config.
 
     Args:
-        config: MCP server configuration dict (from ``mcp.json``).
+        config: MCP server config dict.
+
+    Returns:
+        ``StdioServerParameters`` ready for ``stdio_client``.
     """
+    cmd_raw = config.get("command", [])
+    if isinstance(cmd_raw, list):
+        cmd = cmd_raw
+    else:
+        cmd = [cmd_raw] + config.get("args", [])
+    env = {**os.environ, **config.get("environment", config.get("env", {}))}
+    return StdioServerParameters(command=cmd[0], args=cmd[1:], env=env)
 
-    def __init__(self, config: McpServerConfig) -> None:
-        self._config = config
-        self._process: subprocess.Popen | None = None
-        self._request_id = 0
 
-    # ------------------------------------------------------------------
-    # Context manager (auto start / stop)
-    # ------------------------------------------------------------------
+def _server_timeout(config: McpServerConfig, default: float = 10.0) -> float:
+    """Return the per-server connection timeout in seconds.
 
-    async def __aenter__(self) -> "McpConnection":
-        self.start()
-        return self
+    Args:
+        config: MCP server config dict.
+        default: Fallback timeout when the config has no ``timeout``.
 
-    async def __aexit__(self, *args: Any) -> None:
-        self.stop()
+    Returns:
+        Timeout in seconds.
+    """
+    try:
+        return float(config.get("timeout", default))
+    except (TypeError, ValueError):
+        return default
 
-    # ------------------------------------------------------------------
-    # Process lifecycle
-    # ------------------------------------------------------------------
 
-    def start(self) -> None:
-        """Launch the MCP server subprocess."""
-        if self._process is not None:
-            return
+async def _discover_server_tools(config: McpServerConfig) -> list[Any]:
+    """Discover tools from a single stdio MCP server using the official SDK.
 
-        cmd_raw = self._config.get("command", [])
-        if isinstance(cmd_raw, list):
-            cmd = cmd_raw
-        else:
-            cmd = [cmd_raw] + self._config.get("args", [])
+    Args:
+        config: MCP server config dict.
 
-        env = os.environ.copy()
-        env.update(self._config.get("environment", self._config.get("env", {})))
+    Returns:
+        List of ``mcp.types.Tool`` objects.
 
-        logger.info("Starting MCP server: %s", " ".join(cmd))
-        self._process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            text=True,
-            bufsize=1,  # line-buffered
-        )
+    Raises:
+        asyncio.TimeoutError: If the server does not respond in time.
+    """
+    timeout = _server_timeout(config)
+    params = _build_stdio_params(config)
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), timeout=timeout)
+            result = await asyncio.wait_for(session.list_tools(), timeout=timeout)
+            return result.tools
 
-    def stop(self) -> None:
-        """Terminate the MCP server subprocess."""
-        if self._process is None:
-            return
-        logger.info("Stopping MCP server: %s", self._config.get("label", "unknown"))
-        self._process.terminate()
-        try:
-            self._process.wait(timeout=5)
-        except subprocess.TimeoutExpired as e:
-            log_error(str(e), source="mcp_helper.py:McpConnection.stop")
-            self._process.kill()
-            self._process.wait()
-        self._process = None
 
-    # ------------------------------------------------------------------
-    # JSON-RPC calls
-    # ------------------------------------------------------------------
+async def _call_server_tool(
+    config: McpServerConfig, name: str, arguments: dict[str, Any]
+) -> Any:
+    """Call a tool on a single stdio MCP server using the official SDK.
 
-    def _next_id(self) -> int:
-        self._request_id += 1
-        return self._request_id
+    Args:
+        config: The MCP server config dict.
+        name: Tool name.
+        arguments: Tool arguments dict.
 
-    def _send_request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Send a JSON-RPC request and return the response.
+    Returns:
+        The ``CallToolResult`` from the server.
 
-        Args:
-            method: JSON-RPC method name (e.g. ``"tools/list"``).
-            params: Parameters dict.
-
-        Returns:
-            Response ``result`` dict, or raises on error.
-        """
-        if self._process is None or self._process.stdin is None or self._process.stdout is None:
-            raise RuntimeError("MCP server not started")
-
-        request = {
-            "jsonrpc": "2.0",
-            "id": self._next_id(),
-            "method": method,
-            "params": params or {},
-        }
-        request_line = json.dumps(request, ensure_ascii=False)
-        logger.debug("MCP request: %s", request_line[:200])
-
-        # Write request to stdin
-        self._process.stdin.write(request_line + "\n")
-        self._process.stdin.flush()
-
-        # Read response from stdout (one line per response)
-        response_line = self._process.stdout.readline()
-        if not response_line:
-            # Read stderr for clues
-            stderr_output = ""
-            if self._process.stderr:
-                stderr_output = self._process.stderr.read()
-            raise RuntimeError(
-                f"MCP server closed stdout. "
-                f"stderr: {stderr_output[:500] if stderr_output else '(empty)'}"
+    Raises:
+        asyncio.TimeoutError: If the server does not respond in time.
+    """
+    timeout = _server_timeout(config)
+    params = _build_stdio_params(config)
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await asyncio.wait_for(session.initialize(), timeout=timeout)
+            return await asyncio.wait_for(
+                session.call_tool(name, arguments), timeout=timeout
             )
-
-        logger.debug("MCP response: %s", response_line[:200])
-        response = json.loads(response_line)
-
-        if "error" in response:
-            err = response["error"]
-            raise RuntimeError(f"MCP error {err.get('code', '?')}: {err.get('message', '?')}")
-
-        return response.get("result", {})
-
-    # ------------------------------------------------------------------
-    # MCP protocol methods
-    # ------------------------------------------------------------------
-
-    def list_tools(self) -> list[dict[str, Any]]:
-        """Call ``tools/list`` and return the list of tool definitions.
-
-        Returns:
-            List of tool dicts, each with ``name``, ``description``,
-            and ``inputSchema``.
-        """
-        result = self._send_request("tools/list")
-        return result.get("tools", [])
-
-    def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Call ``tools/call`` and return the result.
-
-        Args:
-            name: Tool name.
-            arguments: Tool arguments dict.
-
-        Returns:
-            Tool result dict with ``content``, ``isError``, etc.
-        """
-        return self._send_request("tools/call", {"name": name, "arguments": arguments})
 
 
 # ---------------------------------------------------------------------------
@@ -231,12 +164,11 @@ _mcp_tool_to_server: dict[str, str] = {}
 # Public API
 # ---------------------------------------------------------------------------
 
-def _mcp_tool_to_function_schema(mcp_tool: dict[str, Any]) -> dict[str, Any]:
+
+def _mcp_tool_to_function_schema(mcp_tool: Any) -> dict[str, Any]:
     """Convert an MCP tool definition to a function-call schema.
 
-    MCP tools come as ``{"name", "description", "inputSchema"}``.
-    We convert to the OpenAI/Groq/Ollama function format:
-    ``{"type": "function", "function": {"name", "description", "parameters"}}``.
+    Accepts both ``mcp.types.Tool`` objects (from the SDK) and plain dicts.
 
     Args:
         mcp_tool: MCP tool definition.
@@ -244,12 +176,20 @@ def _mcp_tool_to_function_schema(mcp_tool: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Function schema ready for the tools registry.
     """
+    if isinstance(mcp_tool, dict):
+        name = mcp_tool.get("name", "")
+        description = mcp_tool.get("description", "")
+        input_schema = mcp_tool.get("inputSchema", {})
+    else:
+        name = getattr(mcp_tool, "name", "")
+        description = getattr(mcp_tool, "description", "") or ""
+        input_schema = getattr(mcp_tool, "inputSchema", {}) or {}
     return {
         "type": "function",
         "function": {
-            "name": mcp_tool["name"],
-            "description": mcp_tool.get("description", ""),
-            "parameters": mcp_tool.get("inputSchema", {"type": "object", "properties": {}}),
+            "name": name,
+            "description": description,
+            "parameters": input_schema or {"type": "object", "properties": {}},
         },
     }
 
@@ -261,13 +201,14 @@ def _server_has_http_url(server: McpServerConfig) -> bool:
         return False
     try:
         from urllib.parse import urlparse
+
         parsed = urlparse(url)
         return parsed.scheme in ("http", "https")
     except Exception:
         return False
 
 
-def _mcp_tool_to_groq_entry(mcp_tool: dict[str, Any], server: McpServerConfig) -> dict[str, Any]:
+def _mcp_tool_to_groq_entry(mcp_tool: Any, server: McpServerConfig) -> dict[str, Any]:
     """Convert an MCP tool definition to a Groq native MCP entry.
 
     Only works for HTTP/SSE-based MCP servers that Groq can reach.
@@ -309,9 +250,9 @@ def get_mcp_tools_groq() -> list[dict[str, Any]]:
 def get_mcp_tools_ollama() -> list[dict[str, Any]]:
     """Discover tools from all MCP servers and wrap as function schemas.
 
-    Connects to each stdio-based MCP server, calls ``tools/list``,
-    and wraps the results as ``"type": "function"`` schemas compatible
-    with Ollama (and Groq for local tools).
+    Uses the official MCP SDK with a per-server timeout. A server that
+    fails or times out is isolated — it is logged and skipped, and the
+    rest of the startup continues normally.
 
     Returns:
         List of function schemas ready for ``tools_registry``.
@@ -320,22 +261,23 @@ def get_mcp_tools_ollama() -> list[dict[str, Any]]:
     servers = load_mcp_config()
     function_tools: list[dict[str, Any]] = []
 
-    for server in servers:
-        label = server.get("label", "unknown")
-        try:
-            conn = McpConnection(server)
-            conn.start()
+    async def _discover_all() -> None:
+        for server in servers:
+            label = server.get("label", "unknown")
             try:
-                mcp_tools = conn.list_tools()
-                logger.info("MCP '%s' — discovered %d tool(s)", label, len(mcp_tools))
-                for tool in mcp_tools:
+                tools = await _discover_server_tools(server)
+                for tool in tools:
                     function_tools.append(_mcp_tool_to_function_schema(tool))
-                    _mcp_tool_to_server[tool["name"]] = label
-            finally:
-                conn.stop()
-        except Exception as exc:
-            log_error(str(exc), source="mcp_helper.py:get_mcp_tools")
-            logger.warning("MCP '%s' — failed to discover tools: %s", label, exc)
+                    _mcp_tool_to_server[tool.name] = label
+                logger.info("MCP '%s' — discovered %d tool(s)", label, len(tools))
+            except Exception as exc:
+                log_error(str(exc), source="mcp_helper.py:get_mcp_tools")
+                logger.warning("MCP '%s' — failed to discover tools: %s", label, exc)
+
+    try:
+        asyncio.run(_discover_all())
+    except Exception as exc:
+        log_error(str(exc), source="mcp_helper.py:get_mcp_tools")
 
     return function_tools
 
@@ -389,23 +331,22 @@ async def execute_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
     servers = load_mcp_config()
     config = next((s for s in servers if s.get("label") == label), None)
     if config is None:
-        raise ValueError(f"MCP server '{label}' (for tool '{tool_name}') not found in config")
+        raise ValueError(
+            f"MCP server '{label}' (for tool '{tool_name}') not found in config"
+        )
 
-    conn = McpConnection(config)
-    conn.start()
-    try:
-        result = conn.call_tool(tool_name, arguments)
-        return result.get("content", [])
-    finally:
-        conn.stop()
+    result = await _call_server_tool(config, tool_name, arguments)
+    return result.content
 
 
 # ---------------------------------------------------------------------------
 # Health check / Status API
 # ---------------------------------------------------------------------------
 
+
 class McpServerStatus:
     """MCP server status constants (matching opencode's Status type)."""
+
     CONNECTED = "connected"
     DISABLED = "disabled"
     FAILED = "failed"
@@ -450,12 +391,16 @@ async def check_mcp_server_health(label: str, timeout: float = 10.0) -> dict[str
     return await _check_stdio_server_health(config_with_label, timeout)
 
 
-async def _check_stdio_server_health(config: McpServerConfig, timeout: float) -> dict[str, Any]:
-    """Check health of a stdio-based MCP server."""
+async def _check_stdio_server_health(
+    config: McpServerConfig, timeout: float
+) -> dict[str, Any]:
+    """Check health of a stdio-based MCP server using the official SDK."""
     label = config.get("label", "unknown")
-    conn = McpConnection(config)
     try:
-        conn.start()
+        params = _build_stdio_params(config)
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await asyncio.wait_for(session.initialize(), timeout=timeout)
         return {
             "label": label,
             "status": McpServerStatus.CONNECTED,
@@ -466,11 +411,11 @@ async def _check_stdio_server_health(config: McpServerConfig, timeout: float) ->
             "status": McpServerStatus.FAILED,
             "error": str(exc),
         }
-    finally:
-        conn.stop()
 
 
-async def _check_http_server_health(config: McpServerConfig, timeout: float) -> dict[str, Any]:
+async def _check_http_server_health(
+    config: McpServerConfig, timeout: float
+) -> dict[str, Any]:
     """Check health of an HTTP/SSE-based MCP server."""
     label = config.get("label", "unknown")
     url = config.get("server_url") or config.get("url")
@@ -483,6 +428,7 @@ async def _check_http_server_health(config: McpServerConfig, timeout: float) -> 
 
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(url)
             if response.status_code < 500:

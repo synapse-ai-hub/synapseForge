@@ -373,6 +373,8 @@ export function SkillInterface() {
                     args: validated.parameters,
                     result: undefined,
                   });
+                  // Un nuevo step: el razonamiento siguiente empieza de cero (no acumulado).
+                  accumulatedReasoning = "";
                   // flushSync: fuerza el render del bloque con spinner ANTES de que
                   // llegue el resultado (los tools locales son rápidos y React los batch-ea)
                   flushSync(() => {

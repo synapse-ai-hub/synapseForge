@@ -53,10 +53,15 @@ def main() -> None:
         if path.is_dir():
             shutil.rmtree(path)
 
-    _db_path = BACKEND_TEMPLATE / "agent" / "agent_db" / "agent.db"
-    
-    if _db_path.exists():
-        _db_path.unlink()
+    # 5b. Limpiar agent_db: dejar solo .gitkeep (borra agent.db, -wal, -shm, etc.)
+    _agent_db_dir = BACKEND_TEMPLATE / "agent" / "agent_db"
+    if _agent_db_dir.is_dir():
+        for _agent_db_file in _agent_db_dir.iterdir():
+            if _agent_db_file.name != ".gitkeep":
+                if _agent_db_file.is_dir():
+                    shutil.rmtree(_agent_db_file)
+                else:
+                    _agent_db_file.unlink()
 
     # 6. Limpiar frontend: borrar solo node_modules/ en template/frontend (no en el origen)
     for path in FRONTEND_TEMPLATE.rglob("node_modules"):

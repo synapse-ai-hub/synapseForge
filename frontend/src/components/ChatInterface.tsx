@@ -395,6 +395,8 @@ export function ChatInterface({
                 args: validated.parameters,
                 result: undefined,
               });
+              // Un nuevo step: el razonamiento siguiente empieza de cero (no acumulado).
+              accumulatedReasoning = "";
               setMessages((prev) =>
                 prev.map((m) => {
                   if (m.id !== assistantId) return m;

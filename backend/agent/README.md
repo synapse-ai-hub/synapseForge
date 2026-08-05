@@ -262,6 +262,8 @@ Los siguientes parámetros se seleccionan desde el **frontend** y se guardan en 
 
 Se cargan automáticamente al inicio vía `load_persisted_config()` en `backend/routes/config.py` y se aplican al agente singleton.
 
+> **Modelo por defecto (LOCAL)**: en la primera inicialización (cuando aún no hay modelo persistido), el proveedor **LOCAL** (Ollama) usa por defecto **`qwen3.5:4b`** si está instalado (acepta tools); si no, cae al primer modelo de `ollama list`. El comando `init` verifica los modelos de Ollama e instala `qwen3.5:4b` si falta.
+
 #### Flujo de selección en el frontend
 
 1. **Inicio app** → `GET /config/providers` → lista proveedores disponibles (Ollama si `ollama list` responde, Groq si hay `GROQ_API_KEY`).

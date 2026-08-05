@@ -104,6 +104,8 @@ Lista los modelos disponibles según `provider` (query param `provider=LOCAL|API
 - `LOCAL` → ejecuta `ollama list`.
 - `API` → consulta la API de Groq.
 
+Si aún no hay un modelo seleccionado, se resuelve y persiste el **default** del proveedor: para `LOCAL` es **`qwen3.5:4b`** si está en la lista (acepta tools), con fallback al primer modelo; para `API` es el primer modelo de Groq. El default se guarda en SQLite (`config_kv`) y se usa desde ahí.
+
 **Respuesta:** `JSONResponse` `{status, provider, models: string[], model: string}`.
 
 #### `POST /api/config/models/select`

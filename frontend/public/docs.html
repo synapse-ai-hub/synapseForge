@@ -45,14 +45,14 @@
     .sidebar-subs.collapsed { display: none; }
     .app-header { display: flex !important; }
     @media (max-width: 1023px) {
-      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; width: 18rem; }
+      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; width: 18rem; overscroll-behavior: contain; }
       .sidebar.open { transform: translateX(0); }
       .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
       .sidebar-overlay.open { display: block; }
       main { padding-top: 5rem !important; }
     }
     @media (min-width: 1024px) {
-      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 30; width: 25rem; overflow-y: auto; }
+      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 30; width: 25rem; overflow-y: auto; overscroll-behavior: contain; }
       main { margin-left: 25rem !important; padding-top: 95px !important; }
     }
   </style>
@@ -187,6 +187,15 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li><strong>Colores</strong> — Si no ingresaste colores manualmente, se extraen del logo del cliente los tres colores dominantes.</li>
             <li><strong>Reemplazo de placeholders</strong> — Se reemplazan todos los placeholders (nombre de empresa, colores, etc.) en cada archivo del proyecto.</li>
           </ol>
+          <h3>Los colores del proyecto</h3>
+          <p>En la pestaña <strong>Colores</strong> (tanto en <code>init</code> como en <code>colors</code>) definís la paleta de la app. Cada color tiene un uso concreto:</p>
+          <ul>
+            <li><strong>Color principal</strong> — El color de marca de la app: el botón de enviar, la barra de actividad mientras el asistente genera, la opción seleccionada del menú, los enlaces dentro de las respuestas y el anillo de foco del campo de chat.</li>
+            <li><strong>Color secundario</strong> — Los detalles suaves: el borde que se ilumina al hacer clic en un campo, el anillo de la conversación seleccionada y los bordes de las tarjetas del panel de configuración.</li>
+            <li><strong>Color de texto sobre el principal</strong> — El color del texto y los íconos que van encima del color principal: la flecha del botón de enviar, el texto de los botones y el ícono del avatar del asistente.</li>
+            <li><strong>Segundo color del degradé</strong> — El color final del degradé de los botones y el avatar (el inicio es el color principal).</li>
+            <li><strong>Usar degradé</strong> — Si lo desactivás, botones y avatar usan el color principal liso en lugar del degradé.</li>
+          </ul>
           <h3>¿Qué pasa con el directorio destino?</h3>
           <ul>
             <li>Si <strong>no existe</strong> → se crea y se extrae la plantilla limpia.</li>
@@ -230,6 +239,20 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             </tbody>
           </table>
           <p>Todo esto se lee en tiempo de ejecución, así que podés agregar, modificar o quitar archivos sin reinstalar nada. Solo necesitás reiniciar el backend para que los cambios tomen efecto.</p>
+          <h3><code>config.yaml</code> — permisos del agente principal</h3>
+          <p>El agente principal (el router) <strong>no tiene tools ni skills directas por defecto</strong> — solo puede delegar tareas mediante <code>task</code>. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se toman de ahí (misma lógica que el frontmatter de los agentes):</p>
+          <pre><code>permissions:
+  tool:
+    read: allow
+  skill:
+    mi_skill: allow
+  task:
+    explorador: allow</code></pre>
+          <ul>
+            <li>Si el archivo <strong>no existe</strong> → el agente principal queda solo con <code>task</code> (delegación siempre disponible).</li>
+            <li>Si existe → usa <strong>solo</strong> los permisos explícitos del yaml.</li>
+            <li><code>task</code> está <strong>siempre</strong> disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.</li>
+          </ul>
         </section>
 
         <section id="skills">
@@ -429,20 +452,6 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>AGENT.md — comportamiento general</h3>
           <p>El archivo <code>AGENT.md</code> (si existe en <code>~/.config/synapseForge/agents/</code>) se inyecta como sección <code>## Behavior</code> en el system prompt de <strong>todos</strong> los agentes (el principal y los sub-agentes), <strong>antes</strong> de la sección <code>## MANDATORY:</code>. No reemplaza el system prompt de nadie: el principal usa <code>system_prompt.md</code> y cada sub-agente usa su propio <code>.md</code>. Sirve para definir el comportamiento general del proyecto (compatibilidad con opencode/claude code).</p>
           <p>Además, al final del system prompt de todos los agentes se inyecta la sección <code>## MANDATORY:</code> con las reglas obligatorias de fidelidad: ejecutar el objetivo del usuario sin agregar ni inventar nada, formular preguntas si hay dudas, e iterar con tools o sub-agentes hasta cumplirlo.</p>
-          <h3>Permisos del agente principal (<code>config.yaml</code>)</h3>
-          <p>El agente principal no tiene tools ni skills directas por defecto — solo puede delegar tareas mediante <code>task</code>. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se toman de ahí:</p>
-          <pre><code>permissions:
-  tool:
-    read: allow
-  skill:
-    mi_skill: allow
-  task:
-    explorador: allow</code></pre>
-          <ul>
-            <li>Si el archivo <strong>no existe</strong> → el agente principal queda solo con <code>task</code> (delegación siempre disponible).</li>
-            <li>Si existe → usa <strong>solo</strong> los permisos explícitos del yaml (misma lógica que el frontmatter de los agentes).</li>
-            <li><code>task</code> está <strong>siempre</strong> disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.</li>
-          </ul>
         </section>
 
         <section id="interfaz-usuario">

@@ -25,10 +25,10 @@ except ImportError:  # pragma: no cover
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 COLOR_FIELDS = [
-    ("primary", "Color principal (botones, headers, burbujas)"),
-    ("secondary", "Color secundario (hover, detalles light)"),
-    ("primary_text", "Color de texto (botones, headers)"),
-    ("gradient_secondary", "Color secundario del gradiente"),
+    ("primary", "Color principal de la app: botón de enviar, barra de actividad, opción seleccionada del menú, enlaces de las respuestas"),
+    ("secondary", "Color de los detalles suaves: borde que se ilumina al hacer clic en un campo, anillo de la conversación seleccionada, bordes de las tarjetas"),
+    ("primary_text", "Color del texto e íconos que van encima del color principal (flecha de enviar, texto de botones, ícono del avatar)"),
+    ("gradient_secondary", "Color final del degradé de los botones y el avatar (el inicio es el color principal)"),
 ]
 
 
@@ -118,7 +118,7 @@ class ColorsApp:
         self._usar_gradiente_var = tk.BooleanVar(value=bool(grad_default))
         ttk.Checkbutton(
             gradient_frame,
-            text="Usar gradiente en botones y headers",
+            text="Usar degradé en botones y avatar",
             variable=self._usar_gradiente_var,
             command=self._toggle_gradient_fields,
         ).pack(anchor="w")

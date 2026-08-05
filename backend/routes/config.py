@@ -49,11 +49,19 @@ _verbose_mode: bool = False
 Set via ``POST /config/verbose-mode``."""
 
 
+_LOCAL_DEFAULT_MODEL = "qwen3.5:4b"
+"""Default model for the LOCAL (Ollama) provider.
+
+Used only on first initialization (when no model is persisted yet). Once a
+model is selected it is stored in the SQLite config and used from there.
+"""
+
+
 def _default_model_for_provider(provider: str, models: list[str]) -> str | None:
     """Return the default model for the given provider.
 
-    - ``LOCAL`` (Ollama): first model from the dynamic ``ollama list``
-      output.
+    - ``LOCAL`` (Ollama): ``qwen3.5:4b`` if present in the ``ollama list``
+      output (it accepts tools); otherwise falls back to the first model.
     - ``API`` (Groq): first available model from the Groq model list,
       avoiding a hard-coded model if the API returns real choices.
 
@@ -66,6 +74,8 @@ def _default_model_for_provider(provider: str, models: list[str]) -> str | None:
     """
     if not models:
         return None
+    if provider == "LOCAL" and _LOCAL_DEFAULT_MODEL in models:
+        return _LOCAL_DEFAULT_MODEL
     return models[0]
 
 

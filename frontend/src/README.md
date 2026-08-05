@@ -22,7 +22,7 @@
 
 ## Descripción
 
-Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación React 18 + TypeScript + Vite que provee la interfaz de chat streaming (SSE), panel de configuración de modelo/proveedor/contexto, gestión de sesiones y visualización de tool calls en tiempo real.
+Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación React 19 + TypeScript + Vite que provee la interfaz de chat streaming (SSE), panel de configuración de modelo/proveedor/contexto, gestión de sesiones y visualización de tool calls en tiempo real.
 
 ### ✨ Características Principales
 
@@ -37,12 +37,12 @@ Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación Rea
 
 ## Stack Tecnológico
 
-- **React 18** + **TypeScript 5**
-- **Vite 5** (dev server + build)
-- **Tailwind CSS 3** (utilidad-first styling)
+- **React 19** + **TypeScript 5**
+- **Vite 6** (dev server + build)
+- **Tailwind CSS 4** (utilidad-first styling)
 - **Lucide React** (iconos)
 - **Marked** (renderizado markdown en mensajes)
-- **date-fns** (formateo de fechas)
+- **DOMPurify** (sanitización XSS del markdown)
 
 ---
 
@@ -50,57 +50,45 @@ Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación Rea
 
 ```plaintext
 frontend/
-├─ public/                     # Assets estáticos
+├─ public/                     # Assets estáticos (docs.html, colors.json, skill.html)
 ├─ src/
 │  ├─ assets/                  # Logo, imágenes
-│  │  └─  logo_cliente.png      # Logo de la empresa
-│  │  └─  logo_cliente.ico      # Favicon generado
+│  │  ├─ logo_empresa.png      # Logo de la empresa
+│  │  └─ logo_cliente.png      # Logo del cliente
 │  ├─ components/              # Componentes React
-│  │  ├─ Chat/                 # Área de chat principal
-│  │  │  ├─ ChatArea.tsx       # Contenedor de mensajes
-│  │  │  ├─ Message.tsx        # Burbuja de mensaje individual
-│  │  │  ├─ ToolCallCollapsible.tsx  # Colapsable para tool calls
-│  │  │  └─ InputArea.tsx      # Input de usuario + adjuntos
-│  │  ├─ Sidebar/              # Panel lateral
-│  │  │  ├─ Sidebar.tsx        # Contenedor sidebar
-│  │  │  ├─ SessionList.tsx    # Lista de sesiones
-│  │  │  └─ ConfigPanel.tsx    # Panel de configuración
-│  │  ├─ Config/               # Configuración de modelo/proveedor
-│  │  │  ├─ ProviderSelector.tsx
-│  │  │  ├─ ModelSelector.tsx
-│  │  │  └─ ContextWindowInput.tsx
-│  │  └─ UI/                   # Componentes base reutilizables
-│  │     ├─ Button.tsx
-│  │     ├─ Input.tsx
-│  │     ├─ Select.tsx
-│  │     └─ Collapsible.tsx
+│  │  ├─ ChatInterface.tsx     # Chat principal (streaming SSE, adjuntos, autoscroll)
+│  │  ├─ SkillInterface.tsx    # Página de creación de skills (setup + chat + overlay)
+│  │  ├─ chatBlocks.tsx        # Componentes compartidos (MessageRow, MarkdownRenderer, ToolCallBlock, ReasoningBlock, FileChip, etc.)
+│  │  ├─ Sidebar.tsx           # Barra lateral con tabs (sessions, config, agent, create)
+│  │  ├─ sessionsTab.tsx       # Lista de sesiones de chat
+│  │  ├─ configTab.tsx         # Configuración (proveedor, modelo, contexto, verbose, archivos de contexto)
+│  │  ├─ agentInfoTab.tsx      # Panel de agentes (tools, skills, agents, mcp, rag)
+│  │  ├─ createTab.tsx         # Creación de skills/tools/agentes/RAG
+│  │  ├─ HistoryModal.tsx      # Historial de cotizaciones
+│  │  ├─ MetricsModal.tsx      # Dashboard de métricas
+│  │  ├─ MessageBubble.tsx     # Burbuja de mensaje (legacy)
+│  │  ├─ Logo.tsx              # Logo
+│  │  └─ ui/                   # shadcn/ui: avatar, button, dialog, input, separator, textarea, utils
 │  ├─ services/                # Capa de comunicación con API
-│  │  ├─ api.ts                # Cliente fetch base + helpers
-│  │  ├─ chat.ts               # chatStream, deleteConversation
-│  │  ├─ sessions.ts           # listSessions, getSession, deleteSession
-│  │  ├─ config.ts             # providers, models, selectModel, contextWindow, mcp
-│  │  └─ contextFiles.ts       # listContextFiles, uploadContextFile, deleteContextFile
-│  ├─ hooks/                   # Custom hooks
-│  │  ├─ useChat.ts            # Lógica de chat streaming
-│  │  ├─ useSessions.ts        # Carga y gestión de sesiones
-│  │  └─ useConfig.ts          # Estado de configuración (provider, model, context)
-│  ├─ types/                   # Tipos TypeScript compartidos
-│  │  ├─ chat.ts               # Message, ToolCall, SSE events
-│  │  ├─ session.ts            # Session, SessionPreview
-│  │  └─ config.ts             # Provider, Model, ConfigState
-│  ├─ utils/                   # Utilidades
-│  │  ├─ format.ts             # Formateo de fechas, markdown
-│  │  └─ sse.ts                # Parser de Server-Sent Events
-│  ├─ App.tsx                  # Componente raíz + providers
-│  ├─ main.tsx                 # Entry point
+│  │  ├─ chatService.ts        # Streaming SSE a /api/chat
+│  │  ├─ configService.ts      # Providers, models, MCP, verbose
+│  │  ├─ sessionService.ts     # Sesiones CRUD
+│  │  ├─ contextFilesService.ts# Archivos de contexto CRUD
+│  │  ├─ metricsService.ts     # Métricas
+│  │  └─ quoteHistoryService.ts# Historial de cotizaciones
+│  ├─ App.tsx                  # Componente raíz + estado global
+│  ├─ main.tsx                 # Entry: carga colors.json → setea CSS vars → render App
+│  ├─ skillMain.tsx            # Entry de la skill page (multi-page)
 │  ├─ index.css                # Estilos globales + @theme (colores)
+│  ├─ skillColors.css          # Overrides de colores para la skill page
 │  └─ vite-env.d.ts            # Tipos de Vite
 ├─ index.html
+├─ skill.html                  # Entry HTML de la skill page (multi-page)
 ├─ package.json
 ├─ tsconfig.json
+├─ tsconfig.app.json
+├─ tsconfig.node.json
 ├─ vite.config.ts
-├─ tailwind.config.js
-├─ postcss.config.js
 └─ README.md
 ```
 
@@ -141,74 +129,84 @@ Output en `dist/`.
 
 ## Variables de entorno
 
-Crea `.env` en `frontend/`:
+Crea `.env` en la raíz del proyecto (el `envDir` de Vite apunta a `../`):
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_MODE=dev            # "dev" o "prod"
+VITE_URL_DEV=http://localhost:8000
+VITE_URL_PROD=http://localhost:8000
+VITE_URL_BASE=http://localhost:8000
 ```
+
+Los servicios usan `VITE_MODE` para elegir entre `VITE_URL_DEV` y `VITE_URL_PROD`; `VITE_URL_BASE` se usa como base de la API en varios servicios.
 
 ---
 
 ## Flujo principal
 
-1. **Carga inicial** → `useConfig` llama `GET /config/providers` → muestra proveedores disponibles.
-2. **Selección proveedor** → `GET /config/models?provider=X` → lista modelos.
-3. **Selección modelo** → `POST /config/models/select` → persiste en backend (SQLite `config_kv`).
-4. **Chat** → `POST /api/chat` (SSE) → `useChat` parsea eventos → renderiza `Message` + `ToolCallCollapsible`.
-5. **Sesiones** → `GET /api/sessions` → `SessionList` en sidebar.
+1. **Carga inicial** → `main.tsx` hace `fetch("/colors.json")` y setea las CSS vars → renderiza `App`.
+2. **Proveedores** → `configService` llama `GET /config/providers` → muestra proveedores disponibles.
+3. **Selección modelo** → `GET /config/models?provider=X` → lista modelos; `POST /config/models/select` → persiste en backend (SQLite `config_kv`).
+4. **Chat** → `ChatInterface` envía `POST /api/chat` (SSE) → `chatService` parsea eventos → `MessageRow`/`chatBlocks` renderizan bloques (texto, razonamiento, tools, sub-agentes).
+5. **Sesiones** → `sessionService` `GET /api/sessions` → `sessionsTab` en sidebar.
 6. **Contexto** → `POST /config/context-window` → ajusta `max_turns`.
-7. **Instrucciones y documentos** → `GET/POST/DELETE /api/context-files` → `ConfigPanel` gestiona subida/eliminación → archivos se inyectan en system prompt.
+7. **Archivos de contexto** → `contextFilesService` `GET/POST/DELETE /api/context-files` → `configTab` gestiona subida/eliminación → se inyectan en el system prompt.
 
 ---
 
 ## Componentes clave
 
-### `ChatArea.tsx`
-Orquesta el flujo de mensajes. Mantiene array `messages: Message[]`. Suscribe a `useChat` para streaming.
+### `ChatInterface.tsx`
+Chat principal. Mantiene el estado de mensajes, streaming SSE a `/api/chat`, autoscroll, adjuntos de archivos, detener generación, heartbeat y shutdown. Renderiza cada mensaje con `MessageRow`.
 
-### `Message.tsx`
-Renderiza una burbuja. Soporta `role: "user" | "assistant" | "tool"`. Para `assistant` con `toolCalls`, renderiza `ToolCallCollapsible` por cada tool.
+### `chatBlocks.tsx`
+Componentes compartidos entre `ChatInterface` y `SkillInterface`:
+- `MessageRow` — Fila de mensaje (asistente con avatar + bloques intercalados, usuario con burbuja).
+- `MarkdownRenderer` — Renderiza markdown a HTML con sanitización DOMPurify.
+- `ToolCallBlock` — Tarjeta de tool call con estados y sub-pasos de sub-agentes.
+- `ReasoningBlock`, `FileChip`, `FileWarningBanner`, `TypingIndicator`.
 
-### `ToolCallCollapsible.tsx`
-Colapsable por tool call. Muestra:
-- **Header**: nombre del tool + timestamp.
-- **Body**: JSON formateado de `args` (input) y `result` (output).
+### `SkillInterface.tsx`
+Página de creación de skills (multi-page `skill.html`). Flujo en dos fases: setup (nombre + descripción) y chat de entrevista con streaming SSE a `/api/create/skill`. Al finalizar muestra un overlay de resultado.
 
-### `ConfigPanel.tsx`
-Agrupa `ProviderSelector`, `ModelSelector`, `ContextWindowInput`. Usa `useConfig` para estado reactivo. Incluye sección **Instrucciones y documentos** para subir/eliminar archivos de contexto (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) que se inyectan en el system prompt.
+### `Sidebar.tsx`
+Barra lateral con tabs: Conversaciones (`sessionsTab`), Configuración (`configTab`), Agente (`agentInfoTab`) y Crear (`createTab`).
 
-### `useChat.ts`
-Maneja la conexión SSE:
-- `sendMessage(message, files?)` → POST FormData a `/api/chat`.
-- Parsea eventos: `chunk`, `tool_calls_detected`, `tool_result`, `session_title`, `done`, `error`.
-- Actualiza estado local de mensajes en tiempo real.
+### `configTab.tsx`
+Configuración: selector de proveedor/modelo, ventana de contexto, toggle verbose y gestión de archivos de contexto.
 
-### `api.ts` + `chat.ts` / `sessions.ts` / `config.ts` / `contextFiles.ts`
-Capa fina sobre `fetch`. Manejan errores, timeouts y tipado de respuestas.
+### `agentInfoTab.tsx`
+Panel de agentes con 5 sub-paneles: Tools, Skills, Agentes, MCP y RAG.
+
+### `MetricsModal.tsx`
+Dashboard de métricas con tabs: Overview, Sessions, Tools, Errors.
+
+### Servicios (`services/`)
+Capa fina sobre `fetch`. `chatService` (SSE), `configService` (providers/models/MCP/verbose), `sessionService` (sesiones), `contextFilesService` (archivos de contexto), `metricsService` (métricas), `quoteHistoryService` (historial de cotizaciones).
 
 ---
 
 ## Estilos y tema
 
-Las variables de color se declaran en `src/index.css` dentro de `@theme {}`. El pipeline `synapseForge init` reemplaza automáticamente los placeholders `<tag>default</tag>` con los valores extraídos del logo.
+Las variables de color se declaran en `src/index.css` dentro de `@theme {}`. El pipeline `synapseForge init` reemplaza automáticamente los placeholders `<tag>default</tag>` con los valores ingresados o extraídos del logo.
 
-### Variables reemplazables (definidas por el pipeline)
+### Variables configurables (definidas por el pipeline)
 
-| Variable | Default | Uso |
-|----------|---------|-----|
-| `--color-app-primary` | `#D76F10` | Botones, enlaces, acentos principales |
-| `--color-app-primary-light` | `#F0A347` | Avatar asistente, hover, typing dots |
-| `--color-app-bg` | `#F5F5F5` | Fondo general de la app (scrollbar thumb) |
-| `--color-app-bg-secondary` | `#F5F5F5` | Misma referencia que bg (unificado) |
-| `--color-app-avatar-usuario` | `#452913` | Avatar del usuario en el chat |
-| `--color-app-btn-bg` | `#D76F10` | Fondo "Nuevo Chat" y header MCP |
-| `--color-app-btn-text` | `#FFFFFF` | Texto "Nuevo Chat" y header MCP |
-| `--color-app-accent` | `#D76F10` | Acento general (misma ref. que primary) |
+| Variable | Key de `colors.json` | Uso |
+|----------|----------------------|-----|
+| `--color-app-primary` | `primary` | Color principal: botón de enviar, barra de actividad, opción seleccionada del menú, enlaces de las respuestas |
+| `--color-app-primary-light` | `secondary` | Detalles suaves: anillo de foco de los campos, anillo de la conversación seleccionada, bordes de las tarjetas |
+| `--color-app-primary-text` | `primary_text` | Texto e íconos sobre el color principal (flecha de enviar, texto de botones, ícono del avatar) |
+| `--color-app-gradient-secondary` | `gradient_secondary` | Color final del degradé de los botones y el avatar |
+
+Además, `usar_gradiente` (toggle) no es una variable CSS: cuando está apagado, `gradient_secondary` se fuerza igual a `primary` para que los degradés se vean lisos.
 
 ### Variables fijas (no se modifican en el pipeline)
 
 | Variable | Valor | Uso |
 |----------|-------|-----|
+| `--color-app-bg` | `#FFFFFF` | Fondo general de la app |
+| `--color-app-bg-secondary` | `#F5F5F5` | Fondo secundario |
 | `--color-app-bg-tertiary` | `#EBEBEB` | Paneles, tool calls, fondos terciarios |
 | `--color-app-text` | `#151515` | Texto principal |
 | `--color-app-text-secondary` | `#5C5C5C` | Texto secundario |
@@ -217,7 +215,7 @@ Las variables de color se declaran en `src/index.css` dentro de `@theme {}`. El 
 | `--color-app-warning` | `#C4903A` | Estados de advertencia |
 | `--color-app-error` | `#C2413D` | Estados de error |
 
-**Para cambiar colores manualmente**: editar `src/index.css` → `@theme {}` → recargar.
+**Para cambiar colores manualmente**: editar `src/index.css` → `@theme {}` → recargar, o usar `synapseforge colors` que edita `frontend/public/colors.json` en vivo.
 
 > **Nota**: los placeholders se reemplazan automáticamente al ejecutar `synapseForge init`. Para regenerar los colores desde el logo, ejecutar nuevamente el pipeline.
 

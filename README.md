@@ -45,8 +45,8 @@ El usuario instala el paquete, ejecuta `synapseforge init`, completa los datos e
 - **`synapseforge launch`**: Build de distribución autocontenido con PyInstaller + frontend compilado + Python embebido + launcher nativo → `.zip` listo para entregar.
 - **`synapseforge colors`**: Editor GUI para modificar `frontend/public/colors.json` en caliente — recarga el navegador y ves los cambios sin rebuild.
 - **`synapseforge run`**: Levanta `uvicorn --reload` (backend) + `npm run dev` (frontend) + abre el navegador. Ctrl+C mata ambos.
-- **Pipeline de 10 pasos**: Input GUI → template → venv → pip install → npm install → config → logos → `.ico` → colores (extracción automática con colorthief si no se ingresan) → placeholders XML en todo el proyecto.
-- **Sistema de colores dual**: Build-time (placeholders XML en `config/replace.json`) + Runtime (`frontend/public/colors.json` cargado en `main.tsx`). 8 variables configurables, el resto fijas.
+- **Pipeline de 11 pasos**: Input GUI → verificación de modelos Ollama (instala `qwen3.5:4b` si falta) → template → venv → pip install → npm install → logos → `.ico` → colores (extracción automática con colorthief si no se ingresan) → config → placeholders XML en todo el proyecto.
+- **Sistema de colores dual**: Build-time (placeholders XML en `config/replace.json`) + Runtime (`frontend/public/colors.json` cargado en `main.tsx`). 4 variables configurables, el resto fijas.
 - **Framework de agentes completo**: AgentLoop (while True → LLM → tools → continue), Tools Registry (nativas + externas dinámicas + MCP), SessionManager (SQLite WAL), Permissions (allow/deny/ask + wildcards + `config.yaml` para el router), Skills (SKILL.md + references), MCP (SDK oficial `mcp`, stdio/HTTP + timeout + health check).
 - **Archivos de contexto**: Subida de PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY → extracción de texto (pdfminer + OCR fallback) → inyección en system prompt del agente.
 - **Métricas de uso**: Endpoints para sesiones, tokens por modelo/proveedor, estadísticas agregadas. Dashboard en frontend (`MetricsModal` con tabs: Overview, Sessions, Tools, Errors).
@@ -95,7 +95,7 @@ synapseForge/
 │  │  ├─ config_handler.py       #   Guarda config/replace.json + frontend/public/colors.json
 │  │  ├─ logo_handler.py         #   Copia logos + genera .ico con Pillow
 │  │  ├─ placeholder_handler.py  #   Reemplaza tags XML en todo el proyecto
-│  │  └─ color_utils.py          #   Extracción paleta (colorthief) + mapeo 8 vars
+│  │  └─ color_utils.py          #   Extracción paleta (colorthief) + mapeo 4 vars
 │  └─ launch/                    #   Launch: PyInstaller, npm build, zip
 │     ├─ __init__.py
 │     ├─ forge.py                #   Orquestador 7 pasos
@@ -153,7 +153,6 @@ synapseForge/
 ├─ frontend/                     # Fuente del template — frontend React/Vite/TS
 │  ├─ public/
 │  │  ├─ docs.html               # Documentación completa del producto
-│  │  ├─ skill.html              # Formulario standalone para crear skills
 │  │  ├─ tool.html               # Formulario standalone para crear tools
 │  │  ├─ agent.html              # Formulario standalone para crear agentes
 │  │  └─ rag.html                # Formulario standalone para crear RAG
@@ -166,12 +165,11 @@ synapseForge/
 │  ├─ tsconfig.node.tsbuildinfo
 │  ├─ vite.config.ts
 │  ├─ index.html
-│  ├─ public/
-│  │  └─ docs.html
+│  ├─ skill.html                 # Entry HTML de la skill page (multi-page)
 │  └─ src/
 │     ├─ main.tsx                #   Entry: carga colors.json → setea CSS vars → render App
 │     ├─ App.tsx                 #   Root + providers
-│     ├─ index.css               #   @theme Tailwind v4: 8 vars configurables + fijas
+│     ├─ index.css               #   @theme Tailwind v4: 4 vars configurables + fijas
 │     ├─ vite-env.d.ts
 │     ├─ assets/
 │     │  └─ logo_cliente.png
@@ -260,7 +258,7 @@ flowchart TD
     M --> N{"¿Usuario ingresó colores?"}
     N -->|"Sí"| O["Usa colores ingresados"]
     N -->|"No"| P["Extrae 4 colores con colorthief"]
-    P --> Q["Mapeo directo a 8 variables"]
+    P --> Q["Mapeo directo a 4 variables"]
     O --> R["Reemplaza placeholders XML en todo el proyecto"]
     Q --> R
     R --> S["Proyecto listo en directorio destino"]
@@ -291,17 +289,19 @@ pip install synapseforge
 
 ### `synapseforge init` — Pipeline (GUI)
 
-1. **Proyecto** — Empresa, owner, legal, repo, cliente, descripción, tarea (todos obligatorios).
-2. **Logos** — Logo empresa (obligatorio, para README), logo cliente (opcional, para app + .ico), ancho/alto opcionales.
-3. **Colores** — 8 campos hex opcionales con color picker: Avatar asistente, Avatar usuario, Botón Nuevo Chat fondo/texto, Botón adjuntar, Botón enviar, Botón detener, Flecha autoscroll.
-4. **Template** — Extrae `template.zip` empaquetado (o descarga desde GitHub).
-5. **Venv** — Crea `./.{repo}/` con `python -m venv`.
-6. **Deps Python** — `pip install -r requirements.txt` en el venv.
-7. **npm install** — Instala dependencias del frontend.
-8. **Config** — Guarda input como `config/replace.json` + genera `frontend/public/colors.json`.
-9. **Logos** — Copia logos + genera `.ico`.
-10. **Colores** — Si no se ingresaron, extrae paleta con colorthief y mapea directo a las 8 variables.
-11. **Placeholders** — Reemplaza tags XML en todo el proyecto.
+La GUI tiene 3 pestañas de entrada: **Proyecto** (empresa, owner, legal, repo, cliente, descripción, tarea), **Logos** (logo empresa obligatorio, logo cliente opcional) y **Colores** (4 colores hex con color picker + toggle de degradé). Al confirmar, el pipeline ejecuta 11 pasos:
+
+1. **Input** — Recibe la configuración de la GUI.
+2. **Modelos Ollama** — Ejecuta `ollama list` y verifica los modelos requeridos (`qwen3.5:4b`, `gemma4:e2b`, `phi4-mini-reasoning:3.8b`, `granite3.1-moe:3b`, `nemotron-3-nano:4b`). Si falta `qwen3.5:4b` lo instala con `ollama pull qwen3.5:4b`; los demás solo se verifican (avisa si faltan).
+3. **Template** — Extrae `template.zip` empaquetado (o descarga desde GitHub).
+4. **Venv** — Crea `./.{repo}/` con `python -m venv`.
+5. **Deps Python** — `pip install -r requirements.txt` en el venv.
+6. **npm install** — Instala dependencias del frontend.
+7. **Logos** — Copia el logo de empresa y el de cliente.
+8. **.ico** — Genera el favicon `.ico` desde el logo del cliente.
+9. **Colores** — Si no se ingresaron, extrae la paleta con colorthief.
+10. **Config** — Guarda el input como `config/replace.json` + genera `frontend/public/colors.json`.
+11. **Placeholders** — Reemplaza los tags XML en todo el proyecto.
 
 > **Comportamiento según directorio destino:**
 > - Si **no existe** → lo crea y extrae el template.
@@ -320,7 +320,7 @@ pip install synapseforge
 
 ### `synapseforge colors` — Editor de colores en vivo
 
-- Abre GUI tkinter con los 8 campos + preview cuadrado + color picker nativo.
+- Abre GUI tkinter con los 4 campos de color + toggle de degradé + preview cuadrado + color picker nativo.
 - Lee/escribe `frontend/public/colors.json`.
 - **Cambios instantáneos**: recargá el navegador (F5) y ves los colores nuevos **sin rebuild**.
 
@@ -434,6 +434,10 @@ permissions:
 
 **Archivos de contexto (Instrucciones y documentos)**: Los archivos subidos vía `POST /api/context-files` se extraen y su contenido se concatena e inyecta en el system prompt del router y sub-agentes (ver `loop_helpers.py:load_context_text()` → `build_system_prompt()`). Sirven para proveer información de referencia permanente: manuales, reglas de negocio, documentación técnica.
 
+### Modelo por defecto (LOCAL)
+
+En la primera inicialización (cuando aún no hay modelo persistido), el proveedor **LOCAL** (Ollama) usa por defecto **`qwen3.5:4b`** si está instalado (acepta tools); si no, cae al primer modelo de `ollama list`. Una vez seleccionado, el modelo se guarda en SQLite (`config_kv`) y se usa desde ahí. El comando `init` verifica los modelos de Ollama e instala `qwen3.5:4b` si falta.
+
 ---
 
 ## Frontend — Chat SSE
@@ -447,27 +451,25 @@ SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui:
 | `sessionService.ts` | CRUD sesiones y mensajes |
 | `contextFilesService.ts` | CRUD archivos de contexto (list, upload, delete) |
 | `metricsService.ts` | Overview, sessions, tokens |
-| `Sidebar.tsx` | Tabs: Conversaciones (historial + nueva) + Configuración |
-| `ConfigPanel.tsx` | ProviderSelector, ModelSelector, ContextWindowInput, VerboseToggle, **Instrucciones y documentos** (drag-click upload, lista con delete) |
+| `Sidebar.tsx` | Tabs: Conversaciones (historial + nueva) + Configuración + Agente + Crear |
+| `configTab.tsx` | Configuración: proveedor, modelo, ventana de contexto, toggle verbose, **Instrucciones y documentos** (drag-click upload, lista con delete) |
+| `agentInfoTab.tsx` | Panel de agentes: Tools, Skills, Agentes, MCP, RAG |
+| `chatBlocks.tsx` | Componentes compartidos: MessageRow, MarkdownRenderer, ToolCallBlock, ReasoningBlock, FileChip, FileWarningBanner |
 | `MetricsModal.tsx` | Dashboard 4 tabs: Overview, Sessions, Tools, Errors |
-| `MessageBubble.tsx` | Renderiza mensajes con tool calls colapsables |
+| `MessageBubble.tsx` | Renderiza mensajes con tool calls colapsables (legacy) |
 | `main.tsx` | **Carga `colors.json` ANTES de renderizar React** → setea CSS custom properties en `document.documentElement.style` |
 
 ### Sistema de colores (Tailwind v4 `@theme`)
 
-**Variables configurables (8 — build-time placeholders + runtime `colors.json`):**
+**Variables configurables (4 — build-time placeholders + runtime `colors.json`):**
 ```css
---color-app-primary
---color-app-primary-light
---color-app-avatar-asistente
---color-app-avatar-usuario
---color-app-btn-nuevo-chat-bg
---color-app-btn-nuevo-chat-text
---color-app-btn-adjuntar
---color-app-btn-enviar
---color-app-btn-detener
---color-app-flecha-autoscroll
+--color-app-primary            # primary
+--color-app-primary-light      # secondary
+--color-app-primary-text       # primary_text
+--color-app-gradient-secondary # gradient_secondary
 ```
+
+Además, `usar_gradiente` (toggle) no es una variable CSS: cuando está apagado, `gradient_secondary` se fuerza igual a `primary` para que los degradés se vean lisos.
 
 - **Build-time**: `pipeline/init/placeholder_handler.py` reemplaza tags XML en `index.css` y todo el proyecto usando `config/replace.json`.
 - **Runtime**: `main.tsx` hace `fetch("/colors.json")` y setea `--color-app-*` en `document.documentElement.style`. **Prioridad: runtime > build-time**.

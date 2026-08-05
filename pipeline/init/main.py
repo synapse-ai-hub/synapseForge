@@ -1,4 +1,4 @@
-"""Orchestrates the full init pipeline (steps 1-10)."""
+"""Orchestrates the full init pipeline (steps 1-11)."""
 
 import subprocess
 import sys
@@ -34,29 +34,33 @@ def run(target_dir: str, config: dict | None = None) -> None:
 
     # Step 1: User input
     if config is None:
-        print("\n[1/10] User input ...")
+        print("\n[1/11] User input ...")
         config = get_user_input()
     else:
-        print("\n[1/10] Using provided configuration ...")
+        print("\n[1/11] Using provided configuration ...")
 
-    # Step 2: Download & extract template
-    print("\n[2/10] Downloading & extracting template ...")
+    # Step 2: Verify Ollama models (install qwen if missing)
+    print("\n[2/11] Verifying Ollama models ...")
+    _verify_ollama_models()
+
+    # Step 3: Download & extract template
+    print("\n[3/11] Downloading & extracting template ...")
     extract_template(target)
 
-    # Step 3: Create virtual environment
-    print("\n[3/10] Creating virtual environment ...")
+    # Step 4: Create virtual environment
+    print("\n[4/11] Creating virtual environment ...")
     venv_path = setup_venv(target, config["repo"])
 
-    # Step 4: Install Python requirements
-    print("\n[4/10] Installing Python requirements ...")
+    # Step 5: Install Python requirements
+    print("\n[5/11] Installing Python requirements ...")
     install_requirements(venv_path, target)
 
-    # Step 5: npm install
-    print("\n[5/10] Installing npm dependencies ...")
+    # Step 6: npm install
+    print("\n[6/11] Installing npm dependencies ...")
     _run_npm_install(target)
 
-    # Step 6: Copy logos
-    print("\n[6/10] Copying logos ...")
+    # Step 7: Copy logos
+    print("\n[7/11] Copying logos ...")
     company_logo_dest = target / "frontend" / "src" / "assets" / "logo_empresa.png"
     handle_logo(config, company_logo_dest, config_key="logo.path")
     # Also copy to root/src for backward compatibility with template references
@@ -65,20 +69,20 @@ def run(target_dir: str, config: dict | None = None) -> None:
     client_logo_dest = target / "frontend" / "src" / "assets" / "logo_cliente.png"
     handle_logo(config, client_logo_dest, config_key="logo_cliente")
 
-    # Step 7: Generate .ico from client logo
-    print("\n[7/10] Generating favicon (.ico) ...")
+    # Step 8: Generate .ico from client logo
+    print("\n[8/11] Generating favicon (.ico) ...")
     _run_generate_ico(venv_path, client_logo_dest)
 
-    # Step 8: Extract colors from client logo
-    print("\n[8/10] Resolving colors ...")
+    # Step 9: Extract colors from client logo
+    print("\n[9/11] Resolving colors ...")
     _resolve_colors(config, client_logo_dest)
 
-    # Step 9: Save user config (colors already in dict)
-    print("\n[9/10] Saving configuration ...")
+    # Step 10: Save user config (colors already in dict)
+    print("\n[10/11] Saving configuration ...")
     save_config(target, config)
 
-    # Step 10: Replace placeholders
-    print("\n[10/10] Replacing placeholders ...")
+    # Step 11: Replace placeholders
+    print("\n[11/11] Replacing placeholders ...")
     replace_all_placeholders(target, config)
 
     print("\n" + "=" * 60)
@@ -89,6 +93,71 @@ def run(target_dir: str, config: dict | None = None) -> None:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+# Required Ollama models verified at init (literal names).
+_REQUIRED_MODELS = [
+    "qwen3.5:4b",
+    "gemma4:e2b",
+    "phi4-mini-reasoning:3.8b",
+    "granite3.1-moe:3b",
+    "nemotron-3-nano:4b",
+]
+# Only this model is auto-installed if missing.
+_AUTO_INSTALL_MODEL = "qwen3.5:4b"
+
+
+def _verify_ollama_models() -> None:
+    """Verify required Ollama models are present; install qwen if missing.
+
+    Runs ``ollama list`` to check the required models. If ``qwen3.5:4b`` is
+    missing it is installed with ``ollama pull``. The other required models
+    are only verified: if missing, a warning is printed (they are not
+    installed).
+    """
+    try:
+        proc = subprocess.run(
+            "ollama list",
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        print("  WARNING: ollama no está instalado. Instalalo para usar el proveedor LOCAL.")
+        return
+
+    if proc.returncode != 0:
+        print("  WARNING: no se pudo ejecutar 'ollama list'.")
+        return
+
+    installed = set()
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith("NAME"):
+            continue
+        parts = line.split()
+        if parts:
+            installed.add(parts[0])
+
+    missing = [m for m in _REQUIRED_MODELS if m not in installed]
+    if not missing:
+        print("  Ollama: todos los modelos requeridos están presentes.")
+        return
+
+    print(f"  Ollama: faltan modelos: {', '.join(missing)}")
+    if _AUTO_INSTALL_MODEL in missing:
+        print(f"  Instalando {_AUTO_INSTALL_MODEL} ...")
+        try:
+            subprocess.run(
+                f"ollama pull {_AUTO_INSTALL_MODEL}",
+                shell=True,
+                check=True,
+            )
+            print(f"  {_AUTO_INSTALL_MODEL} instalado.")
+        except subprocess.CalledProcessError as exc:
+            print(f"  WARNING: no se pudo instalar {_AUTO_INSTALL_MODEL} (exit {exc.returncode}).")
+        except FileNotFoundError:
+            print("  WARNING: ollama no está instalado, no se pudo instalar el modelo.")
 
 
 def _run_npm_install(target: Path) -> None:

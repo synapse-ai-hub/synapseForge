@@ -68,7 +68,9 @@ Interactive GUI pipeline (3 tabs):
 
 1. **Project** — Company logo (for README), client logo (for app, optional), company name, owner, legal name, repo name, client name, description, task (all required).
 2. **Logos** — File pickers for both logos, optional width/height for company logo.
-3. **Colors** — 8 optional hex fields with color picker: Avatar asistente, Avatar usuario, Botón Nuevo Chat fondo/texto, Botón adjuntar, Botón enviar, Botón detener, Flecha autoscroll. Leave empty to auto-extract from client logo.
+3. **Colors** — 4 hex fields with color picker (primary, secondary, primary_text, gradient_secondary) + a gradient toggle. Leave empty to auto-extract from client logo.
+
+During init, the pipeline also runs `ollama list` to verify the required models and installs `qwen3.5:4b` with `ollama pull` if it's missing (the other required models are only checked).
 
 ```bash
 cd my-project
@@ -99,7 +101,9 @@ synapseforge launch ./my-project "MyApp"
 synapseforge colors ./my-project
 ```
 
-Opens tkinter GUI with 8 color fields + live preview squares + native color picker. Saves to `frontend/public/colors.json`. **Refresh browser (F5) to see changes instantly.**
+Opens tkinter GUI with 4 color fields + a gradient toggle + live preview squares + native color picker. Saves to `frontend/public/colors.json`. **Refresh browser (F5) to see changes instantly.**
+
+For the **LOCAL** provider (Ollama), the default model on first initialization is **`qwen3.5:4b`** when installed; otherwise it falls back to the first model of `ollama list`. Once selected, the model is persisted in SQLite (`config_kv`).
 
 ### Run development servers
 
@@ -154,9 +158,11 @@ my-project/
 │       ├── ddl_setup.py       # SQLite table initialization
 │       ├── agent_db/          # SQLite runtime (created on start)
 │       ├── prompts/
-│       │   ├── system_prompt.md  # Router base prompt (with fidelity checklist)
+│       │   ├── system_prompt.md  # Router base prompt
+│       │   ├── mandatory.md  # ## MANDATORY: fidelity rules injected into all agents
 │       │   ├── help.md        # Internal documentation for `help` tool
-│       │   └── title.md       # Prompt for session title generation
+│       │   ├── title.md       # Prompt for session title generation
+│       │   ├── generar_skill.md / evaluar_skills.md / explicar_skill.md / iterar_skill.md  # Skill creation prompts
 │       ├── utils/
 │       │   ├── __init__.py
 │       │   ├── clean_memory.py    # GPU/CPU model release
@@ -181,7 +187,7 @@ my-project/
 │   └── src/
 │       ├── main.tsx           # Entry: loads colors.json → sets CSS vars → render App
 │       ├── App.tsx            # Root + providers
-│       ├── index.css          # @theme Tailwind v4: 8 configurable vars + fixed
+│       ├── index.css          # @theme Tailwind v4: 4 configurable vars + fixed
 │       ├── vite-env.d.ts
 │       ├── assets/
 │       │   └── logo_cliente.png
@@ -249,9 +255,11 @@ my-project/
 ~/.config/synapseForge/
 ├── skills/                 # Installed skills (SKILL.md per skill + references/)
 ├── tools/                  # Custom tools (.py files with TOOL_NAME, execute())
-├── agents/                 # Agent definitions (.md with YAML frontmatter + permissions + prompt)
+├── agents/                 # Agent definitions (.md with YAML frontmatter + permissions + prompt) + AGENT.md (general behavior → ## Behavior)
 ├── knowledge/              # RAG collections (ChromaDB) — created from the create UI
-└── config.json             # MCP server configuration
+├── config.json             # Main config (UI prefs, etc.)
+├── mcp.json                # MCP servers (JSON array: label, transport, command, env)
+└── config.yaml             # Router permissions (tool/skill/task) — optional
 ```
 
 ### Agent definition (`.md` in `agents/`)
@@ -276,6 +284,12 @@ parameters:
 ```
 
 **Permissions**: `allow` / `deny` / `ask` (default: deny). Supports wildcards (`*`). Nested for `task` (sub-agent names) and `skill` (skill names).
+
+**AGENT.md** (`~/.config/synapseForge/agents/AGENT.md`): general behavior injected as a `## Behavior` section in the system prompt of **all** agents (router and sub-agents), before `## MANDATORY:`. It never replaces the system prompt — `system_prompt.md` is always the router's base.
+
+**Router permissions (`config.yaml`)**: the router has no direct tools/skills by default — only `task` (delegation). If `~/.config/synapseForge/config.yaml` exists with a `permissions` section (same structure as agent frontmatter: `tool`, `skill`, `task`), the router uses only those explicit permissions. `task` is always available: if the yaml doesn't list it, delegation to all sub-agents is allowed; if it does, only to the listed ones.
+
+**`## MANDATORY:`**: injected at the end of every agent's system prompt (from `backend/agent/prompts/mandatory.md`): extract the user's faithful objective, don't add or invent anything, ask useful questions when in doubt, and iterate with tools/sub-agents until the objective is met.
 
 ### Context handling (planned)
 

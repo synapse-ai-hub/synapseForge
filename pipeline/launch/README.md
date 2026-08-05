@@ -27,7 +27,7 @@
 - Ejecutable `.exe` lanzador (sin consola, abre el navegador automáticamente)
 - Backend compilado a `.pyc` (sin código fuente expuesto)
 - Frontend compilado (`frontend/dist/`)
-- Entorno virtual completo (`.{repo}/`)
+- Python embebido (carpeta `python/` con deps instaladas)
 - `.env`, `LICENSE`, `README.md`
 
 **Resultado:** un solo `.zip` que el usuario final descomprime y ejecuta con doble click. Sin instalar Python, sin pip, sin npm.
@@ -38,7 +38,7 @@
 
 - **Distribución repetitiva**: automatiza compilación, empaquetado y exclusión de archivos innecesarios
 - **Sin exposición de código fuente**: compila a `.pyc` y excluye los `.py` originales
-- **Portabilidad total**: incluye el venv entero, no requiere runtime externo
+- **Portabilidad total**: incluye Python embebido, no requiere runtime externo
 - **Cero configuración para el usuario**: descomprime y ejecuta
 
 ---
@@ -88,6 +88,7 @@
 | `repo_path` | ✅ | Ruta absoluta al directorio raíz del repositorio |
 | `exe_name` | ✅ | Nombre del ejecutable (con o sin .exe) |
 | `--skip-frontend` | ❌ | Salta `npm run build` (usa frontend/dist/ existente) |
+| `--no-embed` | ❌ | Usa el venv existente (`.{repo}/`) en vez de descargar Python embebido |
 | `--no-zip` | ❌ | Solo genera el ejecutable, sin empaquetar |
 
 ---
@@ -114,13 +115,13 @@ flowchart LR
    - `build_launcher/`
    - `agent.db`
    - Todos los `.md` y `.txt` excepto en `agent/prompts/`
-4. **Generar launcher** — personaliza `templates/launcher.py` con los valores del repo (venv, puerto, módulo)
+4. **Generar launcher** — personaliza `templates/launcher.py` con los valores del repo (python embebido, puerto, módulo)
 5. **Compilar ejecutable** — PyInstaller `--onefile --noconsole` → `{exe_name}.exe`
 6. **Empaquetar** — crea `.zip` con:
    - `{exe_name}.exe`
    - `backend/` (solo `.pyc`)
    - `frontend/dist/`
-   - `.{repo}/` (venv completo)
+   - `python/` (Python embebido + deps)
    - `.env`, `LICENSE`, `README.md`
 
 ---

@@ -28,7 +28,6 @@ import imaplib
 import smtplib
 import asyncio
 import httpx
-from datetime import datetime
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -51,7 +50,6 @@ from backend.agent.permissions import (
 from backend.agent.utils.mcp_helper import get_mcp_tools, is_mcp_tool, execute_mcp_tool
 from backend.agent.utils.skill_loader import format_skills_section, find_skill_folder, parse_skill_md
 from backend.agent.utils.email_parser import parse_email
-from backend.agent.config_dir import get_agents_dir
 
 from dotenv import load_dotenv
 
@@ -945,44 +943,33 @@ class Tools:
                 except (json.JSONDecodeError, TypeError) as e:
                     log_error(str(e), source="tools.py:task(parameters)")
 
+        # 1b. Resolve the sub-agent's system prompt via the shared builder
+        # (build_system_prompt handles Behavior from AGENT.md, MANDATORY and
+        # Fecha for sub-agents too). The agent existence is checked first so
+        # a missing agent returns a user-friendly error instead of falling
+        # back to the router prompt. Errors never raise: they are reported
+        # as a user-friendly message to the front.
         prompt_result = get_agent_prompt(agent_name)
         if prompt_result.get("status") != "success":
             return make_error_response(
-                message=f"Agent '{agent_name}' not found.",
+                message=f"No se encontró el agente '{agent_name}'. Revisá que exista en la carpeta de agentes.",
                 usage=zero_usage(),
             )
-        base = prompt_result.get("data", "") or ""
+
+        try:
+            from backend.agent.loop_helpers import build_system_prompt
+
+            system_prompt = build_system_prompt(agent_name)
+            # print(f'Agente: {agent_name}\n\nPrompt:\n{system_prompt}')
+        except Exception as exc:
+            log_error(str(exc), source="tools.py:task(system_prompt)")
+            return make_error_response(
+                message=f"No se pudo preparar el agente '{agent_name}'. Revisá su definición e intentá de nuevo.",
+                usage=zero_usage(),
+            )
 
         # 2. Create an integrated child session (parent_id = current session)
         from backend.instances import agent, session_manager
-
-        # System prompt del subagente: Behavior (AGENT.md) + MANDATORY + Fecha
-        try:
-            mandatory = agent.prompt("mandatory")
-        except FileNotFoundError:
-            mandatory = ""
-
-        # AGENT.md (comportamiento general) se inyecta antes de MANDATORY
-        behavior_text = ""
-        agent_md_path = get_agents_dir() / "AGENT.md"
-        if agent_md_path.is_file():
-            try:
-                with open(agent_md_path, encoding="utf-8") as f:
-                    behavior_text = f.read()
-            except (OSError, UnicodeDecodeError) as exc:
-                log_error(str(exc), source="tools.py:task(behavior)")
-
-        fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
-        if behavior_text or mandatory:
-            parts = [base] if base else []
-            if behavior_text:
-                parts.append(f"## Behavior\n{behavior_text}")
-            if mandatory:
-                parts.append(f"## MANDATORY:\n{mandatory}")
-            parts.append(f"## Fecha:\n{fecha}")
-            system_prompt = "\n\n---\n\n".join(parts)
-        else:
-            system_prompt = base
         # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{system_prompt}\n{"#"*80}\n\n\n')
 
         parent_id = getattr(self, "_current_session_id", None)

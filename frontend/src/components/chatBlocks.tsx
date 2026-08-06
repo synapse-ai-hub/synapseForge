@@ -2,6 +2,7 @@ import {
   useState,
   useRef,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   useId,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { renderMermaid } from "../utils/mermaid";
 import type { Message, SubagentEvent, SubagentStep } from "../App";
 
 /* ------------------------------------------------------------------ */
@@ -140,21 +142,29 @@ function FileChip({
 /*  MarkdownRenderer                                                  */
 /* ------------------------------------------------------------------ */
 
-/** Renders markdown content to HTML with XSS sanitization. */
+/** Renders markdown content to HTML with XSS sanitization + Mermaid diagrams. */
 function MarkdownRenderer({ content }: { content: string }) {
-  if (!content) return null;
-  try {
-    const html = marked.parse(content, { async: false }) as string;
-    const sanitized = DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] });
-    return (
-      <div
-        className="markdown-content text-sm leading-relaxed text-app-text"
-        dangerouslySetInnerHTML={{ __html: sanitized }}
-      />
-    );
-  } catch {
-    return <>{content}</>;
-  }
+  const sanitized = useMemo(() => {
+    if (!content) return null;
+    try {
+      const html = marked.parse(content, { async: false }) as string;
+      return DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] });
+    } catch {
+      return null;
+    }
+  }, [content]);
+
+  useLayoutEffect(() => {
+    if (sanitized !== null) void renderMermaid();
+  }, [sanitized]);
+
+  if (!content || sanitized === null) return <>{content}</>;
+  return (
+    <div
+      className="markdown-content text-sm leading-relaxed text-app-text"
+      dangerouslySetInnerHTML={{ __html: sanitized }}
+    />
+  );
 }
 
 /** Agrega target="_blank" rel="noopener noreferrer" a todos los links. */
@@ -336,6 +346,26 @@ function ToolCallBlock({
     }
   }, [isTask, hasResult, result, realtimeChildTools]);
 
+  // Result HTML for non-task tools (markdown + Mermaid) — memoized so the
+  // effect below can run Mermaid after the block is mounted.
+  const resultHtml = useMemo(() => {
+    if (!result || isTask) return null;
+    const raw =
+      typeof result.result === "string"
+        ? result.result
+        : JSON.stringify(result.result, null, 2);
+    try {
+      const html = marked.parse(raw, { async: false }) as string;
+      return DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] });
+    } catch {
+      return null;
+    }
+  }, [result, isTask]);
+
+  useLayoutEffect(() => {
+    if (open && resultHtml !== null) void renderMermaid();
+  }, [open, resultHtml]);
+
   const handleToggle = () => {
     const nextOpen = !open;
     setOpen(nextOpen);
@@ -486,19 +516,13 @@ function ToolCallBlock({
           )}
 
           {/* Result for non-task tools — renderizado como markdown */}
-          {result && !isTask && (
+          {resultHtml !== null && (
             <div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
                 Resultado
               </div>
               <div className="prose prose-sm max-w-none overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] text-app-text [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_p]:text-[11px] [&_li]:text-[11px] [&_code]:text-[11px]">
-                {(() => {
-                  const raw = typeof result.result === "string"
-                    ? result.result
-                    : JSON.stringify(result.result, null, 2);
-                  const html = marked.parse(raw, { async: false }) as string;
-                  return <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] }) }} />;
-                })()}
+                <span dangerouslySetInnerHTML={{ __html: resultHtml }} />
               </div>
             </div>
           )}

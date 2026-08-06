@@ -1,6 +1,7 @@
-import { useState, useMemo, memo, useId } from "react";
+import { useState, useMemo, useLayoutEffect, memo, useId } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { renderMermaid } from "../utils/mermaid";
 import type { Message } from "../App";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { User, Brain, ChevronDown, ChevronRight, Terminal, Paperclip } from "lucide-react";
@@ -34,6 +35,10 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
     () => renderMarkdown(message.content),
     [message.content],
   );
+
+  useLayoutEffect(() => {
+    if (renderedHtml) void renderMermaid();
+  }, [renderedHtml]);
 
   return (
     <div

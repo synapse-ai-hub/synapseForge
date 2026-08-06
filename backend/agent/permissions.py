@@ -413,8 +413,8 @@ def evaluate(
         rules.extend(rs)
 
     for rule in reversed(rules):
-        if wildcard_match(permission, rule.get("permission", "")) and wildcard_match(
-            pattern, rule.get("pattern", "*")
+        if wildcard_match(rule.get("permission", ""), permission) and wildcard_match(
+            rule.get("pattern", "*"), pattern
         ):
             return rule.get("action", "ask")
 
@@ -427,13 +427,21 @@ def filter_tools(
 ) -> list[dict[str, Any]]:
     """Filter a tool registry by an agent's tool permissions.
 
+    Works as an allow-list (no deny): only tools that resolve to
+    ``"allow"`` are returned.
+
     Supports two formats:
 
     - **Flat** (e.g. ``"query": "allow"``): the tool is allowed without
-      restrictions on its arguments.
-    - **Nested** (e.g. ``"task": {"explorer": "allow"}``): the tool is
-      allowed, but its first ``string`` parameter is constrained to an
-      ``enum`` containing only the allowed sub-keys.
+      restrictions on its arguments. A top-level ``"*": "allow"`` allows
+      every tool.
+    - **Nested** (e.g. ``"task": {"explorer": "allow"}``): the key is a
+      group. It matches a single tool by exact name (``task``) or a set of
+      tools by server prefix (``notebooklm`` → every ``notebooklm_*``
+      tool). If the group dict contains ``"*": "allow"``, every tool in
+      the group is allowed. Otherwise only the explicitly allowed sub-keys
+      are kept; for a single tool (like ``task``) the first ``string``
+      parameter is constrained to an ``enum`` of the allowed sub-keys.
 
     When *tool_perms* is ``None``, empty, or contains no entries that
     resolve to ``"allow"``, no tools are returned (deny by default).
@@ -465,29 +473,57 @@ def filter_tools(
         if not name:
             continue
 
-        # --- Nested permission (e.g. task: {explorer: allow}) ---
-        if name in nested_perms:
-            sub = nested_perms[name]
-            allowed = [key for key, val in sub.items()
-                       if isinstance(val, str) and val == "allow"]
-            if not allowed:
-                logger.debug("Tool '%s' denied by nested permission (no allow entries).", name)
+        # --- Nested permission (group): match exact name or prefix ---
+        # e.g. "task": {explorer: allow}      → matches the "task" tool (exact)
+        #      "notebooklm": {"*": "allow"}   → matches every "notebooklm_*" tool
+        group_key = None
+        sub: dict[str, Any] = {}
+        for k, v in nested_perms.items():
+            if name == k or name.startswith(k + "_"):
+                group_key = k
+                sub = v
+                break
+
+        if group_key is not None:
+            # "*" catch-all → allow every tool in the group
+            if sub.get("*") == "allow":
+                filtered.append(tool)
+                logger.debug("Tool '%s' allowed by group '%s' (*).", name, group_key)
                 continue
 
-            # Deep-copy to avoid mutating the cached registry
-            tool_copy = copy.deepcopy(tool)
-            func = tool_copy.get("function", {})
-            params = func.get("parameters", {})
-            props = params.get("properties", {})
+            allowed = [
+                key for key, val in sub.items()
+                if isinstance(val, str) and val == "allow"
+            ]
+            if not allowed:
+                logger.debug(
+                    "Tool '%s' denied by nested permission (no allow entries).", name
+                )
+                continue
 
-            # Apply enum to the first string parameter
-            for pname, pschema in props.items():
-                if pschema.get("type") == "string" and pname != "self":
-                    pschema["enum"] = allowed
-                    break
+            # Single tool (exact match, e.g. task): constrain first string param
+            if name == group_key:
+                # Deep-copy to avoid mutating the cached registry
+                tool_copy = copy.deepcopy(tool)
+                func = tool_copy.get("function", {})
+                params = func.get("parameters", {})
+                props = params.get("properties", {})
 
-            filtered.append(tool_copy)
-            logger.debug("Tool '%s' allowed with enum=%s", name, allowed)
+                # Apply enum to the first string parameter
+                for pname, pschema in props.items():
+                    if pschema.get("type") == "string" and pname != "self":
+                        pschema["enum"] = allowed
+                        break
+
+                filtered.append(tool_copy)
+                logger.debug("Tool '%s' allowed with enum=%s", name, allowed)
+                continue
+
+            # Prefixed tools (MCP group): include only explicitly allowed sub-tools
+            sub_tool = name[len(group_key) + 1:]
+            if sub_tool in allowed:
+                filtered.append(tool)
+                logger.debug("Tool '%s' allowed by group '%s'.", name, group_key)
             continue
 
         # --- Flat permission (e.g. query: allow) ---

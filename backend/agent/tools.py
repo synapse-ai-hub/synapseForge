@@ -27,6 +27,7 @@ from ddgs import DDGS
 import imaplib
 import smtplib
 import asyncio
+import time
 import httpx
 from email import encoders
 from email.mime.base import MIMEBase
@@ -47,7 +48,13 @@ from backend.agent.permissions import (
     get_tool_permissions,
     get_agent_parameters
 )
-from backend.agent.utils.mcp_helper import get_mcp_tools, is_mcp_tool, execute_mcp_tool
+from backend.agent.utils.mcp_helper import (
+    execute_mcp_tool,
+    get_mcp_tools,
+    is_mcp_tool,
+    mcp_servers_configured,
+    mcp_tools_discovered,
+)
 from backend.agent.utils.skill_loader import format_skills_section, find_skill_folder, parse_skill_md
 from backend.agent.utils.email_parser import parse_email
 
@@ -164,7 +171,39 @@ class Tools:
         Returns:
             List of tool schemas in API format.
         """
+        # Self-heal: if MCP servers are configured but the registry holds no
+        # MCP tool (e.g. a transient failure at startup), re-discover once so
+        # the agent sees the MCP tools instead of an empty registry. A
+        # cooldown prevents hammering the MCP server if it stays unreachable.
+        if mcp_servers_configured() and not self._has_mcp_tools():
+            now = time.time()
+            if now - getattr(self, "_last_mcp_selfheal", 0.0) > 30.0:
+                self._last_mcp_selfheal = now
+                try:
+                    self._tools_registry = self._build_tools_registry()
+                except Exception as e:
+                    # Keep the previous registry on failure; never crash the
+                    # agent loop over a re-discovery attempt.
+                    logging.getLogger(__name__).exception(
+                        "tools_registry: MCP self-heal rebuild failed: %s", e
+                    )
+                    log_error(str(e), source="tools.py:tools_registry(self-heal)")
         return filter_tools(self._tools_registry, tool_permissions)
+
+    def _has_mcp_tools(self) -> bool:
+        """Return ``True`` if the current registry contains MCP tools.
+
+        Checks the registry content (not the discovery mapping) so a late
+        background discovery that populated the mapping but not the registry
+        still triggers the self-heal.
+
+        Returns:
+            ``True`` when at least one registry tool is MCP-managed.
+        """
+        return any(
+            is_mcp_tool(str(tool.get("function", {}).get("name", "")))
+            for tool in self._tools_registry
+        )
 
     def _build_tool_schema(
         self,
@@ -466,7 +505,12 @@ class Tools:
             return await native(**kwargs)
 
         # --- MCP tool dispatch -----------------------------------------------
-        if is_mcp_tool(tool_name):
+        # Attempt MCP dispatch when the tool is known MCP, or when MCP servers
+        # are configured but nothing was discovered yet (let execute_mcp_tool's
+        # one-shot self-heal re-discover before giving up).
+        if is_mcp_tool(tool_name) or (
+            mcp_servers_configured() and not mcp_tools_discovered()
+        ):
             try:
                 mcp_result = await execute_mcp_tool(tool_name, kwargs)
                 return make_success_response(

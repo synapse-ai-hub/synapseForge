@@ -22,6 +22,8 @@ import asyncio
 import logging
 import os
 import sys
+import threading
+import time
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
@@ -89,8 +91,13 @@ def _build_stdio_params(config: McpServerConfig) -> StdioServerParameters:
     return StdioServerParameters(command=cmd[0], args=cmd[1:], env=env)
 
 
-def _server_timeout(config: McpServerConfig, default: float = 10.0) -> float:
+def _server_timeout(config: McpServerConfig, default: float = 300.0) -> float:
     """Return the per-server connection timeout in seconds.
+
+    Reads the ``timeout`` key from the server config (loaded from
+    ``mcp.json``). Falls back to ``default`` (300s) when the server does
+    not define one, so long-running tools (e.g. interactive auth or slow
+    notebook queries) are not cut short.
 
     Args:
         config: MCP server config dict.
@@ -105,11 +112,19 @@ def _server_timeout(config: McpServerConfig, default: float = 10.0) -> float:
         return default
 
 
-async def _discover_server_tools(config: McpServerConfig) -> list[Any]:
+async def _discover_server_tools(
+    config: McpServerConfig, retries: int = 3, backoff: float = 1.0
+) -> list[Any]:
     """Discover tools from a single stdio MCP server using the official SDK.
+
+    Retries with a short backoff so a transient failure (e.g. the server
+    being momentarily busy, or a lingering instance holding a shared
+    resource) does not permanently leave the tool registry empty.
 
     Args:
         config: MCP server config dict.
+        retries: Number of attempts before giving up.
+        backoff: Base delay (seconds) between attempts (grows linearly).
 
     Returns:
         List of ``mcp.types.Tool`` objects.
@@ -119,11 +134,29 @@ async def _discover_server_tools(config: McpServerConfig) -> list[Any]:
     """
     timeout = _server_timeout(config)
     params = _build_stdio_params(config)
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await asyncio.wait_for(session.initialize(), timeout=timeout)
-            result = await asyncio.wait_for(session.list_tools(), timeout=timeout)
-            return result.tools
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            async with stdio_client(params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await asyncio.wait_for(session.initialize(), timeout=timeout)
+                    result = await asyncio.wait_for(
+                        session.list_tools(), timeout=timeout
+                    )
+                    return result.tools
+        except Exception as exc:  # noqa: BLE001 - retry any transient failure
+            last_exc = exc
+            if attempt < retries:
+                logger.warning(
+                    "MCP discovery attempt %d/%d failed: %s — retrying",
+                    attempt,
+                    retries,
+                    exc,
+                )
+                await asyncio.sleep(backoff * attempt)
+    if last_exc is not None:
+        raise last_exc
+    return []
 
 
 async def _call_server_tool(
@@ -159,29 +192,40 @@ async def _call_server_tool(
 _mcp_tool_to_server: dict[str, str] = {}
 """Maps MCP tool name → server label for dispatch in ``_execute_tool``."""
 
+# Cooldown (seconds) between one-shot self-heal re-discoveries, so a
+# genuinely unreachable MCP server is not hammered on every tool call.
+_SELFHEAL_COOLDOWN = 30.0
+_last_selfheal_ts: float = 0.0
+
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
-def _mcp_tool_to_function_schema(mcp_tool: Any) -> dict[str, Any]:
+def _mcp_tool_to_function_schema(
+    mcp_tool: Any, name_override: str | None = None
+) -> dict[str, Any]:
     """Convert an MCP tool definition to a function-call schema.
 
     Accepts both ``mcp.types.Tool`` objects (from the SDK) and plain dicts.
+    When *name_override* is provided (e.g. a server-label prefixed name),
+    it is used as the tool name instead of the raw MCP tool name.
 
     Args:
         mcp_tool: MCP tool definition.
+        name_override: Optional name to use for the tool (defaults to the
+            MCP tool's own name).
 
     Returns:
         Function schema ready for the tools registry.
     """
     if isinstance(mcp_tool, dict):
-        name = mcp_tool.get("name", "")
+        name = name_override or mcp_tool.get("name", "")
         description = mcp_tool.get("description", "")
         input_schema = mcp_tool.get("inputSchema", {})
     else:
-        name = getattr(mcp_tool, "name", "")
+        name = name_override or getattr(mcp_tool, "name", "")
         description = getattr(mcp_tool, "description", "") or ""
         input_schema = getattr(mcp_tool, "inputSchema", {}) or {}
     return {
@@ -247,39 +291,114 @@ def get_mcp_tools_groq() -> list[dict[str, Any]]:
     return groq_entries
 
 
+async def _discover_all(servers: list[McpServerConfig]) -> list[dict[str, Any]]:
+    """Discover tools from every configured server and populate the mapping.
+
+    Args:
+        servers: MCP server configs loaded from mcp.json.
+
+    Returns:
+        Freshly discovered function schemas.
+    """
+    function_tools: list[dict[str, Any]] = []
+    for server in servers:
+        label = server.get("label", "unknown")
+        try:
+            tools = await _discover_server_tools(server)
+            for tool in tools:
+                # Prefix the tool name with the server label so that
+                # permissions can group tools per server (e.g. a
+                # "notebooklm" permission matches every "notebooklm_*"
+                # tool). This is generic and works for any server.
+                prefixed_name = f"{label}_{tool.name}"
+                function_tools.append(
+                    _mcp_tool_to_function_schema(tool, prefixed_name)
+                )
+                _mcp_tool_to_server[prefixed_name] = label
+            logger.info("MCP '%s' — discovered %d tool(s)", label, len(tools))
+        except Exception as exc:
+            log_error(str(exc), source="mcp_helper.py:_discover_all")
+            logger.warning("MCP '%s' — failed to discover tools: %s", label, exc)
+    return function_tools
+
+
+def _run_discovery(servers: list[McpServerConfig]) -> list[dict[str, Any]]:
+    """Run discovery on a fresh event loop, safe from sync or async callers.
+
+    When called from a running event loop (e.g. the agent loop re-discovering
+    an empty registry), the discovery runs on a dedicated thread with its own
+    loop so it never fails with ``RuntimeError``.
+
+    Args:
+        servers: MCP server configs loaded from mcp.json.
+
+    Returns:
+        Freshly discovered function schemas.
+    """
+
+    def _worker() -> list[dict[str, Any]]:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(_discover_all(servers))
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — run discovery directly on a fresh loop.
+        return _worker()
+
+    # Already inside an event loop: run discovery on a dedicated thread.
+    result: list[dict[str, Any]] = []
+    error: Exception | None = None
+
+    def _thread_worker() -> None:
+        nonlocal result, error
+        try:
+            result = _worker()
+        except Exception as exc:  # noqa: BLE001
+            error = exc
+
+    thread = threading.Thread(target=_thread_worker, daemon=True)
+    thread.start()
+    thread.join(timeout=120.0)
+    if thread.is_alive():
+        # Discovery is still running in the background. Log it clearly so
+        # the empty result is not mistaken for a successful discovery.
+        logger.warning(
+            "MCP discovery still running after 120s — returning partial/empty "
+            "result; the background thread may populate the mapping later."
+        )
+    if error is not None:
+        raise error
+    return result
+
+
 def get_mcp_tools_ollama() -> list[dict[str, Any]]:
     """Discover tools from all MCP servers and wrap as function schemas.
 
     Uses the official MCP SDK with a per-server timeout. A server that
     fails or times out is isolated — it is logged and skipped, and the
-    rest of the startup continues normally.
+    rest of the startup continues normally. Discovery is safe to call
+    from both synchronous and asynchronous contexts.
 
     Returns:
         List of function schemas ready for ``tools_registry``.
     """
     global _mcp_tool_to_server
     servers = load_mcp_config()
-    function_tools: list[dict[str, Any]] = []
-
-    async def _discover_all() -> None:
-        for server in servers:
-            label = server.get("label", "unknown")
-            try:
-                tools = await _discover_server_tools(server)
-                for tool in tools:
-                    function_tools.append(_mcp_tool_to_function_schema(tool))
-                    _mcp_tool_to_server[tool.name] = label
-                logger.info("MCP '%s' — discovered %d tool(s)", label, len(tools))
-            except Exception as exc:
-                log_error(str(exc), source="mcp_helper.py:get_mcp_tools")
-                logger.warning("MCP '%s' — failed to discover tools: %s", label, exc)
-
+    # Clear any stale mapping so a re-discovery does not accumulate
+    # entries for servers that are no longer reachable. Mutate in place
+    # (instead of rebinding) so concurrent readers never see a fresh dict.
+    _mcp_tool_to_server.clear()
     try:
-        asyncio.run(_discover_all())
+        return _run_discovery(servers)
     except Exception as exc:
         log_error(str(exc), source="mcp_helper.py:get_mcp_tools")
-
-    return function_tools
+        return []
 
 
 def get_mcp_tools() -> list[dict[str, Any]]:
@@ -291,6 +410,37 @@ def get_mcp_tools() -> list[dict[str, Any]]:
 
     Returns:
         List of function schemas ready for ``tools_registry``.
+    """
+    return get_mcp_tools_ollama()
+
+
+def mcp_servers_configured() -> bool:
+    """Return ``True`` if at least one MCP server is configured in mcp.json.
+
+    Returns:
+        ``True`` when there is at least one MCP server entry.
+    """
+    return bool(load_mcp_config())
+
+
+def mcp_tools_discovered() -> bool:
+    """Return ``True`` if at least one MCP tool has been discovered.
+
+    Returns:
+        ``True`` if the tool-to-server mapping is non-empty.
+    """
+    return bool(_mcp_tool_to_server)
+
+
+def rediscover_mcp_servers() -> list[dict[str, Any]]:
+    """Re-run MCP discovery, clearing any stale tool-to-server mapping.
+
+    Useful to recover from a transient failure at startup (e.g. the MCP
+    server was momentarily busy), so the tool registry is not left empty
+    for the whole session.
+
+    Returns:
+        Freshly discovered function schemas.
     """
     return get_mcp_tools_ollama()
 
@@ -307,6 +457,41 @@ def is_mcp_tool(tool_name: str) -> bool:
     return tool_name in _mcp_tool_to_server
 
 
+def _mcp_content_to_serializable(content: list[Any]) -> Any:
+    """Convert MCP content items to a JSON-serializable representation.
+
+    MCP servers return tool results as content items (``TextContent``,
+    ``ImageContent``, ``EmbeddedResource``) which are not JSON-serializable
+    and would break ``json.dumps`` downstream. When every item is text, the
+    items are joined into a single string (the most useful form for the
+    LLM). Otherwise each item is converted to a plain dict.
+
+    Args:
+        content: ``result.content`` from an MCP tool call.
+
+    Returns:
+        A JSON-serializable value (string or list of dicts).
+    """
+    if not content:
+        return ""
+    if all(getattr(item, "type", "text") == "text" for item in content):
+        return "\n".join(getattr(item, "text", str(item)) for item in content)
+    items: list[dict[str, Any]] = []
+    for item in content:
+        if isinstance(item, dict):
+            items.append(item)
+        elif hasattr(item, "model_dump"):
+            items.append(item.model_dump())
+        else:
+            items.append(
+                {
+                    "type": getattr(item, "type", "text"),
+                    "text": getattr(item, "text", str(item)),
+                }
+            )
+    return items
+
+
 async def execute_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
     """Execute a tool on the MCP server that owns it.
 
@@ -319,14 +504,30 @@ async def execute_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
         arguments: Tool arguments dict.
 
     Returns:
-        Tool result content (list of content items), or raises on error.
+        JSON-serializable tool result (text string or list of dicts), or
+        raises on error.
 
     Raises:
         ValueError: If the tool is not registered in any MCP server.
     """
+    global _last_selfheal_ts
     label = _mcp_tool_to_server.get(tool_name)
     if label is None:
+        # One-shot self-heal: the mapping may be empty because discovery
+        # failed at startup. Re-discover once (bounded by a cooldown) and
+        # retry before giving up.
+        now = time.time()
+        if now - _last_selfheal_ts > _SELFHEAL_COOLDOWN:
+            _last_selfheal_ts = now
+            rediscover_mcp_servers()
+            label = _mcp_tool_to_server.get(tool_name)
+    if label is None:
         raise ValueError(f"Tool '{tool_name}' is not registered in any MCP server")
+
+    # Strip the server-label prefix to recover the original MCP tool name
+    original_name = (
+        tool_name[len(label) + 1:] if tool_name.startswith(f"{label}_") else tool_name
+    )
 
     servers = load_mcp_config()
     config = next((s for s in servers if s.get("label") == label), None)
@@ -335,8 +536,8 @@ async def execute_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
             f"MCP server '{label}' (for tool '{tool_name}') not found in config"
         )
 
-    result = await _call_server_tool(config, tool_name, arguments)
-    return result.content
+    result = await _call_server_tool(config, original_name, arguments)
+    return _mcp_content_to_serializable(result.content)
 
 
 # ---------------------------------------------------------------------------

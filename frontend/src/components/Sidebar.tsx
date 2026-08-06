@@ -145,7 +145,7 @@ export function Sidebar({
   const menuItems: Array<{ key: SidebarTab; label: string; icon: React.ReactNode; devOnly?: boolean }> = [
     { key: "sessions", label: "Conversaciones", icon: <History size={14} /> },
     { key: "config", label: "Configuración", icon: <Settings size={14} /> },
-    { key: "agent", label: "Agente", icon: <Brain size={14} /> },
+    ...(isDevOnly ? [{ key: "agent" as SidebarTab, label: "Agente", icon: <Brain size={14} /> }] : []),
     ...(isDevOnly ? [{ key: "create" as SidebarTab, label: "Crear", icon: <Wrench size={14} /> }] : []),
   ];
 
@@ -216,13 +216,15 @@ export function Sidebar({
           <ConfigTab verboseMode={verboseMode} onVerboseModeChange={onVerboseModeChange} />
         </div>
 
-        {/* Agent info tab */}
-        <div
-          className="flex-1 flex flex-col min-h-0 overflow-y-auto"
-          style={{ display: tab === "agent" ? "flex" : "none" }}
-        >
-          <AgentInfoTab />
-        </div>
+        {/* Agent info tab (dev only) */}
+        {isDevOnly && (
+          <div
+            className="flex-1 flex flex-col min-h-0 overflow-y-auto"
+            style={{ display: tab === "agent" ? "flex" : "none" }}
+          >
+            <AgentInfoTab />
+          </div>
+        )}
 
         {/* Create tab (dev only) */}
         {isDevOnly && (

@@ -143,8 +143,8 @@ function ToolsPanel() {
       ) : (
         tools.map((t) => (
           <div key={t.name} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
-            <div className="min-w-0">
-              <span className="text-sm font-medium text-app-text">{t.name}</span>
+            <div className="min-w-0 flex-1">
+              <span className="text-sm font-medium text-app-text break-words">{t.name}</span>
               {t.description && (
                 <p className="text-xs text-app-text-secondary mt-0.5">{t.description}</p>
               )}
@@ -203,8 +203,8 @@ function SkillsPanel() {
       ) : (
         skills.map((s) => (
           <div key={s.name} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
-            <div className="min-w-0">
-              <span className="text-sm font-medium text-app-text">{s.name}</span>
+            <div className="min-w-0 flex-1">
+              <span className="text-sm font-medium text-app-text break-words">{s.name}</span>
               {s.description && (
                 <p className="text-xs text-app-text-secondary mt-0.5">{s.description}</p>
               )}
@@ -256,8 +256,8 @@ function AgentsPanel() {
       ) : (
         agents.map((a) => (
           <div key={a.name} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
-            <div className="min-w-0">
-              <span className="text-sm font-medium text-app-text">{a.name}</span>
+            <div className="min-w-0 flex-1">
+              <span className="text-sm font-medium text-app-text break-words">{a.name}</span>
               {a.description && (
                 <p className="text-xs text-app-text-secondary mt-0.5">{a.description}</p>
               )}
@@ -300,7 +300,7 @@ function McpPanel({ servers, loading, onRefresh }: { servers: McpServerStatus[];
                 ) : (
                   <Database size={14} className="shrink-0 text-app-text-secondary" />
                 )}
-                <span className="text-sm font-medium text-app-text">{s.label}</span>
+                <span className="text-sm font-medium text-app-text min-w-0 break-words">{s.label}</span>
               </div>
               <span className={`text-xs px-1.5 py-0.5 rounded font-medium self-start ${
                 s.status === "connected"
@@ -357,7 +357,7 @@ function RagPanel() {
       ) : (
         collections.map((c) => (
           <div key={c} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
-            <span className="text-sm font-medium text-app-text">{c}</span>
+            <span className="text-sm font-medium text-app-text min-w-0 flex-1 break-words">{c}</span>
             <DeleteBtn
               label={c}
               onDelete={async () => {

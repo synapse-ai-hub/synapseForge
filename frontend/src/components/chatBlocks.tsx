@@ -64,11 +64,8 @@ function ReasoningBlock({ content, defaultOpen }: { content: string; defaultOpen
         />
       </button>
       {open && (
-        <div
-          id={panelId}
-          className="mt-2 text-xs text-app-text-secondary whitespace-pre-wrap break-words"
-        >
-          {text}
+        <div id={panelId} className="mt-2 text-xs text-app-text-secondary">
+          <MarkdownRenderer content={text} />
         </div>
       )}
     </div>
@@ -199,26 +196,6 @@ function ToolCallBlock({
     (typeof result.result === "string" && !isTask && result.result.toLowerCase().includes("error")) ||
     (typeof result.result === "object" && result.result !== null && "error" in result.result)
   );
-  
-  // Status logic:
-  // - If waiting for first chunk: keep calling (spinner) until text arrives
-  // - If has result: success or error based on content
-  // - If no result, isStreaming and isLatestTool: calling (spinner)
-  // - If no result, isStreaming but NOT latest tool: done (no spinner, closed by newer tool)
-  // - If no result and NOT streaming (historical): error (red, no spinner)
-  const status = waitingForChunk
-    ? "calling"
-    : hasResult
-      ? (isError ? "error" : "success")
-      : (isStreaming && isLatestTool ? "calling" : (isStreaming ? "done" : "error"));
-
-  // Status colors (done = previous tool closed by a newer one)
-  const statusColors = {
-    calling: "text-app-text-secondary",
-    success: "text-emerald-600",
-    error: "text-red-600",
-    done: "text-app-text-secondary/50",
-  };
 
   // Find matching child session ID from real-time events or result XML
   const childSessionId = useMemo(() => {
@@ -234,6 +211,38 @@ function ToolCallBlock({
     }
     return null;
   }, [subagentEvents, isTask, hasResult, result]);
+
+  // Child text content (real-time from chunks, or lazy-fetched on reload).
+  // "Respuesta del sub-agente": si existe, el sub-agente terminó con texto.
+  const childContent = useMemo(() => {
+    if (!childSessionId || !subagentEvents?.[childSessionId]) {
+      return childContentFallback || null;
+    }
+    return subagentEvents[childSessionId].content || null;
+  }, [childSessionId, subagentEvents, childContentFallback]);
+  const hasChildResponse = !!childContent;
+
+  // Status logic:
+  // - If waiting for first chunk: keep calling (spinner) until text arrives
+  // - If has result: success or error based on content
+  // - If no result, isStreaming and isLatestTool: calling (spinner)
+  // - If no result, isStreaming but NOT latest tool: done (no spinner, closed by newer tool)
+  // - If no result and NOT streaming: for task, success only when the
+  //   sub-agent produced a response; error when it finished without one
+  //   (even if its tools ran). For other tools: error (red, no spinner).
+  const status = waitingForChunk
+    ? "calling"
+    : hasResult
+      ? (isError ? "error" : "success")
+      : (isStreaming && isLatestTool ? "calling" : (isStreaming ? "done" : (isTask ? (hasChildResponse ? "success" : "error") : "error")));
+
+  // Status colors (done = previous tool closed by a newer one)
+  const statusColors = {
+    calling: "text-app-text-secondary",
+    success: "text-emerald-600",
+    error: "text-red-600",
+    done: "text-app-text-secondary/50",
+  };
 
   // Build child tools list from real-time events (priority) or lazy fetch
   const realtimeChildTools = useMemo(() => {
@@ -335,9 +344,12 @@ function ToolCallBlock({
     }
   };
 
-  // Determine child tool status
-  const getChildStatus = (childResult?: any) => {
-    if (!childResult) return "calling";
+  // Determine child tool status.
+  // childDone: el sub-agente ya terminó (no streaming). Sin resultado y
+  // terminado → error (falló o no devolvió nada); sin resultado y aún
+  // trabajando → calling (reloj).
+  const getChildStatus = (childResult?: any, childDone = false) => {
+    if (!childResult) return childDone ? "error" : "calling";
     if (
       (typeof childResult === "string" && childResult.toLowerCase().includes("error")) ||
       (typeof childResult === "object" && childResult !== null && "error" in childResult)
@@ -353,14 +365,6 @@ function ToolCallBlock({
 
   // Child tools to display: real-time if available, otherwise lazy-fetched
   const displayChildTools = realtimeChildTools ?? childTools;
-
-  // Child text content (real-time from chunks, or lazy-fetched on reload)
-  const childContent = useMemo(() => {
-    if (!childSessionId || !subagentEvents?.[childSessionId]) {
-      return childContentFallback || null;
-    }
-    return subagentEvents[childSessionId].content || null;
-  }, [childSessionId, subagentEvents, childContentFallback]);
 
   // Child steps en el orden EXACTO de eventos: runtime (subagentEvents) o recarga (fallback).
   const childSteps = useMemo<SubagentStep[]>(() => {
@@ -416,7 +420,7 @@ function ToolCallBlock({
                     </div>
                   );
                 }
-                const childStatus = getChildStatus(step.result);
+                const childStatus = getChildStatus(step.result, !isStreaming);
                 return (
                   <div key={i} className="ml-3 pl-2 border-l-2 border-app-border space-y-1">
                     <div className="flex items-center gap-1 text-[11px]">
@@ -447,7 +451,7 @@ function ToolCallBlock({
                     Herramientas del sub-agente
                   </div>
                   {displayChildTools.map((ct, i) => {
-                    const childStatus = getChildStatus(ct.result);
+                    const childStatus = getChildStatus(ct.result, !isStreaming);
                     return (
                       <div key={i} className="ml-3 pl-2 border-l-2 border-app-border space-y-1">
                         <div className="flex items-center gap-1 text-[11px]">

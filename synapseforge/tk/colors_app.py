@@ -25,10 +25,10 @@ except ImportError:  # pragma: no cover
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 COLOR_FIELDS = [
-    ("primary", "Color principal de la app: botón de enviar, barra de actividad, opción seleccionada del menú, enlaces de las respuestas"),
-    ("secondary", "Color de los detalles suaves: borde que se ilumina al hacer clic en un campo, anillo de la conversación seleccionada, bordes de las tarjetas"),
-    ("primary_text", "Color del texto e íconos que van encima del color principal (flecha de enviar, texto de botones, ícono del avatar)"),
-    ("gradient_secondary", "Color final del degradé de los botones y el avatar (el inicio es el color principal)"),
+    ("primary", "Color principal: botón de enviar, burbuja y avatar del asistente, barra de actividad, opción seleccionada del menú, enlaces de las respuestas y puntos de “escribiendo…”"),
+    ("secondary", "Color de los detalles suaves: borde que se ilumina al hacer clic en un campo, anillo de la conversación seleccionada, bordes de las tarjetas y cursor de escritura"),
+    ("primary_text", "Color del texto e íconos que van sobre el color principal: flecha de enviar, texto de botones, ícono del avatar y texto de la burbuja del asistente"),
+    ("gradient_secondary", "Color final del degradé de los botones y del avatar del asistente (el inicio es el color principal)"),
 ]
 
 
@@ -81,19 +81,22 @@ class ColorsApp:
         self._previews: Dict[str, tk.Canvas] = {}
 
         for i, (key, desc) in enumerate(COLOR_FIELDS):
-            ttk.Label(frame, text=desc).grid(
-                row=i, column=0, sticky="w", pady=3, padx=(0, 10)
+            row = i * 2
+
+            # Explanation (wraps so it doesn't push the selector out of view)
+            ttk.Label(frame, text=desc, wraplength=430, justify="left").grid(
+                row=row, column=0, columnspan=4, sticky="w", pady=(8, 0), padx=(0, 10)
             )
 
             # Preview square (18×18)
             cv = tk.Canvas(frame, width=20, height=20, highlightthickness=1,
                            highlightbackground="#ccc")
-            cv.grid(row=i, column=1, pady=3, padx=(0, 6))
+            cv.grid(row=row + 1, column=0, pady=(4, 8), padx=(0, 6))
             self._previews[key] = cv
 
             # Entry with current value
             ent = ttk.Entry(frame, width=14)
-            ent.grid(row=i, column=2, pady=3, padx=(0, 6))
+            ent.grid(row=row + 1, column=1, pady=(4, 8), padx=(0, 6))
             cur_val = current.get(key, "")
             if cur_val:
                 ent.insert(0, cur_val)
@@ -103,7 +106,7 @@ class ColorsApp:
             # Color picker button
             ttk.Button(
                 frame, text="Seleccionar", command=lambda k=key: self._pick_color(k)
-            ).grid(row=i, column=3, pady=3, padx=(0, 0))
+            ).grid(row=row + 1, column=2, pady=(4, 8), padx=(0, 0), sticky="w")
 
             # Initial preview
             self._update_preview(key)
@@ -135,7 +138,7 @@ class ColorsApp:
         ttk.Button(bottom, text="Guardar", command=self._on_save).pack(side="right")
 
         # ── Center ───────────────────────────────────────────────────
-        self._center(660, 560)
+        self._center(660, 800)
 
     # ──────────────────────────────────────────────────────────────────
     # Configuración robusta del ícono usando ctypes

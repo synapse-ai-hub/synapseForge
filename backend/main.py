@@ -89,6 +89,20 @@ except ImportError as e:
     agent_items_router = None
     logging.warning("backend.routes.agent_items could not be imported.")
 
+try:
+    from backend.routes.events import router as events_router
+except ImportError as e:
+    log_error(str(e), source="main.py:events_import")
+    events_router = None
+    logging.warning("backend.routes.events could not be imported.")
+
+try:
+    from backend.routes.telegram import router as telegram_router
+except ImportError as e:
+    log_error(str(e), source="main.py:telegram_import")
+    telegram_router = None
+    logging.warning("backend.routes.telegram could not be imported.")
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -183,8 +197,29 @@ async def lifespan(app: FastAPI):
     # Start heartbeat watchdog (desktop app: exit if frontend closes)
     asyncio.create_task(_heartbeat_watchdog())
 
+    # Start the Telegram bot if a token is configured. It only polls when
+    # enabled (persisted in config_kv, toggle from the frontend header).
+    try:
+        from backend.telegram.instance import telegram_bot
+
+        persisted = session_manager.get_config("telegram_enabled")
+        telegram_bot.set_enabled(persisted == "true")
+        if telegram_bot.token:
+            await telegram_bot.start()
+        else:
+            logger.warning("TELEGRAM_BOT_TOKEN not set — Telegram bot disabled.")
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(telegram)")
+        logger.warning("Failed to start Telegram bot: %s", exc)
+
     logger.info("<descripcion>Nombre del proyecto</descripcion> API started successfully.")
     yield
+    try:
+        from backend.telegram.instance import telegram_bot
+
+        await telegram_bot.stop()
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(telegram_stop)")
     logger.info("<descripcion>Nombre del proyecto</descripcion> API shutting down.")
 
 
@@ -232,6 +267,12 @@ if create_router is not None:
 
 if agent_items_router is not None:
     app.include_router(agent_items_router, prefix="/api")
+
+if events_router is not None:
+    app.include_router(events_router, prefix="/api")
+
+if telegram_router is not None:
+    app.include_router(telegram_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

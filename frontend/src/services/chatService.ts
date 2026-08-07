@@ -12,6 +12,8 @@ export interface ChatParams {
   message: string;
   files?: File[];
   sessionId?: string | null;
+  /** When set, the backend delivers the final answer to this Telegram chat. */
+  telegramChatId?: string | null;
 }
 
 let activeController: AbortController | null = null;
@@ -25,13 +27,14 @@ const chatService = {
   async *sendMessage(params: ChatParams): AsyncGenerator<StreamEvent> {
     const _t0 = performance.now();
     // console.log(`[DEBUG_TIEMPO_SSE] sendMessage started — t=${_t0}`);
-    const { message, files, sessionId } = params;
+    const { message, files, sessionId, telegramChatId } = params;
     const controller = new AbortController();
     activeController = controller;
 
     const formData = new FormData();
     formData.append("message", message);
     if (sessionId) formData.append("session_id", sessionId);
+    if (telegramChatId) formData.append("telegram_chat_id", telegramChatId);
     if (files && files.length > 0) {
       files.forEach((f) => formData.append("files", f));
     }

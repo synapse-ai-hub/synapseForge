@@ -3,6 +3,8 @@ import {
   useRef,
   useEffect,
   useCallback,
+  forwardRef,
+  useImperativeHandle,
   type KeyboardEvent,
 } from "react";
 import {
@@ -87,22 +89,36 @@ interface ChatInterfaceProps {
   onSessionTitleUpdate?: (sessionId: string, title: string) => void;
   onToggleSidebar?: () => void;
   verboseMode: boolean;
+  telegramEnabled: boolean;
+  onTelegramToggle: (val: boolean) => void;
 }
 
-export function ChatInterface({
-  messages,
-  setMessages,
-  isStreaming,
-  setIsStreaming,
-  onShowHistory,
-  sessionId,
-  onSessionStart,
-  onNewChat,
-  onSessionEnd,
-  onShowMetrics,
-  onSessionTitleUpdate,
-  verboseMode,
-}: ChatInterfaceProps) {
+export interface ChatInterfaceHandle {
+  /** Send a message programmatically (used by the Telegram bridge). */
+  sendMessage: (
+    text: string,
+    telegramChatId?: string | null,
+    telegramSessionId?: string | null,
+  ) => void;
+}
+
+export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(
+  function ChatInterface({
+    messages,
+    setMessages,
+    isStreaming,
+    setIsStreaming,
+    onShowHistory,
+    sessionId,
+    onSessionStart,
+    onNewChat,
+    onSessionEnd,
+    onShowMetrics,
+    onSessionTitleUpdate,
+    verboseMode,
+    telegramEnabled,
+    onTelegramToggle,
+  }: ChatInterfaceProps) {
   /* ---- state ---- */
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -278,31 +294,40 @@ export function ChatInterface({
   }, [onNewChat, setIsStreaming]);
 
   /* ---- send message ---- */
-  const handleSend = useCallback(async () => {
-    const _t0 = performance.now();
-    // console.log(`[DEBUG_TIEMPO_SSE] handleSend called — t=${_t0}`);
-    const text = input.trim();
-    if (!text || isStreaming) return;
+  const sendMessage = useCallback(
+    async (
+      text: string,
+      telegramChatId?: string | null,
+      telegramSessionId?: string | null,
+    ) => {
+      const _t0 = performance.now();
+      // console.log(`[DEBUG_TIEMPO_SSE] sendMessage called — t=${_t0}`);
+      const trimmed = text.trim();
+      if (!trimmed || isStreaming) return;
 
-    // Ensure we have a session id for this conversation
-    let activeSessionId = sessionId;
-    if (!activeSessionId) {
-      activeSessionId = generateId();
-      onSessionStart(activeSessionId);
-    }
+      // Ensure we have a session id for this conversation
+      let activeSessionId = telegramSessionId || sessionId;
+      if (!activeSessionId) {
+        activeSessionId = generateId();
+        onSessionStart(activeSessionId);
+      } else if (telegramSessionId && telegramSessionId !== sessionId) {
+        // A Telegram message arrived for a different (new) session: select it
+        // exactly as the "new conversation" button does.
+        onSessionStart(telegramSessionId);
+      }
 
-    setInput("");
-    const currentFiles = [...files];
-    setFiles([]);
+      setInput("");
+      const currentFiles = [...files];
+      setFiles([]);
 
-    // Add user message with attached files
-    const userMessage: Message = {
-      id: generateId(),
-      type: "user",
-      content: text,
-      files: currentFiles.map((f) => ({ name: f.name, size: f.size })),
-    };
-    setMessages((prev) => [...prev, userMessage]);
+      // Add user message with attached files
+      const userMessage: Message = {
+        id: generateId(),
+        type: "user",
+        content: trimmed,
+        files: currentFiles.map((f) => ({ name: f.name, size: f.size })),
+      };
+      setMessages((prev) => [...prev, userMessage]);
 
     // Create assistant placeholder
     const assistantId = generateId();
@@ -342,9 +367,10 @@ export function ChatInterface({
 
     try {
       const eventStream = chatService.sendMessage({
-        message: text,
+        message: trimmed,
         files: currentFiles,
         sessionId: activeSessionId,
+        telegramChatId,
       });
 
       for await (const event of eventStream) {
@@ -636,7 +662,15 @@ export function ChatInterface({
       });
       onSessionEnd?.();
     }
-  }, [input, isStreaming, files, setMessages, setIsStreaming, sessionId, onSessionStart, verboseMode]);
+  }, [isStreaming, files, setMessages, setIsStreaming, sessionId, onSessionStart, verboseMode]);
+
+  /* ---- expose sendMessage to the parent (Telegram bridge) ---- */
+  useImperativeHandle(ref, () => ({ sendMessage }), [sendMessage]);
+
+  /* ---- send button / Enter ---- */
+  const handleSend = useCallback(() => {
+    sendMessage(input);
+  }, [input, sendMessage]);
 
   /* ---- stop streaming ---- */
   const handleCancel = useCallback(() => {
@@ -677,8 +711,39 @@ export function ChatInterface({
           </h1>
         </div>
 
-        {/* Right: docs + métricas + salir */}
+        {/* Right: Telegram toggle + docs + métricas + salir */}
         <div className="flex items-center gap-1 shrink-0">
+          {/* Telegram toggle — mismo formato y colores que el toggle de verbose */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={telegramEnabled}
+            onClick={() => onTelegramToggle(!telegramEnabled)}
+            title={telegramEnabled ? "Telegram activado" : "Telegram desactivado"}
+            className="flex items-center gap-2 px-2 h-9 sm:h-10 rounded-md hover:bg-app-bg-tertiary/60 transition-colors"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="w-6 h-6"
+              style={{ color: "#229ED9" }}
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M9.04 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71l-4.14-3.05-1.99 1.93c-.23.23-.42.42-.83.42z" />
+            </svg>
+            <span
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-app-primary-light ${
+                telegramEnabled ? "bg-app-primary" : "bg-app-bg-tertiary"
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                  telegramEnabled ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </span>
+          </button>
+
           <Button
             variant="ghost"
             size="sm"
@@ -867,5 +932,6 @@ export function ChatInterface({
       </div>
     </div>
   );
-}
+  },
+);
 

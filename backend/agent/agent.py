@@ -509,7 +509,7 @@ class Agent():
                     if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                         has_dedicated_thinking = True
                         yield {'type': 'reasoning', 'content': delta.reasoning_content}
-                        await asyncio.sleep(0.02)
+                        await asyncio.sleep(0.01)
 
                     # Stream text content
                     if delta and delta.content:
@@ -519,18 +519,18 @@ class Agent():
                             if cleaned_output:
                                 text = self.clean(text)
                             yield {'type': 'chunk', 'content': text}
-                            await asyncio.sleep(0.02)
+                            await asyncio.sleep(0.01)
                         else:
                             # Fallback: parsear <think> tags del content
                             rzn, clean_text, in_think_tag = self._process_think_tags(text, in_think_tag)
                             if rzn:
                                 yield {'type': 'reasoning', 'content': rzn}
-                                await asyncio.sleep(0.02)
+                                await asyncio.sleep(0.01)
                             if clean_text:
                                 if cleaned_output:
                                     clean_text = self.clean(clean_text)
                                 yield {'type': 'chunk', 'content': clean_text}
-                                await asyncio.sleep(0.02)
+                                await asyncio.sleep(0.01)
 
             # After stream finishes, yield tool_calls_detected if any were accumulated
             if accumulated_tool_calls:

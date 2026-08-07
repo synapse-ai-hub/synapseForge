@@ -1,0 +1,53 @@
+"""Singleton Telegram bot instance.
+
+Created at import time from environment variables so it can be referenced
+both by the routes (``/api/telegram/*``) and by ``chat.py`` (to deliver the
+final answer to Telegram).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+
+logger = logging.getLogger(__name__)
+
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(os.path.dirname(_current_dir))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from backend.agent.session import SessionManager
+from backend.telegram.bot import TelegramBot
+
+
+def _create_bot() -> TelegramBot:
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id_raw = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    password = os.getenv("TELEGRAM_PASSWORD", "").strip()
+    chat_id: int | None = None
+    if chat_id_raw:
+        try:
+            chat_id = int(chat_id_raw)
+        except ValueError:
+            chat_id = None
+    allowed_chat_ids: set[int] = set()
+    for part in os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            allowed_chat_ids.add(int(part))
+        except ValueError:
+            logger.warning("Invalid TELEGRAM_ALLOWED_CHAT_IDS entry ignored: %r", part)
+    return TelegramBot(
+        token=token,
+        session_manager=SessionManager(),
+        chat_id=chat_id,
+        password=password or None,
+        allowed_chat_ids=allowed_chat_ids,
+    )
+
+
+telegram_bot = _create_bot()

@@ -81,6 +81,7 @@ async def chat_endpoint(
     message: str = Form(...),
     session_id: str | None = Form(None),
     stream_id: str | None = Form(None),
+    telegram_chat_id: str | None = Form(None),
     files: Optional[list[UploadFile]] = File(None),
 ):
     """Stream a conversation turn via Server-Sent Events.
@@ -151,6 +152,10 @@ async def chat_endpoint(
     # Create a cancellation event tied to the client disconnection
     stream_cancel_event = asyncio.Event()
 
+    # Accumulate the final assistant answer so it can be delivered to Telegram
+    # when this request was triggered from the bot (telegram_chat_id present).
+    telegram_final_answer: list[str] = []
+
     async def event_stream():
         _t0 = _time.time()
         # # logger.info("[DEBUG_TIEMPO_SSE] event_stream() started — t=%.3f", _t0)
@@ -171,7 +176,28 @@ async def chat_endpoint(
                 # (loop.py will handle aborted event, save partial response, and yield [DONE])
                 if await request.is_disconnected():
                     stream_cancel_event.set()
+                # Accumulate chunk content to deliver the final answer to Telegram.
+                if telegram_chat_id and isinstance(sse_event, str) and sse_event.startswith("data: "):
+                    payload = sse_event[len("data: "):].strip()
+                    if payload != "[DONE]":
+                        try:
+                            parsed = json.loads(payload)
+                            if parsed.get("type") == "chunk":
+                                telegram_final_answer.append(parsed.get("content") or "")
+                        except Exception:
+                            pass
                 yield sse_event
+            # Stream finished: deliver the final answer to Telegram if requested.
+            if telegram_chat_id:
+                try:
+                    from backend.telegram.instance import telegram_bot
+
+                    final_text = "".join(telegram_final_answer).strip()
+                    if final_text:
+                        await telegram_bot.send_message(int(telegram_chat_id), final_text)
+                except Exception as exc:
+                    log_error(str(exc), source="backend/routes/chat.py:telegram_reply")
+                    logger.warning("Failed to send final answer to Telegram: %s", exc)
         except Exception as exc:
             log_error(str(exc), source="backend/routes/chat.py")
             logger.exception("[DEBUG_TIEMPO_SSE] Error in agent loop stream: %s", exc)

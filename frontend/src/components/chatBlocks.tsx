@@ -430,7 +430,7 @@ function ToolCallBlock({
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
                 Args
               </div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] text-app-text">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words p-2 text-[11px] text-app-text">
                 {JSON.stringify(toolCall.parameters, null, 2)}
               </pre>
             </div>
@@ -445,7 +445,7 @@ function ToolCallBlock({
                 }
                 if (step.kind === "text") {
                   return (
-                    <div key={i} className="overflow-x-auto rounded-md bg-white p-2">
+                    <div key={i} className="overflow-x-auto p-2">
                       <MarkdownRenderer content={step.content} />
                     </div>
                   );
@@ -462,7 +462,7 @@ function ToolCallBlock({
                       <span className="font-medium">{step.name}</span>
                     </div>
                     {step.args && Object.keys(step.args).length > 0 && (
-                      <pre className="ml-4 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-1.5 text-[10px] text-app-text">
+                      <pre className="ml-4 overflow-x-auto whitespace-pre-wrap break-words p-1.5 text-[10px] text-app-text">
                         {JSON.stringify(step.args, null, 2)}
                       </pre>
                     )}
@@ -493,7 +493,7 @@ function ToolCallBlock({
                           <span className="font-medium">{ct.tool}</span>
                         </div>
                         {ct.parameters && Object.keys(ct.parameters).length > 0 && (
-                          <pre className="ml-4 overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-1.5 text-[10px] text-app-text">
+                          <pre className="ml-4 overflow-x-auto whitespace-pre-wrap break-words p-1.5 text-[10px] text-app-text">
                             {JSON.stringify(ct.parameters, null, 2)}
                           </pre>
                         )}
@@ -507,7 +507,7 @@ function ToolCallBlock({
                   <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
                     Respuesta del sub-agente
                   </div>
-                  <div className="overflow-x-auto rounded-md bg-white p-2">
+                  <div className="overflow-x-auto p-2">
                     <MarkdownRenderer content={childContent} />
                   </div>
                 </div>
@@ -521,7 +521,7 @@ function ToolCallBlock({
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
                 Resultado
               </div>
-              <div className="prose prose-sm max-w-none overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] text-app-text [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_p]:text-[11px] [&_li]:text-[11px] [&_code]:text-[11px]">
+              <div className="prose prose-sm max-w-none overflow-x-auto whitespace-pre-wrap break-words p-2 text-[11px] text-app-text [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_p]:text-[11px] [&_li]:text-[11px] [&_code]:text-[11px]">
                 <span dangerouslySetInnerHTML={{ __html: resultHtml }} />
               </div>
             </div>

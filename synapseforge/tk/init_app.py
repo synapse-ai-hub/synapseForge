@@ -25,10 +25,10 @@ except ImportError:  # pragma: no cover
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 COLOR_TAB_FIELDS = [
-    ("primary", "Color principal de la app: botón de enviar, barra de actividad, opción seleccionada del menú, enlaces de las respuestas"),
-    ("secondary", "Color de los detalles suaves: borde que se ilumina al hacer clic en un campo, anillo de la conversación seleccionada, bordes de las tarjetas"),
-    ("primary_text", "Color del texto e íconos que van encima del color principal (flecha de enviar, texto de botones, ícono del avatar)"),
-    ("gradient_secondary", "Color final del degradé de los botones y el avatar (el inicio es el color principal)"),
+    ("primary", "Color principal: botón de enviar, burbuja y avatar del asistente, barra de actividad, opción seleccionada del menú, enlaces de las respuestas y puntos de “escribiendo…”"),
+    ("secondary", "Color de los detalles suaves: borde que se ilumina al hacer clic en un campo, anillo de la conversación seleccionada, bordes de las tarjetas y cursor de escritura"),
+    ("primary_text", "Color del texto e íconos que van sobre el color principal: flecha de enviar, texto de botones, ícono del avatar y texto de la burbuja del asistente"),
+    ("gradient_secondary", "Color final del degradé de los botones y del avatar del asistente (el inicio es el color principal)"),
 ]
 
 
@@ -88,7 +88,7 @@ class InitApp:
         self.btn_submit.pack(side="right")
 
         # ── Center window ────────────────────────────────────────────
-        self._center(640, 600)
+        self._center(640, 800)
 
     # ──────────────────────────────────────────────────────────────────
     # Configuración robusta del ícono usando ctypes
@@ -232,25 +232,28 @@ class InitApp:
         self._color_previews: Dict[str, tk.Canvas] = {}
 
         for i, (key, desc) in enumerate(COLOR_TAB_FIELDS, start=1):
-            ttk.Label(tab, text=desc).grid(
-                row=i, column=0, sticky="w", pady=2, padx=(0, 8)
+            row = i * 2
+
+            # Explanation (wraps so it doesn't push the selector out of view)
+            ttk.Label(tab, text=desc, wraplength=420, justify="left").grid(
+                row=row, column=0, columnspan=4, sticky="w", pady=(6, 0), padx=(0, 8)
             )
 
             # Preview square (16×16)
             cv = tk.Canvas(tab, width=18, height=18, highlightthickness=1,
                            highlightbackground="#ccc")
-            cv.grid(row=i, column=1, pady=2, padx=(0, 4))
+            cv.grid(row=row + 1, column=0, pady=(4, 6), padx=(0, 4))
             self._color_previews[key] = cv
 
             ent = ttk.Entry(tab, width=12)
-            ent.grid(row=i, column=2, pady=2, padx=(0, 4))
+            ent.grid(row=row + 1, column=1, pady=(4, 6), padx=(0, 4))
             self._color_entries[key] = ent
 
             # Bind entry change → update preview
             ent.bind("<KeyRelease>", lambda _e, k=key: self._update_preview(k))
 
             ttk.Button(tab, text="Seleccionar", command=lambda k=key: self._pick_color(k)).grid(
-                row=i, column=3, pady=2
+                row=row + 1, column=2, pady=(4, 6), sticky="w"
             )
 
         # ── Gradient toggle ──────────────────────────────────────────
@@ -261,14 +264,14 @@ class InitApp:
             variable=self._usar_gradiente_var,
             command=self._toggle_gradient_fields,
         )
-        cb.grid(row=len(COLOR_TAB_FIELDS) + 1, column=0, columnspan=4, sticky="w", pady=(12, 0))
+        cb.grid(row=len(COLOR_TAB_FIELDS) * 2 + 2, column=0, columnspan=4, sticky="w", pady=(12, 0))
 
         ttk.Label(
             tab,
             text="Si lo desactivás, botones y avatar usan el color principal liso.",
             font=("", 8, "italic"),
             foreground="#888",
-        ).grid(row=len(COLOR_TAB_FIELDS) + 2, column=0, columnspan=4, sticky="w")
+        ).grid(row=len(COLOR_TAB_FIELDS) * 2 + 3, column=0, columnspan=4, sticky="w")
 
     def _pick_color(self, key: str) -> None:
         """Open OS color chooser, fill entry and update preview."""

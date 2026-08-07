@@ -1,5 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { ChatInterface, WELCOME_MESSAGE } from "./components/ChatInterface";
+import {
+  ChatInterface,
+  WELCOME_MESSAGE,
+  type ChatInterfaceHandle,
+} from "./components/ChatInterface";
 import { HistoryModal } from "./components/HistoryModal";
 import { MetricsModal } from "./components/MetricsModal";
 import { Sidebar } from "./components/Sidebar";
@@ -8,6 +12,8 @@ import sessionService, {
   type ContentBlock,
 } from "./services/sessionService";
 import configService from "./services/configService";
+import telegramService from "./services/telegramService";
+import chatService from "./services/chatService";
 
 export type { ContentBlock };
 
@@ -116,8 +122,10 @@ function App() {
   const [verboseMode, setVerboseMode] = useState<boolean>(
     () => localStorage.getItem("verboseMode") === "true"
   );
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
 
   const initialLoadRef = useRef(true);
+  const chatRef = useRef<ChatInterfaceHandle>(null);
 
   // Load persisted verbose mode from backend on mount
   useEffect(() => {
@@ -151,6 +159,56 @@ function App() {
       console.error("Error persistiendo verbose mode:", err);
     });
   }, []);
+
+  // Load persisted Telegram state from backend on mount
+  useEffect(() => {
+    telegramService
+      .getStatus()
+      .then(setTelegramEnabled)
+      .catch(() => {});
+  }, []);
+
+  const handleTelegramToggle = useCallback((val: boolean) => {
+    setTelegramEnabled(val);
+    telegramService.toggle(val).catch((err) => {
+      console.error("Error persistiendo Telegram toggle:", err);
+    });
+  }, []);
+
+  // Listen to backend events (SSE) so Telegram messages/commands run the
+  // exact same chat flow as if the user had typed in the web UI.
+  useEffect(() => {
+    const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
+    const es = new EventSource(`${API_BASE_URL}/api/events`);
+    es.onmessage = (ev) => {
+      let data: any;
+      try {
+        data = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (data.type === "telegram_message") {
+        const content: string = data.content || "";
+        const chatId: string = data.chat_id != null ? String(data.chat_id) : "";
+        const sessionId: string | null = data.session_id || null;
+        if (content) {
+          chatRef.current?.sendMessage(content, chatId, sessionId);
+        }
+      } else if (data.type === "telegram_command") {
+        const command: string = data.command || "";
+        if (command === "nueva") {
+          handleNewChat();
+        } else if (command === "detener") {
+          chatService.cancelStream();
+          setIsStreaming(false);
+        }
+      }
+    };
+    es.onerror = () => {
+      // EventSource reconnects automatically; nothing to do here.
+    };
+    return () => es.close();
+  }, [handleNewChat]);
 
   const handleNewChat = useCallback(() => {
     setCurrentSessionId(null);
@@ -201,6 +259,7 @@ function App() {
 
       <div className="flex-1 min-w-0">
         <ChatInterface
+          ref={chatRef}
           messages={messages}
           setMessages={setMessages}
           isStreaming={isStreaming}
@@ -214,6 +273,8 @@ function App() {
           onShowMetrics={() => setShowMetrics(true)}
           onSessionTitleUpdate={handleSessionTitleUpdate}
           verboseMode={verboseMode}
+          telegramEnabled={telegramEnabled}
+          onTelegramToggle={handleTelegramToggle}
         />
       </div>
 

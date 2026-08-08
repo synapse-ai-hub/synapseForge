@@ -83,10 +83,19 @@ class TelegramBot:
     # ------------------------------------------------------------------
 
     async def _poll_loop(self) -> None:
+        was_enabled = False  # force a sync when the bot becomes enabled (startup or re-enable)
         while self._running:
             if not self._enabled:
+                was_enabled = False
                 await asyncio.sleep(1)
                 continue
+            if not was_enabled:
+                # Telegram was just enabled (or started enabled): discard any
+                # messages that arrived while it was disabled/offline so they
+                # are NOT processed. Only messages from the moment of enabling
+                # are handled.
+                await self._skip_queued_updates()
+                was_enabled = True
             try:
                 updates = await self._get_updates()
                 for update in updates:
@@ -95,6 +104,33 @@ class TelegramBot:
                 logger.warning("Telegram poll error: %s", exc)
             await asyncio.sleep(0.5)
 
+    async def _skip_queued_updates(self) -> None:
+        """Advance the poll offset past queued updates without processing them.
+
+        Called when the bot transitions to enabled (startup or re-enable) so
+        messages that arrived while Telegram was disabled/offline are discarded
+        instead of being replayed. Only updates received after this point are
+        handled by the normal polling loop.
+        """
+        try:
+            url = _TELEGRAM_API.format(token=self.token) + "/getUpdates"
+            for _ in range(100):  # safety cap (100 rounds * 100 updates)
+                resp = await self._client.post(
+                    url, json={"timeout": 0, "offset": self._offset}
+                )
+                data = resp.json()
+                if not data.get("ok"):
+                    return
+                updates = data.get("result", [])
+                if not updates:
+                    return
+                self._offset = updates[-1]["update_id"] + 1
+                print(f"[DEBUG fantasma] bot._skip_queued_updates descartados={len(updates)} new_offset={self._offset}")
+                if len(updates) < 100:
+                    return
+        except Exception as exc:
+            logger.warning("Failed to skip queued Telegram updates: %s", exc)
+
     async def _get_updates(self) -> list[dict]:
         url = _TELEGRAM_API.format(token=self.token) + "/getUpdates"
         resp = await self._client.post(url, json={"timeout": 0, "offset": self._offset})
@@ -102,8 +138,14 @@ class TelegramBot:
         if not data.get("ok"):
             return []
         updates = data.get("result", [])
+        print(f"[DEBUG fantasma] bot._get_updates offset={self._offset} -> {len(updates)} updates")
         if updates:
+            for u in updates:
+                msg = u.get("message") or u.get("edited_message") or {}
+                chat = msg.get("chat", {})
+                print(f"[DEBUG fantasma] bot._get_updates update_id={u.get('update_id')} chat_id={chat.get('id')} text={(msg.get('text') or '')[:60]!r}")
             self._offset = updates[-1]["update_id"] + 1
+            print(f"[DEBUG fantasma] bot._get_updates new_offset={self._offset}")
         return updates
 
     # ------------------------------------------------------------------
@@ -119,6 +161,7 @@ class TelegramBot:
         voice = message.get("voice")
         audio = message.get("audio")
         caption = message.get("caption") or ""
+        print(f"[DEBUG fantasma] bot._handle_update update_id={update.get('update_id')} chat_id={chat_id} text={text[:60]!r}")
 
         # Whitelist: only allow configured chat ids.
         if chat_id not in self.allowed_chat_ids:
@@ -149,6 +192,7 @@ class TelegramBot:
         # session: it continues the currently active session (the one the user
         # has open in the web UI) instead of creating a new one. Only the
         # /nueva command starts a fresh conversation.
+        print(f"[DEBUG fantasma] bot._handle_update EMIT telegram_message chat_id={chat_id} session_id=None text={text[:60]!r}")
         await event_bus.emit({
             "type": "telegram_message",
             "content": text,
@@ -160,8 +204,10 @@ class TelegramBot:
         parts = text.split()
         cmd = parts[0].lower()
         arg = " ".join(parts[1:]) if len(parts) > 1 else ""
+        print(f"[DEBUG fantasma] bot._handle_command chat_id={chat_id} cmd={cmd} arg={arg[:40]!r}")
         if cmd == "/nueva":
             self._session[chat_id] = None
+            print(f"[DEBUG fantasma] bot._handle_command EMIT telegram_command nueva chat_id={chat_id}")
             await event_bus.emit({
                 "type": "telegram_command",
                 "command": "nueva",
@@ -189,6 +235,7 @@ class TelegramBot:
         """Send a text message to a chat (used for the final answer)."""
         if not text:
             return
+        print(f"[DEBUG fantasma] bot.send_message chat_id={chat_id} text={text[:80]!r}")
         url = _TELEGRAM_API.format(token=self.token) + "/sendMessage"
         try:
             await self._client.post(url, json={"chat_id": chat_id, "text": text})

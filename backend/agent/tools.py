@@ -948,6 +948,7 @@ class Tools:
             dict with ``{status, message, data, usage}``. ``data`` is the XML
             result block consumed by the parent agent as a tool result.
         """
+        print(f"[DEBUG de la verga que hice] task.INICIO agent={agent_name} ts={time.time()}")
         # 1. Resolve sub-agent data from its markdown definition
         # Check if loop.py already resolved permissions (cached on tools instance)
         cached = getattr(self, "_task_config", None)
@@ -988,6 +989,7 @@ class Tools:
                     log_error(str(e), source="tools.py:task(parameters)")
 
         # 1b. Resolve the sub-agent's system prompt via the shared builder
+        print(f"[DEBUG de la verga que hice] task.perms_resueltas agent={agent_name} ts={time.time()}")
         # (build_system_prompt handles Behavior from AGENT.md, MANDATORY and
         # Fecha for sub-agents too). The agent existence is checked first so
         # a missing agent returns a user-friendly error instead of falling
@@ -1014,6 +1016,7 @@ class Tools:
 
         # 2. Create an integrated child session (parent_id = current session)
         from backend.instances import agent, session_manager
+        print(f"[DEBUG de la verga que hice] task.system_prompt_listo agent={agent_name} ts={time.time()}")
         # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{system_prompt}\n{"#"*80}\n\n\n')
 
         parent_id = getattr(self, "_current_session_id", None)
@@ -1033,6 +1036,7 @@ class Tools:
 
         # 3. Run the sub-agent loop inside the child session
         from backend.agent.loop import AgentLoop
+        print(f"[DEBUG de la verga que hice] task.child_session_creada child={child_id} ts={time.time()}")
 
         stream_cancel_event = getattr(self, "_stream_cancel_event", None)
         loop = AgentLoop(
@@ -1047,6 +1051,7 @@ class Tools:
         else:
             logger.info("task() NO event_queue for child=%s", child_id[:8])
         try:
+            print(f"[DEBUG de la verga que hice] task.ANTES_loop.run agent={agent_name} child={child_id} ts={time.time()}")
             async for sse in loop.run(
                 session_id=child_id,
                 user_message=prompt,
@@ -1096,11 +1101,13 @@ class Tools:
             state = "error"
 
         # 4. Return the result wrapped in XML (consumed by the parent as tool result)
+        print(f"[DEBUG de la verga que hice] task.DESPUES_loop.run agent={agent_name} child={child_id} ts={time.time()}")
         xml = (
             f'<task id="{child_id}" state="{state}">'
             f"<task_result>{final_text}</task_result>"
             f"</task>"
         )
+        print(f"[DEBUG de la verga que hice] task.FIN agent={agent_name} child={child_id} ts={time.time()}")
         return make_success_response(
             message=f"Tarea delegada a '{agent_name}'.",
             data=xml,

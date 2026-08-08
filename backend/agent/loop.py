@@ -228,6 +228,7 @@ class AgentLoop:
         """
         # --- 0.5. Set error logging context FIRST (covers recursion guard and all early errors) ---
         _t0 = _time.time()
+        print(f"[DEBUG de la verga que hice] loop.run.INICIO session={session_id} agent={agent_name} depth={depth} ts={_time.time()}")
         # # logger.info("[DEBUG_TIEMPO_SSE] run() started — session=%s, depth=%d, t=%.3f", session_id, depth, _t0)
         error_ctx_token = set_error_context(
             session_id=session_id,
@@ -367,6 +368,7 @@ class AgentLoop:
                     log_error(str(e), source="loop.py:run(tools)")
                     tools = []
             logger.info("Tools available: %d", len(tools))
+            print(f"[DEBUG de la verga que hice] loop.run.tools_resueltos session={session_id} agent={agent_name} tools={len(tools)} ts={_time.time()}")
           
 
             # --- 4. Build initial messages array (history does NOT include current message) ---
@@ -454,6 +456,7 @@ class AgentLoop:
                 tool_calls = None
 
                 try:
+                    print(f"[DEBUG de la verga que hice] loop.run.ANTES_llm session={session_id} agent={agent_name} iter={iteration} ts={_time.time()}")
                     async for event in agent.llm_streaming(
                         model=model, messages=messages, tools=tools,
                         stream_cancel_event=stream_cancel_event,
@@ -500,6 +503,7 @@ class AgentLoop:
                     "LLM response — tool_calls: %s, content_length: %d",
                     len(tool_calls) if tool_calls else 0, len(collected_content),
                 )
+                print(f"[DEBUG de la verga que hice] loop.run.DESPUES_llm session={session_id} agent={agent_name} iter={iteration} tool_calls={len(tool_calls) if tool_calls else 0} ts={_time.time()}")
                 
                 # ---- 6b. Process tool_calls (LLM wants to continue) ----
                 if tool_calls:
@@ -726,6 +730,7 @@ class AgentLoop:
                     turn_number=turn_number, step=step,
                 )
                 _t_before_done = _time.time()
+                print(f"[DEBUG de la verga que hice] loop.run.ANTES_DONE session={session_id} agent={agent_name} iter={iteration} ts={_time.time()}")
                 # # logger.info("[DEBUG_TIEMPO_SSE] about to yield [DONE] — iteration=%d, t=%.3f", iteration, _t_before_done)
                 yield "data: [DONE]\n\n"
                 _t_after_done = _time.time()
@@ -758,6 +763,7 @@ class AgentLoop:
 
         finally:
             _t_finally = _time.time()
+            print(f"[DEBUG de la verga que hice] loop.run.FIN session={session_id} agent={agent_name} ts={_time.time()}")
             # # logger.info("[DEBUG_TIEMPO_SSE] run() finally — t=%.3f", _t_finally)
             # Cleanup TEMP_ files created during this loop
             _temp_files = getattr(agent.tools, "_temp_files", None)

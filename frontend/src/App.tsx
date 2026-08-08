@@ -175,41 +175,6 @@ function App() {
     });
   }, []);
 
-  // Listen to backend events (SSE) so Telegram messages/commands run the
-  // exact same chat flow as if the user had typed in the web UI.
-  useEffect(() => {
-    const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
-    const es = new EventSource(`${API_BASE_URL}/api/events`);
-    es.onmessage = (ev) => {
-      let data: any;
-      try {
-        data = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (data.type === "telegram_message") {
-        const content: string = data.content || "";
-        const chatId: string = data.chat_id != null ? String(data.chat_id) : "";
-        const sessionId: string | null = data.session_id || null;
-        if (content) {
-          chatRef.current?.sendMessage(content, chatId, sessionId);
-        }
-      } else if (data.type === "telegram_command") {
-        const command: string = data.command || "";
-        if (command === "nueva") {
-          handleNewChat();
-        } else if (command === "detener") {
-          chatService.cancelStream();
-          setIsStreaming(false);
-        }
-      }
-    };
-    es.onerror = () => {
-      // EventSource reconnects automatically; nothing to do here.
-    };
-    return () => es.close();
-  }, [handleNewChat]);
-
   const handleNewChat = useCallback(() => {
     setCurrentSessionId(null);
     setMessages([WELCOME_MESSAGE]);
@@ -245,6 +210,41 @@ function App() {
   const handleToggleSidebarMenu = useCallback(() => {
     setShowSidebarMenu((prev) => !prev);
   }, []);
+
+  // Listen to backend events (SSE) so Telegram messages/commands run the
+  // exact same chat flow as if the user had typed in the web UI.
+  useEffect(() => {
+    const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
+    const es = new EventSource(`${API_BASE_URL}/api/events`);
+    es.onmessage = (ev) => {
+      let data: any;
+      try {
+        data = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (data.type === "telegram_message") {
+        const content: string = data.content || "";
+        const chatId: string = data.chat_id != null ? String(data.chat_id) : "";
+        const sessionId: string | null = data.session_id || null;
+        if (content) {
+          chatRef.current?.sendMessage(content, chatId, sessionId);
+        }
+      } else if (data.type === "telegram_command") {
+        const command: string = data.command || "";
+        if (command === "nueva") {
+          handleNewChat();
+        } else if (command === "detener") {
+          chatService.cancelStream();
+          setIsStreaming(false);
+        }
+      }
+    };
+    es.onerror = () => {
+      // EventSource reconnects automatically; nothing to do here.
+    };
+    return () => es.close();
+  }, [handleNewChat]);
 
   return (
     <div className="h-screen bg-app-bg flex">

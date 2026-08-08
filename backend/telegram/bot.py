@@ -11,6 +11,7 @@ answer back to Telegram.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
 import uuid
@@ -210,5 +211,5 @@ class TelegramBot:
         """Transcribe audio bytes with faster-whisper (model cached)."""
         if self._whisper_model is None:
             self._whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
-        segments, _ = self._whisper_model.transcribe(content)
+        segments, _ = self._whisper_model.transcribe(io.BytesIO(content))
         return "".join(s.text for s in segments).strip()

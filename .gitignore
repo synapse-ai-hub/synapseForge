@@ -24,16 +24,18 @@ Thumbs.db
 *.log
 
 
+
 # Configs de editor comunes (puedes agregar más si querés)
 .vscode/
 .idea/
 
 # Temporales
 *.tmp
-.~lock.*
+~lock.*
 
 # Node modules
 node_modules/
+
 
 
 # Archivos subidos
@@ -50,3 +52,5 @@ template/
 
 # Configuración
 config/
+ideas.md
+

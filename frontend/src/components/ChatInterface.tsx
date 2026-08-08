@@ -6,6 +6,7 @@ import {
   forwardRef,
   useImperativeHandle,
   type KeyboardEvent,
+  type ForwardedRef,
 } from "react";
 import {
   Send,
@@ -103,22 +104,25 @@ export interface ChatInterfaceHandle {
 }
 
 export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(
-  function ChatInterface({
-    messages,
-    setMessages,
-    isStreaming,
-    setIsStreaming,
-    onShowHistory,
-    sessionId,
-    onSessionStart,
-    onNewChat,
-    onSessionEnd,
-    onShowMetrics,
-    onSessionTitleUpdate,
-    verboseMode,
-    telegramEnabled,
-    onTelegramToggle,
-  }: ChatInterfaceProps) {
+  function ChatInterface(
+    {
+      messages,
+      setMessages,
+      isStreaming,
+      setIsStreaming,
+      onShowHistory,
+      sessionId,
+      onSessionStart,
+      onNewChat,
+      onSessionEnd,
+      onShowMetrics,
+      onSessionTitleUpdate,
+      verboseMode,
+      telegramEnabled,
+      onTelegramToggle,
+    }: ChatInterfaceProps,
+    ref: ForwardedRef<ChatInterfaceHandle>,
+  ) {
   /* ---- state ---- */
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);

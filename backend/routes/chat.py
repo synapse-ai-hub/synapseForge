@@ -75,6 +75,31 @@ def _save_attachments(session_id: str, turn_number: int, files_data: list[tuple[
         logger.warning("Failed to save attachments: %s", exc)
 
 
+def _get_last_assistant_text(session_id: str, turn_number: int) -> str:
+    """Return the content of the last assistant message of the given turn.
+
+    Reads from the DB (single source of truth) so the Telegram reply matches
+    exactly what was persisted, avoiding intermediate tool-calling content
+    that the raw SSE ``chunk`` events would include.
+
+    Args:
+        session_id: The session identifier.
+        turn_number: The turn number to look for.
+
+    Returns:
+        The last assistant message content of that turn, or ``""`` if none.
+    """
+    try:
+        messages = session_manager.load_messages(session_id, max_turns=0)
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant" and msg.get("turn_number") == turn_number:
+                return (msg.get("content") or "").strip()
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/chat.py:_get_last_assistant_text")
+        logger.warning("Failed to load last assistant message: %s", exc)
+    return ""
+
+
 @router.post("/chat")
 async def chat_endpoint(
     request: Request,
@@ -152,10 +177,6 @@ async def chat_endpoint(
     # Create a cancellation event tied to the client disconnection
     stream_cancel_event = asyncio.Event()
 
-    # Accumulate the final assistant answer so it can be delivered to Telegram
-    # when this request was triggered from the bot (telegram_chat_id present).
-    telegram_final_answer: list[str] = []
-
     async def event_stream():
         _t0 = _time.time()
         # # logger.info("[DEBUG_TIEMPO_SSE] event_stream() started — t=%.3f", _t0)
@@ -176,23 +197,16 @@ async def chat_endpoint(
                 # (loop.py will handle aborted event, save partial response, and yield [DONE])
                 if await request.is_disconnected():
                     stream_cancel_event.set()
-                # Accumulate chunk content to deliver the final answer to Telegram.
-                if telegram_chat_id and isinstance(sse_event, str) and sse_event.startswith("data: "):
-                    payload = sse_event[len("data: "):].strip()
-                    if payload != "[DONE]":
-                        try:
-                            parsed = json.loads(payload)
-                            if parsed.get("type") == "chunk":
-                                telegram_final_answer.append(parsed.get("content") or "")
-                        except Exception:
-                            pass
                 yield sse_event
             # Stream finished: deliver the final answer to Telegram if requested.
+            # Read the final assistant message from the DB (single source of truth)
+            # instead of accumulating raw chunk events, which can include
+            # intermediate tool-calling content (ghost responses).
             if telegram_chat_id:
                 try:
                     from backend.telegram.instance import telegram_bot
 
-                    final_text = "".join(telegram_final_answer).strip()
+                    final_text = _get_last_assistant_text(session_id, turn_number)
                     if final_text:
                         await telegram_bot.send_message(int(telegram_chat_id), final_text)
                 except Exception as exc:

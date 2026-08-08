@@ -12,6 +12,7 @@ import logging
 import os
 import sqlite3
 import sys
+import time
 import urllib.request
 from datetime import datetime
 from typing import Any
@@ -122,6 +123,7 @@ def build_system_prompt(agent_name: str | None = None) -> str:
 
     # Date
     fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+    print(f"[DEBUG de la verga que hice] loop_helpers.build_system_prompt.INICIO agent={agent_name} ts={time.time()}")
     
     if agent_name is not None:
         result = get_agent_prompt(agent_name)
@@ -242,6 +244,7 @@ def build_initial_messages(
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
     ]
+    print(f"[DEBUG de la verga que hice] loop_helpers.build_initial_messages.INICIO session={session_id} ts={time.time()}")
 
     history = session_manager.load_messages(session_id, max_turns=max_turns)
     for msg in history:
@@ -292,12 +295,14 @@ async def execute_tool(agent, tc: dict[str, Any]) -> Any:
     tool_name = tc["name"]
     tool_args = tc.get("args", {})
 
+    print(f"[DEBUG de la verga que hice] loop_helpers.execute_tool.INICIO tool={tool_name} ts={time.time()}")
     try:
         result = await agent.tools._execute_tool(tool_name, **tool_args)
     except Exception as e:
         logger.exception("Tool '%s' failed", tool_name)
         log_error(str(e), source="loop_helpers.py:execute_tool")
         return {"error": str(e)}
+    print(f"[DEBUG de la verga que hice] loop_helpers.execute_tool.FIN tool={tool_name} ts={time.time()}")
 
     if isinstance(result, dict) and result.get("status") == "error":
         error_msg = result.get("message", f"Tool '{tool_name}' failed")

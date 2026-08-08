@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 
@@ -238,6 +239,37 @@ def _colors(project_dir: str) -> None:
         print("  Recargá el navegador para ver los cambios (sin rebuild).")
 
 
+def _wait_for_backend(proc: subprocess.Popen, host: str, port: int, timeout: float = 60.0) -> None:
+    """Block until the backend /health endpoint responds or the process dies.
+
+    Args:
+        proc: The uvicorn subprocess (checked for early exit).
+        host: Backend host.
+        port: Backend port.
+        timeout: Maximum seconds to wait.
+
+    Raises:
+        SystemExit: If the backend process exits early or the timeout is reached.
+    """
+    url = f"http://{host}:{port}/health"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            print("  ERROR: Backend falló al iniciar (¿olvidaste activar el venv?)", file=sys.stderr)
+            sys.exit(1)
+        try:
+            with urllib.request.urlopen(url, timeout=2) as resp:
+                if resp.status == 200:
+                    return
+        except Exception:
+            pass  # Backend still starting — keep waiting
+        time.sleep(1)
+    print(f"  ERROR: El backend no respondió en {url} tras {int(timeout)}s", file=sys.stderr)
+    proc.terminate()
+    proc.wait()
+    sys.exit(1)
+
+
 def _run(project_dir: str) -> None:
     """Start uvicorn + npm run dev and open the browser."""
     import os
@@ -268,11 +300,9 @@ def _run(project_dir: str) -> None:
         shell=True,
     )
 
-    # Wait a few seconds and check if backend is alive
-    time.sleep(3)
-    if uvicorn_proc.poll() is not None:
-        print("  ERROR: Backend falló al iniciar (¿olvidaste activar el venv?)", file=sys.stderr)
-        sys.exit(1)
+    # Wait for the backend to be fully up before starting the frontend
+    print("  Esperando a que el backend esté listo...")
+    _wait_for_backend(uvicorn_proc, host="127.0.0.1", port=8000, timeout=60)
 
     print("  Backend iniciado correctamente")
 
@@ -298,8 +328,10 @@ def _run(project_dir: str) -> None:
         uvicorn_proc.wait()
     except KeyboardInterrupt:
         print("\nDeteniendo servidores...")
-        uvicorn_proc.terminate()
-        npm_proc.terminate()
+        # Kill the whole process tree (shell=True wraps commands in cmd.exe,
+        # so terminate() alone would leave the real uvicorn/node children alive).
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(uvicorn_proc.pid)], capture_output=True)
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(npm_proc.pid)], capture_output=True)
         uvicorn_proc.wait()
         npm_proc.wait()
         print("Servidores detenidos.")

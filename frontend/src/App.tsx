@@ -123,6 +123,7 @@ function App() {
     () => localStorage.getItem("verboseMode") === "true"
   );
   const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramCountdown, setTelegramCountdown] = useState<number | null>(null);
 
   const initialLoadRef = useRef(true);
   const chatRef = useRef<ChatInterfaceHandle>(null);
@@ -168,12 +169,36 @@ function App() {
       .catch(() => {});
   }, []);
 
-  const handleTelegramToggle = useCallback((val: boolean) => {
-    setTelegramEnabled(val);
-    telegramService.toggle(val).catch((err) => {
-      console.error("Error persistiendo Telegram toggle:", err);
-    });
+const handleTelegramToggle = useCallback((val: boolean) => {
+    if (val) {
+      // Enable the backend immediately so the bot starts polling and discards
+      // any messages that arrived while it was off. The popup countdown only
+      // blocks the user from sending during that discard window.
+      setTelegramEnabled(true);
+      telegramService.toggle(true).catch((err) => {
+        console.error("Error persistiendo Telegram toggle:", err);
+      });
+      setTelegramCountdown(3);
+    } else {
+      setTelegramEnabled(false);
+      telegramService.toggle(false).catch((err) => {
+        console.error("Error persistiendo Telegram toggle:", err);
+      });
+    }
   }, []);
+
+  // Countdown: only hides the popup when it reaches 0 (backend already enabled).
+  useEffect(() => {
+    if (telegramCountdown === null) return;
+    if (telegramCountdown <= 0) {
+      setTelegramCountdown(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      setTelegramCountdown((c) => (c === null ? null : c - 1));
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [telegramCountdown]);
 
   const handleNewChat = useCallback(() => {
     setCurrentSessionId(null);
@@ -237,6 +262,13 @@ function App() {
         } else if (command === "detener") {
           chatService.cancelStream();
           setIsStreaming(false);
+        } else if (command === "usar") {
+          const sessionId: string | null = data.session_id || null;
+          if (sessionId) {
+            handleSelectSession(sessionId);
+          }
+        } else if (command === "borrar") {
+          setRefreshTrigger((t) => t + 1);
         }
       } else if (data.type === "session_title") {
         const sessionId: string | null = data.session_id || null;
@@ -250,7 +282,7 @@ function App() {
       // EventSource reconnects automatically; nothing to do here.
     };
     return () => es.close();
-  }, [handleNewChat, handleSessionTitleUpdate]);
+  }, [handleNewChat, handleSessionTitleUpdate, handleSelectSession]);
 
   return (
     <div className="h-screen bg-app-bg flex">
@@ -293,6 +325,23 @@ function App() {
         open={showMetrics}
         onClose={() => setShowMetrics(false)}
       />
+
+      {/* Popup de activación de Telegram con contador regresivo */}
+      {telegramCountdown !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="rounded-2xl bg-white p-6 shadow-xl text-center">
+            <div className="text-sm font-semibold text-app-text mb-2">
+              Activando Telegram...
+            </div>
+            <div className="text-5xl font-bold text-app-primary">
+              {telegramCountdown}
+            </div>
+            <div className="text-xs text-app-text-secondary mt-2">
+              Esperá para que el bot se sincronice
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

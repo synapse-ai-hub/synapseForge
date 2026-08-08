@@ -238,13 +238,19 @@ function App() {
           chatService.cancelStream();
           setIsStreaming(false);
         }
+      } else if (data.type === "session_title") {
+        const sessionId: string | null = data.session_id || null;
+        const title: string = data.content || "";
+        if (sessionId && title) {
+          handleSessionTitleUpdate(sessionId, title);
+        }
       }
     };
     es.onerror = () => {
       // EventSource reconnects automatically; nothing to do here.
     };
     return () => es.close();
-  }, [handleNewChat]);
+  }, [handleNewChat, handleSessionTitleUpdate]);
 
   return (
     <div className="h-screen bg-app-bg flex">

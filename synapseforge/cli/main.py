@@ -3,15 +3,16 @@
 Installed via ``pyproject.toml`` entry point::
 
     synapseforge init [target_dir]
-    synapseforge launch <repo_path> <exe_name> [--skip-frontend] [--no-embed]
+    synapseforge launch [-p PATH] -n NAME [--skip-frontend] [--no-embed]
     synapseforge colors [project_dir]
     synapseforge run [project_dir]
 
 Examples:
     synapseforge init                    # Create project in current directory
     synapseforge init ./mi-proyecto      # Create project in ./mi-proyecto
-    synapseforge launch . mi-app         # Build distribution zip
-    synapseforge launch . mi-app --skip-frontend  # Skip frontend build
+    synapseforge launch -n mi-app        # Build distribution zip (current dir)
+    synapseforge launch -p ./mi-proyecto -n mi-app  # Build from specific project
+    synapseforge launch -n mi-app --skip-frontend   # Skip frontend build
     synapseforge colors                  # Edit colors in current project
     synapseforge colors ./mi-proyecto    # Edit colors in specific project
     synapseforge run                     # Start dev servers (uvicorn + npm)
@@ -83,14 +84,14 @@ Output: Complete project structure with backend/, frontend/, config/, pipeline/,
         description="Build a standalone distribution zip from a synapseForge project. Packages the backend (with embedded Python), frontend (built), and creates a Windows installer/executable.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  synapseforge launch . mi-app                    # Build distribution
-  synapseforge launch ./mi-proyecto mi-app        # Build from specific project
-  synapseforge launch . mi-app --skip-frontend    # Use existing frontend/dist
-  synapseforge launch . mi-app --no-embed         # Use system Python (no embed)
+  synapseforge launch -n mi-app                    # Build distribution (current dir)
+  synapseforge launch -p ./mi-proyecto -n mi-app   # Build from specific project
+  synapseforge launch -n mi-app --skip-frontend    # Use existing frontend/dist
+  synapseforge launch -n mi-app --no-embed         # Use system Python (no embed)
 
 Arguments:
-  repo_path    Path to the project root (default: current directory)
-  exe_name     Name for the executable (e.g., mi-app -> mi-app.exe)
+  -p, --path   Path to the project root (default: current directory)
+  -n, --name   Name for the executable (e.g., mi-app -> mi-app.exe) [required]
 
 Options:
   --skip-frontend   Skip npm build, use existing frontend/dist/
@@ -99,12 +100,17 @@ Options:
 Output: pipeline/dist/<exe_name>.zip containing installer + portable version""",
     )
     launch_p.add_argument(
-        "repo_path",
-        nargs="?",
+        "-p",
+        "--path",
         default=".",
         help="Path to the project root (default: current working directory)",
     )
-    launch_p.add_argument("exe_name", help="Name for the executable (e.g., mi-app)")
+    launch_p.add_argument(
+        "-n",
+        "--name",
+        required=True,
+        help="Name for the executable (e.g., mi-app)",
+    )
     launch_p.add_argument(
         "--skip-frontend",
         action="store_true",
@@ -178,7 +184,7 @@ Requirements:
         if args.command == "init":
             _init(args.target_dir)
         elif args.command == "launch":
-            _launch(args.repo_path, args.exe_name, args.skip_frontend, args.no_embed)
+            _launch(args.path, args.name, args.skip_frontend, args.no_embed)
         elif args.command == "colors":
            _colors(args.project_dir)
         elif args.command == "run":

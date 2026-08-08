@@ -206,9 +206,17 @@ async def chat_endpoint(
                 try:
                     from backend.telegram.instance import telegram_bot
 
-                    final_text = _get_last_assistant_text(session_id, turn_number)
-                    if final_text:
-                        await telegram_bot.send_message(int(telegram_chat_id), final_text)
+                    if stream_cancel_event.is_set():
+                        # The client aborted the stream: notify Telegram with the
+                        # same message the frontend shows, instead of the partial
+                        # response that was persisted to the DB.
+                        await telegram_bot.send_message(
+                            int(telegram_chat_id), "*Transmisión cancelada.*"
+                        )
+                    else:
+                        final_text = _get_last_assistant_text(session_id, turn_number)
+                        if final_text:
+                            await telegram_bot.send_message(int(telegram_chat_id), final_text)
                 except Exception as exc:
                     log_error(str(exc), source="backend/routes/chat.py:telegram_reply")
                     logger.warning("Failed to send final answer to Telegram: %s", exc)

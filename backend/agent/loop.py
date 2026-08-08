@@ -175,6 +175,42 @@ class AgentLoop:
         self.max_iterations = max_iterations
 
     # ------------------------------------------------------------------
+    # Title emission helper
+    # ------------------------------------------------------------------
+
+    async def _emit_title(
+        self,
+        title_queue: asyncio.Queue | None,
+        title_task: asyncio.Task | None,
+    ) -> AsyncGenerator[str, None]:
+        """Wait for the title task and emit the ``session_title`` event.
+
+        Called right before ``[DONE]`` so the frontend always receives the
+        generated title (and refreshes the sidebar) even if the background
+        title task finished after the agent loop ended.
+
+        Args:
+            title_queue: Queue holding the generated title (or ``None``).
+            title_task: The background title generation task (or ``None``).
+
+        Yields:
+            The ``session_title`` SSE event if the title is available.
+        """
+        if title_queue is None:
+            return
+        if title_task is not None and not title_task.done():
+            try:
+                await asyncio.wait_for(title_task, timeout=5)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+        while not title_queue.empty():
+            try:
+                t = title_queue.get_nowait()
+                yield f"data: {json.dumps({'type': 'session_title', 'content': t}, ensure_ascii=False)}\n\n"
+            except asyncio.QueueEmpty:
+                break
+
+    # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 
@@ -506,6 +542,8 @@ class AgentLoop:
                                     reasoning=collected_reasoning or None,
                                     turn_number=turn_number, step=step
                                 )
+                            async for title_ev in self._emit_title(title_queue, title_task):
+                                yield title_ev
                             yield "data: [DONE]\n\n"
                             return
                 except Exception as e:
@@ -523,6 +561,8 @@ class AgentLoop:
                             session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", turn_number=turn_number, step=step
                         )
                     yield f"data: {json.dumps({'type': 'chunk', 'content': 'Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.'}, ensure_ascii=False)}\n\n"
+                    async for title_ev in self._emit_title(title_queue, title_task):
+                        yield title_ev
                     yield "data: [DONE]\n\n"
                     return
 
@@ -756,6 +796,10 @@ class AgentLoop:
                     reasoning=collected_reasoning or None,
                     turn_number=turn_number, step=step,
                 )
+                # Emit the session title before [DONE] so the sidebar refreshes
+                # with the generated title even if it finished after the loop.
+                async for title_ev in self._emit_title(title_queue, title_task):
+                    yield title_ev
                 _t_before_done = _time.time()
                 print(f"[DEBUG de la verga que hice] loop.run.ANTES_DONE session={session_id} agent={agent_name} iter={iteration} ts={_time.time()}")
                 # # logger.info("[DEBUG_TIEMPO_SSE] about to yield [DONE] — iteration=%d, t=%.3f", iteration, _t_before_done)

@@ -16,7 +16,7 @@ import mermaid from "mermaid";
 
 marked.use({
   renderer: {
-    code(code: string, infostring: string): string | false {
+    code(code: string, infostring: string | undefined): string | false {
       // marked v12 passes positional args (code, infostring, escaped),
       // not the token object.
       const lang = (infostring ?? "").trim();
@@ -52,7 +52,6 @@ export async function renderMermaid(): Promise<void> {
   if (!initialized) {
     mermaid.initialize({
       startOnLoad: false,
-      suppressErrors: true,
       theme: "default",
     });
     initialized = true;

@@ -624,7 +624,7 @@ function MessageRow({
                   if (!verboseMode) return null;
                   // Índice de esta burbuja entre las burbujas de task (para
                   // asociarla a su child session en el orden exacto de eventos).
-                  const taskIndex = message.blocks
+                  const taskIndex = (message.blocks ?? [])
                     .slice(0, i)
                     .filter((b) => b.type === "tool" && b.name === "task").length;
                   return (

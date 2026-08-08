@@ -145,15 +145,14 @@ class TelegramBot:
             await self._handle_command(chat_id, text)
             return
 
-        # Normal message -> resolve session and emit to the frontend.
-        session_id = self._session.get(chat_id)
-        if not session_id:
-            session_id = uuid.uuid4().hex
-            self._session[chat_id] = session_id
+        # Normal message -> emit to the frontend. The frontend decides the
+        # session: it continues the currently active session (the one the user
+        # has open in the web UI) instead of creating a new one. Only the
+        # /nueva command starts a fresh conversation.
         await event_bus.emit({
             "type": "telegram_message",
             "content": text,
-            "session_id": session_id,
+            "session_id": None,
             "chat_id": chat_id,
         })
 

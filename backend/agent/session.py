@@ -21,7 +21,7 @@ _project_root = os.path.dirname(os.path.dirname(_current_dir))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from backend.agent.contract import make_error_response, make_success_response, zero_usage
+from backend.agent.utils.contract import make_error_response, make_success_response, zero_usage
 from backend.agent.utils.error_logger import log_error
 from backend.agent.ddl_setup import setup_database
 
@@ -574,7 +574,7 @@ class SessionManager:
         conn = self._get_connection()
         try:
             rows = conn.execute(
-                "SELECT title FROM sessions WHERE title IS NOT NULL AND title != ''"
+                "SELECT title FROM sessions WHERE title IS NOT NULL AND title != '' AND parent_id IS NULL"
             ).fetchall()
             return [row["title"] for row in rows]
         except Exception as e:

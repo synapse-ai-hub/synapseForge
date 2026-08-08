@@ -25,7 +25,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from backend.agent.utils.error_logger import log_error
-from backend.agent.contract import (
+from backend.agent.utils.contract import (
     ContractResponse,
     UsageReport,
     make_error_response,
@@ -270,6 +270,7 @@ class Agent():
                           cleaned_output: bool = True,
                           tools: list | None = None,
                           json_format: bool = False,
+                          reasoning: bool = True,
                           **kwargs) -> ContractResponse:
         """Send a chat completion and return content + tool_calls.
 
@@ -289,6 +290,11 @@ class Agent():
             tools: Tool definitions for function calling.
             json_format: Force JSON output. For Groq: adds ``response_format={"type": "json_object"}``.
                          For Ollama: adds ``format="json"`` to the request.
+            reasoning: Whether to allow the model to reason (thinking). When
+                       ``False``, reasoning is disabled on providers that support
+                       it (Ollama ``think=False``, Groq ``reasoning_effort="none"``)
+                       with a fallback so models that don't support the flag are
+                       not broken.
             **kwargs: Forwarded to the provider client.
 
         Returns:
@@ -330,12 +336,29 @@ class Agent():
                     groq_kwargs["tool_choice"] = "auto"
                 if json_format:
                     groq_kwargs["response_format"] = {"type": "json_object"}
-                response = await self.groq_client.chat.completions.create(
-                    model=model,
-                    messages=msgs,
-                    **groq_kwargs,
-                    **kwargs,
-                )
+                if not reasoning:
+                    # Disable reasoning. Only some Groq models accept this field
+                    # (Qwen: "none"; GPT-OSS: low/medium/high). If the model
+                    # rejects it, fall back to a request without the field.
+                    groq_kwargs["reasoning_effort"] = "none"
+                try:
+                    response = await self.groq_client.chat.completions.create(
+                        model=model,
+                        messages=msgs,
+                        **groq_kwargs,
+                        **kwargs,
+                    )
+                except Exception as _ex:
+                    if not reasoning and "reasoning_effort" in str(_ex):
+                        groq_kwargs.pop("reasoning_effort", None)
+                        response = await self.groq_client.chat.completions.create(
+                            model=model,
+                            messages=msgs,
+                            **groq_kwargs,
+                            **kwargs,
+                        )
+                    else:
+                        raise
                 output = response.choices[0].message.content or ""
                 raw_tc = response.choices[0].message.tool_calls
                 if cleaned_output and output:
@@ -364,7 +387,7 @@ class Agent():
                     print(f'[WARN] Ollama no soporta el parámetro "{k}". Será ignorado.', flush=True)
                     kwargs.pop(k)
 
-                response = await self.ollama_client.chat(
+                chat_kwargs = dict(
                     model=model,
                     messages=msgs,
                     tools=tools if tools else None,
@@ -372,6 +395,18 @@ class Agent():
                     options=options,
                     keep_alive=-1,
                 )
+                if reasoning:
+                    response = await self.ollama_client.chat(**chat_kwargs)
+                else:
+                    # Disable reasoning (think=False). Some models don't support
+                    # the think flag; fall back to a request without it.
+                    try:
+                        response = await self.ollama_client.chat(**chat_kwargs, think=False)
+                    except Exception as _ex:
+                        if "does not support thinking" in str(_ex):
+                            response = await self.ollama_client.chat(**chat_kwargs)
+                        else:
+                            raise
                 output = response.message.content or ""
                 raw_tc = response.message.tool_calls
                 if cleaned_output and output:

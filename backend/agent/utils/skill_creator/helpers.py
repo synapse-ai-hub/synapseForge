@@ -29,7 +29,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(_current_dir)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from backend.agent.config_dir import get_skills_dir
+from backend.agent.utils.config_dir import get_skills_dir
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)

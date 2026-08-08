@@ -192,7 +192,7 @@ function App() {
     try {
       const data = await sessionService.getSession(id);
       setCurrentSessionId(id);
-      setMessages(mapSessionMessages(data.messages));
+      setMessages([WELCOME_MESSAGE, ...mapSessionMessages(data.messages)]);
       setIsStreaming(false);
     } catch (err) {
       console.error("Error cargando la sesión:", err);

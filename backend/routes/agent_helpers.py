@@ -10,7 +10,7 @@ import json
 import logging
 import os
 
-from backend.agent.config_dir import get_skills_dir
+from backend.agent.utils.config_dir import get_skills_dir
 from backend.agent.permissions import list_agents
 from backend.agent.utils.skill_loader import _parse_frontmatter as parse_skill_frontmatter
 from backend.agent.utils.mcp_helper import check_all_mcp_servers_health

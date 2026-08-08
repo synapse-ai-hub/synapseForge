@@ -36,7 +36,7 @@ if _project_root not in sys.path:
 from backend.agent.utils.skill_creator.helpers import _listar_skills_locales, _evaluar_si_existe, _copiar_referencias
 from backend.agent.utils.skill_creator.skill_agent import run_skill_agent
 from backend.instances import agent
-from backend.agent.config_dir import get_skills_dir
+from backend.agent.utils.config_dir import get_skills_dir
 
 logger = logging.getLogger(__name__)
 

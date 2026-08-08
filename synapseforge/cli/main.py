@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -324,17 +325,35 @@ def _run(project_dir: str) -> None:
     print("  Frontend iniciado correctamente")
 
     print("\nPresioná Ctrl+C para detener ambos servidores.\n")
-    try:
-        uvicorn_proc.wait()
-    except KeyboardInterrupt:
+
+    def _stop(signum=None, frame=None) -> None:
+        """Force-kill both process trees and exit.
+
+        ``shell=True`` wraps each command in ``cmd.exe``, so ``terminate()``
+        alone would leave the real uvicorn/node children alive. We use
+        ``taskkill /F /T`` to kill the whole tree. This also force-kills
+        uvicorn even when it is stuck in a graceful shutdown waiting for open
+        SSE connections.
+        """
         print("\nDeteniendo servidores...")
-        # Kill the whole process tree (shell=True wraps commands in cmd.exe,
-        # so terminate() alone would leave the real uvicorn/node children alive).
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(uvicorn_proc.pid)], capture_output=True)
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(npm_proc.pid)], capture_output=True)
-        uvicorn_proc.wait()
-        npm_proc.wait()
         print("Servidores detenidos.")
+        sys.exit(0)
+
+    # Handle Ctrl+C via a signal handler instead of a blocking wait(). A plain
+    # ``uvicorn_proc.wait()`` can hang forever because uvicorn's graceful
+    # shutdown waits for open SSE connections ("Waiting for connections to
+    # close"). Polling with a short sleep keeps the main thread interruptible so
+    # the handler runs immediately on Ctrl+C.
+    signal.signal(signal.SIGINT, _stop)
+    try:
+        while True:
+            if uvicorn_proc.poll() is not None or npm_proc.poll() is not None:
+                break
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        _stop()
 
 
 if __name__ == "__main__":

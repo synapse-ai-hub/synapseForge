@@ -31,7 +31,7 @@ from backend.agent.permissions import get_agent_prompt, list_agents
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.skill_loader import format_skills_section
 from backend.instances import agent
-from backend.agent.config_dir import get_agents_dir
+from backend.agent.utils.config_dir import get_agents_dir
 
 logger = logging.getLogger(__name__)
 

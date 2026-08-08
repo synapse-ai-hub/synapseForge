@@ -32,7 +32,7 @@ from backend.agent.utils.skill_creator.helpers import (
 )
 from backend.agent.utils.skill_creator.skill_agent import run_skill_agent
 from backend.agent.agent import Agent
-from backend.agent.config_dir import get_skills_dir
+from backend.agent.utils.config_dir import get_skills_dir
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)

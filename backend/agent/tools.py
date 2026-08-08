@@ -69,7 +69,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from backend.agent.contract import (
+from backend.agent.utils.contract import (
     make_error_response,
     make_success_response,
     zero_usage,
@@ -370,7 +370,7 @@ class Tools:
         Uses the config directory ``~/.config/synapseForge/tools/``.
         Returns ``None`` (no error) if the folder does not exist.
         """
-        from backend.agent.config_dir import get_tools_dir
+        from backend.agent.utils.config_dir import get_tools_dir
 
         tools_dir = get_tools_dir()
         if tools_dir.is_dir():
@@ -1003,7 +1003,7 @@ class Tools:
             )
 
         try:
-            from backend.agent.loop_helpers import build_system_prompt
+            from backend.agent.utils.loop_helpers import build_system_prompt
 
             system_prompt = build_system_prompt(agent_name)
             # print(f'Agente: {agent_name}\n\nPrompt:\n{system_prompt}')
@@ -1099,6 +1099,14 @@ class Tools:
             log_error(str(exc), source="tools.py:task")
             final_text = "Ocurrió un error al ejecutar el sub-agente."
             state = "error"
+
+        # 3b. If the sub-agent finished without a final response (only reasoning)
+        # or returned an error message, mark the task as error so the parent and
+        # frontend show it as such instead of leaving it stuck/success.
+        if state == "completed":
+            stripped = final_text.strip()
+            if not stripped or "Ocurrió un error al procesar la solicitud" in stripped:
+                state = "error"
 
         # 4. Return the result wrapped in XML (consumed by the parent as tool result)
         print(f"[DEBUG de la verga que hice] task.DESPUES_loop.run agent={agent_name} child={child_id} ts={time.time()}")

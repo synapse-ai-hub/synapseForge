@@ -19,7 +19,7 @@ from typing import Any
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
-from backend.agent.config_dir import get_knowledge_dir
+from backend.agent.utils.config_dir import get_knowledge_dir
 
 logger = logging.getLogger(__name__)
 

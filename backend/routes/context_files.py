@@ -24,7 +24,7 @@ _project_root = os.path.dirname(os.path.dirname(_current_dir))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from backend.agent.contract import (
+from backend.agent.utils.contract import (
     make_error_response,
     make_success_response,
     validate_response,

@@ -57,8 +57,8 @@ export function SessionsTab({
 
       {/* Session list*/}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* History - 70% */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5 min-h-0" style={{ maxHeight: "70%" }}>
+        {/* History - scrollable list that uses the full available height */}
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5 min-h-0">
           {isLoading ? (
             <div className="text-center py-4 text-sm text-app-text-secondary">
               Cargando...

@@ -183,6 +183,7 @@ function ToolCallBlock({
   waitingForChunk = false,
   subagentEvents,
   isLatestTool = true,
+  taskIndex = 0,
 }: {
   toolCall: { tool: string; parameters?: Record<string, any> };
   result?: { tool: string; result: any };
@@ -190,6 +191,8 @@ function ToolCallBlock({
   waitingForChunk?: boolean;
   subagentEvents?: Record<string, SubagentEvent>;
   isLatestTool?: boolean;
+  /** Índice de esta burbuja entre las burbujas de task (0 = primera). */
+  taskIndex?: number;
 }) {
   // Abierto por defecto durante streaming (runtime), cerrado por defecto al recargar
   const [open, setOpen] = useState(isStreaming ?? false);
@@ -202,17 +205,25 @@ function ToolCallBlock({
   const isTask = toolCall.tool === "task";
   const hasResult = !!result;
   const isError = hasResult && result.result && (
-    (typeof result.result === "string" && isTask && /state="error"/.test(result.result)) ||
+    (typeof result.result === "string" && isTask && (
+      /state="error"/.test(result.result) ||
+      /<task_result>\s*<\/task_result>/.test(result.result) ||
+      /Ocurrió un error/.test(result.result)
+    )) ||
     (typeof result.result === "string" && !isTask && result.result.toLowerCase().includes("error")) ||
     (typeof result.result === "object" && result.result !== null && "error" in result.result)
   );
 
-  // Find matching child session ID from real-time events or result XML
+  // Find matching child session ID from real-time events or result XML.
+  // Cada burbuja de task se asocia a SU child session por orden: la N-ésima
+  // burbuja usa el N-ésimo child_session_id (el backend emite los eventos en
+  // orden exacto). Antes se usaba ids[0], lo que hacía que todas las burbujas
+  // mostraran el trabajo de la primera llamada.
   const childSessionId = useMemo(() => {
     // First try to find from real-time events
     if (subagentEvents && isTask) {
       const ids = Object.keys(subagentEvents);
-      if (ids.length > 0) return ids[0];
+      if (ids.length > 0) return ids[taskIndex];
     }
     // Fall back to parsing from result XML
     if (isTask && hasResult && typeof result?.result === "string") {
@@ -220,7 +231,7 @@ function ToolCallBlock({
       return match ? match[1] : null;
     }
     return null;
-  }, [subagentEvents, isTask, hasResult, result]);
+  }, [subagentEvents, isTask, hasResult, result, taskIndex]);
 
   // Child text content (real-time from chunks, or lazy-fetched on reload).
   // "Respuesta del sub-agente": si existe, el sub-agente terminó con texto.
@@ -233,17 +244,19 @@ function ToolCallBlock({
   const hasChildResponse = !!childContent;
 
   // Status logic:
+  // - If has result: success or error based on content (a finished task must
+  //   show its status even while the parent keeps streaming — previously
+  //   waitingForChunk took priority and left finished tasks spinning).
   // - If waiting for first chunk: keep calling (spinner) until text arrives
-  // - If has result: success or error based on content
   // - If no result, isStreaming and isLatestTool: calling (spinner)
   // - If no result, isStreaming but NOT latest tool: done (no spinner, closed by newer tool)
   // - If no result and NOT streaming: for task, success only when the
   //   sub-agent produced a response; error when it finished without one
   //   (even if its tools ran). For other tools: error (red, no spinner).
-  const status = waitingForChunk
-    ? "calling"
-    : hasResult
-      ? (isError ? "error" : "success")
+  const status = hasResult
+    ? (isError ? "error" : "success")
+    : waitingForChunk
+      ? "calling"
       : (isStreaming && isLatestTool ? "calling" : (isStreaming ? "done" : (isTask ? (hasChildResponse ? "success" : "error") : "error")));
 
   // Status colors (done = previous tool closed by a newer one)
@@ -609,6 +622,11 @@ function MessageRow({
                 }
                 if (block.type === "tool") {
                   if (!verboseMode) return null;
+                  // Índice de esta burbuja entre las burbujas de task (para
+                  // asociarla a su child session en el orden exacto de eventos).
+                  const taskIndex = message.blocks
+                    .slice(0, i)
+                    .filter((b) => b.type === "tool" && b.name === "task").length;
                   return (
                     <ToolCallBlock
                       key={i}
@@ -618,6 +636,7 @@ function MessageRow({
                       waitingForChunk={waitingForChunk}
                       subagentEvents={message.subagentEvents}
                       isLatestTool={i === (message.blocks?.length ?? 0) - 1}
+                      taskIndex={taskIndex}
                     />
                   );
                 }

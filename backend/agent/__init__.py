@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Lazy imports — submodules are created in separate tasks
 try:
-    from backend.agent.config import CompactionConfig, SessionContext
+    from backend.agent.utils.config import CompactionConfig, SessionContext
 except ImportError as e:
     log_error(str(e), source="agent/__init__.py(config)")
     CompactionConfig = None  # type: ignore

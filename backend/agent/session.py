@@ -315,6 +315,9 @@ class SessionManager:
         reasoning: str | None = None,
         tool_calls: list | None = None,
         tool_results: list | None = None,
+        status: str | None = None,
+        message: str | None = None,
+        usage: dict | None = None,
         tool_call_id: str | None = None,
         tool_name: str | None = None,
         turn_number: int | None = None,
@@ -332,6 +335,11 @@ class SessionManager:
             tool_calls: List of tool-call objects (serialised to JSON).
             tool_results: List of tool-result objects (serialised to
                 JSON).
+            status: Per-message status (``"success"`` / ``"error"``).
+            message: Per-message human-readable message.
+            usage: Optional dict with token usage, e.g.
+                ``{"prompt_tokens", "completion_tokens", "total_tokens",
+                "total_time"}``. Stored in dedicated columns.
             tool_call_id: Tool call ID (Groq format, for ``role: "tool"``).
             tool_name: Tool name (Ollama format, for ``role: "tool"``).
             turn_number: Turn number for grouping messages by
@@ -354,8 +362,9 @@ class SessionManager:
                 conn.execute(
                     "INSERT INTO messages "
                     "(session_id, role, content, reasoning, tool_calls, tool_results, "
+                    "status, message, prompt_tokens, completion_tokens, total_tokens, total_time, "
                     "tool_call_id, tool_name, turn_number, step, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         role,
@@ -363,6 +372,12 @@ class SessionManager:
                         reasoning,
                         json.dumps(tool_calls) if tool_calls is not None else None,
                         json.dumps(tool_results) if tool_results is not None else None,
+                        status,
+                        message,
+                        (usage or {}).get("prompt_tokens"),
+                        (usage or {}).get("completion_tokens"),
+                        (usage or {}).get("total_tokens"),
+                        (usage or {}).get("total_time"),
                         tool_call_id,
                         tool_name,
                         turn_number,

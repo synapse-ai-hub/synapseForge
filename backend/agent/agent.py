@@ -106,6 +106,7 @@ class Agent():
         self.__api_key = os.getenv('GROQ_API_KEY')
         self.provider: str | None = None
         self._resolved_model: str | None = None
+        self._context_window: int | None = None
 
         # Always try to create both clients.  The frontend dropdown will
         # only show providers whose client initialised successfully.
@@ -510,19 +511,39 @@ class Agent():
             if tools:
                 groq_kwargs["tools"] = tools
                 groq_kwargs["tool_choice"] = "auto"
-            # Groq: pedir reasoning como campo separado (delta.reasoning_content)
+# Groq: pedir reasoning como campo separado (delta.reasoning_content)
             groq_kwargs["reasoning_format"] = "parsed"
+            # Groq: pedir usage en el último chunk del stream (choices vacío)
+            groq_kwargs["stream_options"] = {"include_usage": True}
 
             stream = await self.groq_client.chat.completions.create(**groq_kwargs)
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
-            in_think_tag = False  # <think> tag state machine
-            has_dedicated_thinking = False  # si vimos reasoning_content, no parseamos <think>
+            in_think_tag = False  #  thinking tag state machine
+            has_dedicated_thinking = False  # si vimos reasoning_content, no parseamos  thinking
+            usage_data: dict[str, Any] | None = None
 
             async for chunk in stream:
                 if stream_cancel_event and stream_cancel_event.is_set():
                     yield {'type': 'aborted'}
                     return
+                # Capturar usage del chunk final (stream_options.include_usage)
+                if getattr(chunk, 'usage', None):
+                    _u = chunk.usage
+                    usage_data = {
+                        'prompt_tokens': _u.prompt_tokens,
+                        'completion_tokens': _u.completion_tokens,
+                        'total_tokens': _u.total_tokens,
+                        'total_time': round(getattr(_u, 'total_time', 0) or 0, 2),
+                    }
+                elif getattr(chunk, 'x_groq', None) and getattr(chunk.x_groq, 'usage', None):
+                    _u = chunk.x_groq.usage
+                    usage_data = {
+                        'prompt_tokens': _u.prompt_tokens,
+                        'completion_tokens': _u.completion_tokens,
+                        'total_tokens': _u.total_tokens,
+                        'total_time': round(getattr(_u, 'total_time', 0) or 0, 2),
+                    }
                 if chunk.choices:
                     delta = chunk.choices[0].delta
 
@@ -567,7 +588,9 @@ class Agent():
                                 yield {'type': 'chunk', 'content': clean_text}
                                 await asyncio.sleep(0.01)
 
-            # After stream finishes, yield tool_calls_detected if any were accumulated
+            # After stream finishes, yield usage (if captured) and tool_calls_detected
+            if usage_data is not None:
+                yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
                 for idx in sorted(accumulated_tool_calls.keys()):
@@ -611,12 +634,21 @@ class Agent():
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
             in_think_tag = False  # |◊|            has_dedicated_thinking = False  # si vimos thinking field, no parseamos 
             stream = None
+            usage_data: dict[str, Any] | None = None
             try:
                 stream = await _try_stream(use_think=True)
                 async for chunk in stream:
                     if stream_cancel_event and stream_cancel_event.is_set():
                         yield {'type': 'aborted'}
                         return
+                    # Capturar usage del chunk final (done=True)
+                    if getattr(chunk, 'done', False):
+                        usage_data = {
+                            'prompt_tokens': getattr(chunk, 'prompt_eval_count', 0) or 0,
+                            'completion_tokens': getattr(chunk, 'eval_count', 0) or 0,
+                            'total_tokens': (getattr(chunk, 'prompt_eval_count', 0) or 0) + (getattr(chunk, 'eval_count', 0) or 0),
+                            'total_time': round((getattr(chunk, 'total_duration', 0) or 0) / 1_000_000_000, 2),
+                        }
                     # Ollama thinking (DeepSeek R1, gemma4, qwen3.5, etc.)
                     if chunk.message and hasattr(chunk.message, 'thinking') and chunk.message.thinking:
                         has_dedicated_thinking = True
@@ -668,6 +700,14 @@ class Agent():
                         if stream_cancel_event and stream_cancel_event.is_set():
                             yield {'type': 'aborted'}
                             return
+                        # Capturar usage del chunk final (done=True)
+                        if getattr(chunk, 'done', False):
+                            usage_data = {
+                                'prompt_tokens': getattr(chunk, 'prompt_eval_count', 0) or 0,
+                                'completion_tokens': getattr(chunk, 'eval_count', 0) or 0,
+                                'total_tokens': (getattr(chunk, 'prompt_eval_count', 0) or 0) + (getattr(chunk, 'eval_count', 0) or 0),
+                                'total_time': round((getattr(chunk, 'total_duration', 0) or 0) / 1_000_000_000, 2),
+                            }
                         if chunk.message and hasattr(chunk.message, 'thinking') and chunk.message.thinking:
                             has_dedicated_thinking = True
                             yield {'type': 'reasoning', 'content': chunk.message.thinking}
@@ -703,7 +743,9 @@ class Agent():
                 else:
                     raise
 
-            # After stream finishes, yield tool_calls_detected if any were accumulated
+            # After stream finishes, yield usage (if captured) and tool_calls_detected
+            if usage_data is not None:
+                yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
                 for idx in sorted(accumulated_tool_calls.keys()):

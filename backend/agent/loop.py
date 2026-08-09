@@ -483,6 +483,7 @@ class AgentLoop:
 
                 try:
 
+                    usage_data: dict[str, Any] | None = None
                     async for event in agent.llm_streaming(
                         model=model, messages=messages, tools=tools,
                         stream_cancel_event=stream_cancel_event,
@@ -497,6 +498,16 @@ class AgentLoop:
                         elif event["type"] == "tool_calls_detected":
                             tool_calls = event["content"]
                             break
+                        elif event["type"] == "usage":
+                            usage_data = event.get("content")
+                            logger.info(
+                                "USAGE [%s] prompt=%s completion=%s total=%s time=%ss",
+                                model,
+                                event.get("content", {}).get("prompt_tokens"),
+                                event.get("content", {}).get("completion_tokens"),
+                                event.get("content", {}).get("total_tokens"),
+                                event.get("content", {}).get("total_time"),
+                            )
                         elif event["type"] == "aborted":
                             # Guardar respuesta parcial antes de terminar (patrón ProspectingAgent/opencode)
                             if collected_content:
@@ -525,6 +536,13 @@ class AgentLoop:
                     yield "data: [DONE]\n\n"
                     return
 
+                # Emit token counter after each LLM call (prompt_tokens is cumulative)
+                if usage_data:
+                    context_window = getattr(agent, "_context_window", None)
+                    prompt_tokens = usage_data.get("prompt_tokens") or 0
+                    percent = round((prompt_tokens / context_window) * 100, 1) if context_window else None
+                    yield f"data: {json.dumps({'type': 'token_counter', 'content': {'prompt_tokens': prompt_tokens, 'completion_tokens': usage_data.get('completion_tokens') or 0, 'total_tokens': usage_data.get('total_tokens') or 0, 'context_window': context_window, 'percent': percent}}, ensure_ascii=False)}\n\n"
+
                 logger.debug(
                     "LLM response — tool_calls: %s, content_length: %d",
                     len(tool_calls) if tool_calls else 0, len(collected_content),
@@ -548,6 +566,9 @@ class AgentLoop:
                         tool_calls=tool_calls,
                         turn_number=turn_number,
                         step=step,
+                        status="success",
+                        message="",
+                        usage=usage_data,
                     )
 
                     # Collect tool results to update assistant message after all tools execute
@@ -705,11 +726,21 @@ class AgentLoop:
                         else:
                             yield f"data: {json.dumps({'type': 'tool_result', 'content': {'name': tc['name'], 'result': result_data}}, ensure_ascii=False)}\n\n"
 
-                        # Build tool result message (provider-dependent format)
+                        # Build tool result message (provider-dependent format).
+                        # The frontend receives the full contract (status/message/data)
+                        # so it can mark the tool as success/error; the LLM receives only
+                        # the meaningful payload (data on success, {"error": message} on
+                        # error) exactly as before.
+                        if isinstance(result_data, dict) and result_data.get("status") == "error":
+                            llm_payload = {"error": result_data.get("message", "Tool failed")}
+                        elif isinstance(result_data, dict) and "data" in result_data:
+                            llm_payload = result_data["data"]
+                        else:
+                            llm_payload = result_data
                         tool_content = (
-                            json.dumps(result_data, ensure_ascii=False)
-                            if isinstance(result_data, (dict, list))
-                            else str(result_data)
+                            json.dumps(llm_payload, ensure_ascii=False)
+                            if isinstance(llm_payload, (dict, list))
+                            else str(llm_payload)
                         )
                         is_groq = agent.provider.upper() == "API"
                         if is_groq:
@@ -754,6 +785,9 @@ class AgentLoop:
                     session_id, "assistant", content=cleaned,
                     reasoning=collected_reasoning or None,
                     turn_number=turn_number, step=step,
+                    status="success",
+                    message="",
+                    usage=usage_data,
                 )
                 # Emit the session title before [DONE] so the sidebar refreshes
                 # with the generated title even if it finished after the loop.

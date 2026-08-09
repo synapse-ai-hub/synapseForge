@@ -204,14 +204,21 @@ function ToolCallBlock({
   // Determine status: 'calling' | 'success' | 'error'
   const isTask = toolCall.tool === "task";
   const hasResult = !!result;
+  // Estado basado en el contrato único {status, message, data, ...} que
+  // retornan todas las tools. Para `task` el contrato siempre es "success"
+  // (la delegación en sí funcionó); el estado real del sub-agente vive en el
+  // XML de `data` (atributo `state`). Para el resto, se usa el `status`
+  // autoritativo del contrato. Se conserva un fallback por contenido para
+  // resultados legacy que lleguen como string crudo.
   const isError = hasResult && result.result && (
-    (typeof result.result === "string" && isTask && (
-      /state="error"/.test(result.result) ||
-      /<task_result>\s*<\/task_result>/.test(result.result) ||
-      /Ocurrió un error/.test(result.result)
+    (isTask && typeof result.result === "object" && result.result !== null && typeof result.result.data === "string" && (
+      /state="error"/.test(result.result.data) ||
+      /<task_result>\s*<\/task_result>/.test(result.result.data) ||
+      /Ocurrió un error/.test(result.result.data)
     )) ||
-    (typeof result.result === "string" && !isTask && result.result.toLowerCase().includes("error")) ||
-    (typeof result.result === "object" && result.result !== null && "error" in result.result)
+    (!isTask && typeof result.result === "object" && result.result !== null && result.result.status === "error") ||
+    (!isTask && typeof result.result === "object" && result.result !== null && "error" in result.result) ||
+    (typeof result.result === "string" && result.result.toLowerCase().includes("error"))
   );
 
   // Find matching child session ID from real-time events or result XML.
@@ -394,8 +401,8 @@ function ToolCallBlock({
   const getChildStatus = (childResult?: any, childDone = false) => {
     if (!childResult) return childDone ? "error" : "calling";
     if (
-      (typeof childResult === "string" && childResult.toLowerCase().includes("error")) ||
-      (typeof childResult === "object" && childResult !== null && "error" in childResult)
+      (typeof childResult === "object" && childResult !== null && childResult.status === "error") ||
+      (typeof childResult === "string" && childResult.toLowerCase().includes("error"))
     ) return "error";
     return "success";
   };

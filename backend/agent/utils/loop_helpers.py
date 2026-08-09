@@ -30,6 +30,7 @@ if _project_root not in sys.path:
 from backend.agent.permissions import get_agent_prompt, list_agents
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.skill_loader import format_skills_section
+from backend.agent.utils.contract import make_error_response, make_success_response, zero_usage
 from backend.instances import agent
 from backend.agent.utils.config_dir import get_agents_dir
 
@@ -284,31 +285,40 @@ async def execute_tool(agent, tc: dict[str, Any]) -> Any:
     and external tools and returns the unified contract
     ``{status, message, data, usage}``.
 
+    The full contract is returned so the frontend can read the authoritative
+    ``status`` (``"success"`` / ``"error"``) and mark the tool accordingly.
+    The LLM-facing payload (``data`` on success, ``{"error": message}`` on
+    error) is extracted by the caller (loop.py) when building the tool
+    message, so the model's view is unchanged.
+
     Args:
         agent: The ``Agent`` instance (provides ``tools``).
         tc: Normalized tool call with ``name`` and ``args``.
 
     Returns:
-        Result data (``data`` from contract), or dict with
-        ``{"error": message}`` on failure.
+        The unified contract dict ``{status, message, data, usage}``.
     """
     tool_name = tc["name"]
     tool_args = tc.get("args", {})
-
 
     try:
         result = await agent.tools._execute_tool(tool_name, **tool_args)
     except Exception as e:
         logger.exception("Tool '%s' failed", tool_name)
         log_error(str(e), source="loop_helpers.py:execute_tool")
-        return {"error": str(e)}
+        return make_error_response(
+            message=f"Tool '{tool_name}' failed: {e}",
+            usage=zero_usage(),
+        )
 
+    if isinstance(result, dict) and result.get("status") in ("success", "error"):
+        if result.get("status") == "error":
+            logger.error("Tool '%s' error: %s", tool_name, result.get("message", "Tool failed"))
+        return result
 
-    if isinstance(result, dict) and result.get("status") == "error":
-        error_msg = result.get("message", f"Tool '{tool_name}' failed")
-        logger.error("Tool '%s' error: %s", tool_name, error_msg)
-        return {"error": error_msg}
-
-    if isinstance(result, dict) and "data" in result:
-        return result["data"]
-    return result
+    # Fallback: wrap a non-contract result as success with the raw value as data.
+    return make_success_response(
+        message=f"Tool '{tool_name}' executed.",
+        data=result,
+        usage=zero_usage(),
+    )

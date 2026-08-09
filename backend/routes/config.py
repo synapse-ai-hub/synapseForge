@@ -28,7 +28,12 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.instances import agent, session_manager
-from backend.agent.utils.model_resolver import get_groq_models, get_ollama_models
+from backend.agent.utils.model_resolver import (
+    get_groq_models,
+    get_ollama_models,
+    get_groq_context_window,
+    get_ollama_context_window,
+)
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.agent_helpers import get_skills_list, get_tools_list, get_agents_list, get_mcp_list
 
@@ -43,6 +48,11 @@ router = APIRouter(prefix="/config", tags=["config"])
 _context_window_turns: int = -1
 """Number of turns to keep in context.  ``-1`` = all.  Set via
 ``POST /config/context-window``."""
+
+_context_window_tokens: int | None = None
+"""Context window (tokens) of the selected model. Detected at model
+selection (Ollama ``/api/show`` / Groq ``/models``) and persisted in
+``config_kv`` as ``selected_model_context_window``."""
 
 _verbose_mode: bool = False
 """Whether verbose mode (show tool / sub-agent cards) is enabled.
@@ -408,6 +418,27 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo persistir el modelo o proveedor seleccionado: %s", exc)
 
+    # Detect and persist the model's context window (tokens)
+    global _context_window_tokens
+    context_window = None
+    try:
+        if provider == "LOCAL":
+            context_window = await asyncio.to_thread(get_ollama_context_window, model)
+        elif provider == "API":
+            api_key = os.getenv("GROQ_API_KEY", "").strip()
+            context_window = await asyncio.to_thread(get_groq_context_window, model, api_key)
+        if context_window:
+            _context_window_tokens = context_window
+            agent._context_window = context_window
+            if session_manager is not None:
+                session_manager.set_config("selected_model_context_window", str(context_window))
+            logger.info("Context window for %s: %d tokens", model, context_window)
+        else:
+            logger.warning("No se pudo detectar la context window de %s", model)
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:select_model(context_window)")
+        logger.warning("No se pudo detectar la context window de %s: %s", model, exc)
+
     logger.info("Model selected: %s (%s)", model, provider)
     return JSONResponse(
         status_code=200,
@@ -460,6 +491,18 @@ def load_persisted_config() -> None:
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo cargar la ventana de contexto: %s", exc)
+
+    try:
+        cwt = session_manager.get_config("selected_model_context_window")
+        if cwt is not None:
+            global _context_window_tokens
+            _context_window_tokens = int(cwt)
+            if agent is not None:
+                agent._context_window = _context_window_tokens
+            logger.info("Context window de modelo persistida cargada: %s", cwt)
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py")
+        logger.warning("No se pudo cargar la context window de modelo: %s", exc)
 
     try:
         vm = session_manager.get_config("verbose_mode")

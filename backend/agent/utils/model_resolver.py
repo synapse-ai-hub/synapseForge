@@ -12,6 +12,7 @@ se retorna como string para ser usado por el ``Agent`` y el loop.
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -227,6 +228,89 @@ def resolve_model() -> str:
     else:
         logger.error("Unknown PROVIDER: %s", provider)
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Context window detection
+# ---------------------------------------------------------------------------
+
+def get_groq_context_window(model: str, api_key: str | None = None) -> int | None:
+    """Return the context window (tokens) for a Groq model.
+
+    Calls ``GET https://api.groq.com/openai/v1/models/{model}`` and reads the
+    ``context_window`` field.
+
+    Args:
+        model: The Groq model ID.
+        api_key: Groq API key. If ``None``, reads ``GROQ_API_KEY`` from env.
+
+    Returns:
+        The context window in tokens, or ``None`` if it cannot be resolved.
+    """
+    import requests
+
+    key = api_key or os.getenv("GROQ_API_KEY")
+    if not key:
+        return None
+    url = f"https://api.groq.com/openai/v1/models/{model}"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        cw = data.get("context_window")
+        return int(cw) if cw else None
+    except Exception as e:
+        log_error(str(e), source="model_resolver.py:get_groq_context_window")
+        return None
+
+
+def get_ollama_context_window(model: str) -> int | None:
+    """Return the effective runtime context length (tokens) for an Ollama model.
+
+    Calls ``POST /api/show`` and reads, in order of preference:
+    1. the top-level ``context_length`` (context for the running model),
+    2. ``model_info["<family>.context_length"]`` (model max context),
+    3. ``num_ctx`` parsed from the ``parameters`` string.
+
+    Args:
+        model: The Ollama model name.
+
+    Returns:
+        The context length in tokens, or ``None`` if it cannot be resolved.
+    """
+    import requests
+
+    try:
+        resp = requests.post(
+            "http://localhost:11434/api/show",
+            json={"model": model},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        cl = data.get("context_length")
+        if cl:
+            return int(cl)
+
+        model_info = data.get("model_info") or {}
+        for k, v in model_info.items():
+            if k.endswith(".context_length") and v:
+                return int(v)
+
+        params = data.get("parameters") or ""
+        m = re.search(r"num_ctx\s+(\d+)", params)
+        if m:
+            return int(m.group(1))
+
+        return None
+    except Exception as e:
+        log_error(str(e), source="model_resolver.py:get_ollama_context_window")
+        return None
 
 
 # ---------------------------------------------------------------------------

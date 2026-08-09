@@ -402,8 +402,15 @@ class AgentLoop:
                 session_id, "user", content=user_message, turn_number=turn_number,
             )
 
-            # --- 5b. Generate title on first turn ---
-            if turn_number == 1:
+            # --- 5b. Generate title on first turn (root sessions only, non-blocking) ---
+            # Sub-agents (depth > 0) skip title generation entirely: each one
+            # creates a new session (turn 1) and generating a title would block
+            # the loop. For root sessions the title is generated in a background
+            # task so it doesn't block the response stream; the result is pushed
+            # to a queue that the loop drains to emit the session_title event.
+            title_queue: asyncio.Queue | None = None
+            title_task: asyncio.Task | None = None
+            if turn_number == 1 and depth == 0:
                 try:
                     existing_titles = session_manager.get_all_titles()
                     if existing_titles:
@@ -416,28 +423,40 @@ class AgentLoop:
                         message=user_message,
                         titles=titles_formatted,
                     )
-                    title_result = await agent.llm_process(
-                        model=model,
-                        prompt=title_prompt,
-                        max_tokens=2000,
-                        temperature=temperature,
-                        top_p=top_p,
-                    )
-                    raw_title = title_result.get("data", "") if isinstance(title_result, dict) else ""
-                    title = (raw_title or "").strip().replace('"', "").replace("'", "")
-                    if not title:
-                        # Fallback: usar el primer mensaje del usuario truncado
-                        title = user_message[:80].strip()
-                    if title:
+                    title_queue = asyncio.Queue()
+
+                    async def _generate_title() -> None:
                         try:
-                            session_manager.update_session_title(session_id, title)
+                            title_result = await agent.llm_process(
+                                model=model,
+                                prompt=title_prompt,
+                                max_tokens=100,
+                                temperature=temperature,
+                                top_p=top_p,
+                                reasoning=False,
+                            )
+                            raw_title = title_result.get("data", "") if isinstance(title_result, dict) else ""
+                            title = (raw_title or "").strip().replace('"', "").replace("'", "")
+                            if not title:
+                                # Fallback: usar el primer mensaje del usuario truncado
+                                title = user_message[:80].strip()
+                            if title:
+                                try:
+                                    session_manager.update_session_title(session_id, title)
+                                except Exception as exc:
+                                    logger.warning("No se pudo guardar el título: %s", exc)
+                                    log_error(str(exc), source="loop.py:run")
+                                await title_queue.put(title)
                         except Exception as exc:
-                            logger.warning("No se pudo guardar el título: %s", exc)
+                            logger.warning("No se pudo generar el título: %s", exc)
                             log_error(str(exc), source="loop.py:run")
-                        yield f"data: {json.dumps({'type': 'session_title', 'content': title}, ensure_ascii=False)}\n\n"
+
+                    title_task = asyncio.create_task(_generate_title())
                 except Exception as exc:
-                    logger.warning("No se pudo generar el título: %s", exc)
+                    logger.warning("No se pudo preparar el título: %s", exc)
                     log_error(str(exc), source="loop.py:run")
+                    title_queue = None
+                    title_task = None
 
             # --- 6. Agent loop (while True) ---
             iteration = 0
@@ -445,6 +464,13 @@ class AgentLoop:
             while iteration < self.max_iterations:
                 iteration += 1
                 step += 1
+                # Drain non-blocking title generation result (if ready)
+                if title_queue is not None and not title_queue.empty():
+                    try:
+                        t = title_queue.get_nowait()
+                        yield f"data: {json.dumps({'type': 'session_title', 'content': t}, ensure_ascii=False)}\n\n"
+                    except asyncio.QueueEmpty:
+                        pass
                 logger.info(
                     "Iteration %d / %d — messages in context: %d, tools: %d",
                     iteration, self.max_iterations, len(messages), len(tools),
@@ -729,6 +755,20 @@ class AgentLoop:
                     reasoning=collected_reasoning or None,
                     turn_number=turn_number, step=step,
                 )
+                # Emit the session title before [DONE] so the sidebar refreshes
+                # with the generated title even if it finished after the loop.
+                if title_queue is not None:
+                    if title_task is not None and not title_task.done():
+                        try:
+                            await asyncio.wait_for(title_task, timeout=5)
+                        except (asyncio.TimeoutError, asyncio.CancelledError):
+                            pass
+                    while not title_queue.empty():
+                        try:
+                            t = title_queue.get_nowait()
+                            yield f"data: {json.dumps({'type': 'session_title', 'content': t}, ensure_ascii=False)}\n\n"
+                        except asyncio.QueueEmpty:
+                            break
                 _t_before_done = _time.time()
 
                 # # logger.info("[DEBUG_TIEMPO_SSE] about to yield [DONE] — iteration=%d, t=%.3f", iteration, _t_before_done)
@@ -762,6 +802,13 @@ class AgentLoop:
                 )
 
         finally:
+            # Ensure the background title task completes (or is cancelled) so
+            # it doesn't linger after the loop ends.
+            if title_task is not None and not title_task.done():
+                try:
+                    await asyncio.wait_for(title_task, timeout=5)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    pass
             _t_finally = _time.time()
 
             # # logger.info("[DEBUG_TIEMPO_SSE] run() finally — t=%.3f", _t_finally)

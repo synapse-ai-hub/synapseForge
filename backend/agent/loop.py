@@ -62,7 +62,6 @@ from backend.agent.permissions import (
     get_agent_parameters,
 )
 from backend.agent.utils.clean_memory import liberar_modelo
-from backend.event_bus import event_bus
 from backend.instances import agent, session_manager
 from backend.agent.utils.loop_helpers import (
     build_initial_messages,
@@ -176,10 +175,6 @@ class AgentLoop:
         self.max_iterations = max_iterations
 
     # ------------------------------------------------------------------
-    # Title emission helper
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 
@@ -233,7 +228,7 @@ class AgentLoop:
         """
         # --- 0.5. Set error logging context FIRST (covers recursion guard and all early errors) ---
         _t0 = _time.time()
-        print(f"[DEBUG de la verga que hice] loop.run.INICIO session={session_id} agent={agent_name} depth={depth} ts={_time.time()}")
+
         # # logger.info("[DEBUG_TIEMPO_SSE] run() started — session=%s, depth=%d, t=%.3f", session_id, depth, _t0)
         error_ctx_token = set_error_context(
             session_id=session_id,
@@ -350,7 +345,7 @@ class AgentLoop:
             # --- 3. Resolve tools ---
             if agent_name is None:
                 # Router: si existe config.yaml con permissions, se aplican.
-                # Si no existe, solo task (como hoy). Task siempre presente.
+                # Si no existe, solo task. Task siempre presente.
                 router_perms = _load_router_permissions()
                 if router_perms is None:
                     tools = _ROUTER_TOOLS
@@ -373,7 +368,7 @@ class AgentLoop:
                     log_error(str(e), source="loop.py:run(tools)")
                     tools = []
             logger.info("Tools available: %d", len(tools))
-            print(f"[DEBUG de la verga que hice] loop.run.tools_resueltos session={session_id} agent={agent_name} tools={len(tools)} ts={_time.time()}")
+
           
 
             # --- 4. Build initial messages array (history does NOT include current message) ---
@@ -407,14 +402,8 @@ class AgentLoop:
                 session_id, "user", content=user_message, turn_number=turn_number,
             )
 
-            # --- 5b. Generate title on first turn (root sessions only, non-blocking) ---
-            # Sub-agents (depth > 0) skip title generation entirely: each one
-            # creates a new session (turn 1) and generating a title would block
-            # the loop for a long time. For root sessions the title is generated
-            # in a background task so it doesn't block the response stream. The
-            # title is emitted through the event bus as soon as it is generated,
-            # so the frontend sidebar updates without waiting for the loop to end.
-            if turn_number == 1 and depth == 0:
+            # --- 5b. Generate title on first turn ---
+            if turn_number == 1:
                 try:
                     existing_titles = session_manager.get_all_titles()
                     if existing_titles:
@@ -427,42 +416,27 @@ class AgentLoop:
                         message=user_message,
                         titles=titles_formatted,
                     )
-
-                    async def _generate_title() -> None:
+                    title_result = await agent.llm_process(
+                        model=model,
+                        prompt=title_prompt,
+                        max_tokens=2000,
+                        temperature=temperature,
+                        top_p=top_p,
+                    )
+                    raw_title = title_result.get("data", "") if isinstance(title_result, dict) else ""
+                    title = (raw_title or "").strip().replace('"', "").replace("'", "")
+                    if not title:
+                        # Fallback: usar el primer mensaje del usuario truncado
+                        title = user_message[:80].strip()
+                    if title:
                         try:
-                            title_result = await agent.llm_process(
-                                model=model,
-                                prompt=title_prompt,
-                                max_tokens=100,
-                                temperature=temperature,
-                                top_p=top_p,
-                                reasoning=False,
-                            )
-                            raw_title = title_result.get("data", "") if isinstance(title_result, dict) else ""
-                            title = (raw_title or "").strip().replace('"', "").replace("'", "")
-                            if not title:
-                                # Fallback: usar el primer mensaje del usuario truncado
-                                title = user_message[:80].strip()
-                            if title:
-                                try:
-                                    session_manager.update_session_title(session_id, title)
-                                except Exception as exc:
-                                    logger.warning("No se pudo guardar el título: %s", exc)
-                                    log_error(str(exc), source="loop.py:run")
-                                # Emitir apenas se genera para que el frontend lo
-                                # muestre en el sidebar sin esperar a que termine el loop.
-                                await event_bus.emit({
-                                    "type": "session_title",
-                                    "session_id": session_id,
-                                    "content": title,
-                                })
+                            session_manager.update_session_title(session_id, title)
                         except Exception as exc:
-                            logger.warning("No se pudo generar el título: %s", exc)
+                            logger.warning("No se pudo guardar el título: %s", exc)
                             log_error(str(exc), source="loop.py:run")
-
-                    asyncio.create_task(_generate_title())
+                        yield f"data: {json.dumps({'type': 'session_title', 'content': title}, ensure_ascii=False)}\n\n"
                 except Exception as exc:
-                    logger.warning("No se pudo preparar el título: %s", exc)
+                    logger.warning("No se pudo generar el título: %s", exc)
                     log_error(str(exc), source="loop.py:run")
 
             # --- 6. Agent loop (while True) ---
@@ -482,7 +456,7 @@ class AgentLoop:
                 tool_calls = None
 
                 try:
-                    print(f"[DEBUG de la verga que hice] loop.run.ANTES_llm session={session_id} agent={agent_name} iter={iteration} ts={_time.time()}")
+
                     async for event in agent.llm_streaming(
                         model=model, messages=messages, tools=tools,
                         stream_cancel_event=stream_cancel_event,
@@ -529,7 +503,7 @@ class AgentLoop:
                     "LLM response — tool_calls: %s, content_length: %d",
                     len(tool_calls) if tool_calls else 0, len(collected_content),
                 )
-                print(f"[DEBUG de la verga que hice] loop.run.DESPUES_llm session={session_id} agent={agent_name} iter={iteration} tool_calls={len(tool_calls) if tool_calls else 0} ts={_time.time()}")
+
                 
                 # ---- 6b. Process tool_calls (LLM wants to continue) ----
                 if tool_calls:
@@ -756,7 +730,7 @@ class AgentLoop:
                     turn_number=turn_number, step=step,
                 )
                 _t_before_done = _time.time()
-                print(f"[DEBUG de la verga que hice] loop.run.ANTES_DONE session={session_id} agent={agent_name} iter={iteration} ts={_time.time()}")
+
                 # # logger.info("[DEBUG_TIEMPO_SSE] about to yield [DONE] — iteration=%d, t=%.3f", iteration, _t_before_done)
                 yield "data: [DONE]\n\n"
                 _t_after_done = _time.time()
@@ -789,7 +763,7 @@ class AgentLoop:
 
         finally:
             _t_finally = _time.time()
-            print(f"[DEBUG de la verga que hice] loop.run.FIN session={session_id} agent={agent_name} ts={_time.time()}")
+
             # # logger.info("[DEBUG_TIEMPO_SSE] run() finally — t=%.3f", _t_finally)
             # Cleanup TEMP_ files created during this loop
             _temp_files = getattr(agent.tools, "_temp_files", None)

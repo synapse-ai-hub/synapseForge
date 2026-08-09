@@ -38,7 +38,7 @@ async def events_endpoint(request: Request) -> StreamingResponse:
                     # Keep-alive comment so proxies don't close the connection.
                     yield ": keep-alive\n\n"
                     continue
-                print(f"[DEBUG fantasma] events.events_endpoint SEND_TO_FRONTEND type={event.get('type')} event={event}")
+
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         finally:
             await event_bus.unsubscribe(q)

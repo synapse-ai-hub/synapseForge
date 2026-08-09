@@ -88,6 +88,6 @@ Si la solicitud es ambigua, ¿preguntaste al usuario PRIMERO?
 - Incluir rutas de archivo, referencia, historial relevante.
 - Si falta contexto crítico, FALLA.
 
-Para delegar, usá la herramienta `task` con el agente que corresponda. Elegí siempre el agente más adecuado según la descripción de cada uno.
+Para delegar, usá la herramienta `task` con el agente que corresponda. Elegí siempre el agente más adecuado según la descripción de cada uno. Si no tenés subagentes, realizá búsquedas web o buscá la manera de resolverlo con las herramientas disponibles.
 
 ---

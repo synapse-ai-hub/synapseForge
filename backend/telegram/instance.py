@@ -24,14 +24,6 @@ from backend.telegram.bot import TelegramBot
 
 def _create_bot() -> TelegramBot:
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id_raw = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-    password = os.getenv("TELEGRAM_PASSWORD", "").strip()
-    chat_id: int | None = None
-    if chat_id_raw:
-        try:
-            chat_id = int(chat_id_raw)
-        except ValueError:
-            chat_id = None
     allowed_chat_ids: set[int] = set()
     for part in os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", "").split(","):
         part = part.strip()
@@ -44,8 +36,6 @@ def _create_bot() -> TelegramBot:
     return TelegramBot(
         token=token,
         session_manager=SessionManager(),
-        chat_id=chat_id,
-        password=password or None,
         allowed_chat_ids=allowed_chat_ids,
     )
 

@@ -13,7 +13,7 @@ import os
 from backend.agent.utils.config_dir import get_skills_dir
 from backend.agent.permissions import list_agents
 from backend.agent.utils.skill_loader import _parse_frontmatter as parse_skill_frontmatter
-from backend.agent.utils.mcp_helper import check_all_mcp_servers_health
+from backend.agent.utils.mcp_helper import check_all_mcp_servers_health, is_mcp_tool
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ def get_tools_list() -> list[dict[str, str]]:
         func = entry.get("function", {})
         name = func.get("name", "")
         description = func.get("description", "")
-        if name:
+        if name and not is_mcp_tool(name):
             result.append({"name": name, "description": description})
     return result
 

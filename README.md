@@ -477,6 +477,53 @@ Además, `usar_gradiente` (toggle) no es una variable CSS: cuando está apagado,
 
 ---
 
+## Telegram
+
+El template incluye un **bot de Telegram** que actúa como puente hacia el agente. El bot hace **long-polling** contra la Telegram Bot API, pero **no ejecuta el agent loop**: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía `/api/events` y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.
+
+### Arquitectura
+
+- El bot **solo emite eventos** (`telegram_message`, `telegram_command`) al event bus.
+- El frontend recibe esos eventos y ejecuta el flujo normal (`chatService.sendMessage` → `POST /api/chat`).
+- Al terminar el request, el backend entrega la respuesta final a Telegram.
+
+### Variables de entorno
+
+| Variable | Descripción |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Token del bot (de BotFather). Si no está seteado, el bot queda deshabilitado. |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Lista de `chat_id` autorizados (separados por coma). Solo estos pueden usar el bot. |
+
+### Comandos
+
+| Comando | Descripción |
+|---------|-------------|
+| `/sesiones` | Lista las sesiones (títulos). |
+| `/usar` | Cambia a una sesión por título (pregunta y espera respuesta). |
+| `/cancelar` | Cancela cualquier comando en espera. |
+| `/nueva` | Crea un chat nuevo. |
+| `/actual` | Muestra la sesión actual (solo el título). |
+| `/borrar` | Borra un chat (pregunta y espera respuesta). |
+| `/detener` | Detiene la tarea en curso. |
+| `/proveedor` | Cambia el proveedor (LOCAL/API, pregunta y espera respuesta). |
+| `/modelo` | Cambia el modelo (lista y espera respuesta). |
+| `/skills` | Lista skills (solo dev). |
+| `/tools` | Lista tools (solo dev). |
+| `/agentes` | Lista agentes (solo dev). |
+| `/crear` | Crea skill/tool/agente (solo dev, no implementado). |
+| `/ayuda` | Muestra la ayuda. |
+
+Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
+
+### Funcionalidades
+
+- **Notas de voz**: se transcriben localmente con faster-whisper y se envían como mensaje.
+- **Adjuntos**: los archivos enviados con el botón de adjuntar de Telegram se descargan y procesan igual que el backend (extracción de texto con `extract_text_from_bytes`).
+- **Toggle en el frontend**: el header tiene un toggle para activar/desactivar el bot (persistido en SQLite).
+- **Descarte de mensajes en cola**: al reactivar el bot, se descartan los mensajes que llegaron mientras estaba apagado (solo se procesan los nuevos). Al activar, el frontend muestra un contador de 3 segundos para que no envíes durante el descarte.
+
+---
+
 ## Docker
 
 ### Dockerfile (multi-stage)

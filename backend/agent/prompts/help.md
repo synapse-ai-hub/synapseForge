@@ -72,6 +72,30 @@ Además de las tools internas del sistema, se pueden crear herramientas personal
 
 ---
 
+## Tools nativas
+
+Además de las tools externas, el sistema incluye **tools nativas** incorporadas en el core. También deben habilitarse explícitamente por agente (deny by default). Las disponibles son:
+
+| Tool | Qué hace |
+|------|----------|
+| `read` | Lee un archivo o directorio del sistema de archivos local. |
+| `write` | Escribe contenido a un archivo. |
+| `edit` | Realiza reemplazos exactos de texto en un archivo. |
+| `glob` | Búsqueda de archivos por patrón (ej: `**/*.py`). |
+| `grep` | Búsqueda de contenido en archivos usando expresiones regulares. |
+| `webfetch` | Descarga el contenido de una URL y lo convierte a markdown, texto o HTML. |
+| `websearch` | Busca en la web. |
+| `shell` | Ejecuta un comando en la terminal del sistema. |
+| `task` | Delega una tarea a un sub-agente especializado. |
+| `skill` | Carga el contenido de una skill por nombre. |
+| `reference` | Carga un archivo de referencia específico de una skill. |
+| `help` | Muestra esta documentación de ayuda. |
+| `check_email` | Verifica correos no leídos en un buzón IMAP. |
+| `send_email` | Envía un email vía SMTP. |
+| `list_dir` | Lista el contenido de un directorio. |
+
+---
+
 ## Skills
 
 Las skills son conjuntos de instrucciones y material de referencia que se cargan bajo demanda.
@@ -148,4 +172,54 @@ Los servidores MCP se configuran en `~/.config/synapseForge/mcp.json` como un ar
 
 ---
 
-**ANTE CUALQUIER DUDA, PROHIBIDO INVENTAR, EXPLICARLE AL USUARIO QUE PUEDE CONSULTAR LA DOCUMENTACIÓN DEL AGENTE EN `Docs`, EN LA PARTE SUPERIOR DERECHA DEL AGENTE**.
+## Telegram
+
+El sistema incluye un **bot de Telegram** que actúa como puente hacia el agente. El bot hace long-polling contra la Telegram Bot API, pero **no ejecuta el agent loop**: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía `/api/events` y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.
+
+### Variables de entorno
+
+| Variable | Descripción |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Token del bot (de BotFather). Si no está seteado, el bot queda deshabilitado. |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Lista de `chat_id` autorizados (separados por coma). Solo estos pueden usar el bot. |
+
+### Comandos
+
+| Comando | Descripción |
+|---------|-------------|
+| `/sesiones` | Lista las sesiones (títulos). |
+| `/usar` | Cambia a una sesión por título (pregunta y espera respuesta). |
+| `/cancelar` | Cancela cualquier comando en espera. |
+| `/nueva` | Crea un chat nuevo. |
+| `/actual` | Muestra la sesión actual (solo el título). |
+| `/borrar` | Borra un chat (pregunta y espera respuesta). |
+| `/detener` | Detiene la tarea en curso. |
+| `/proveedor` | Cambia el proveedor (LOCAL/API, pregunta y espera respuesta). |
+| `/modelo` | Cambia el modelo (lista y espera respuesta). |
+| `/skills` | Lista skills (solo dev). |
+| `/tools` | Lista tools (solo dev). |
+| `/agentes` | Lista agentes (solo dev). |
+| `/crear` | Crea skill/tool/agente (solo dev, no implementado). |
+| `/ayuda` | Muestra la ayuda. |
+
+Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
+
+### Funcionalidades
+
+- **Notas de voz**: se transcriben localmente con faster-whisper y se envían como mensaje.
+- **Adjuntos**: los archivos enviados con el botón de adjuntar de Telegram se descargan y procesan igual que el backend (extracción de texto).
+- **Toggle en el frontend**: el header tiene un toggle para activar/desactivar el bot (persistido en SQLite).
+- **Descarte de mensajes en cola**: al reactivar el bot, se descartan los mensajes que llegaron mientras estaba apagado (solo se procesan los nuevos).
+
+---
+
+## RAG (knowledge)
+
+El sistema soporta **colecciones RAG** (bases de conocimiento vectoriales con ChromaDB) que se crean desde la interfaz de creación (pestaña **RAG**). Cada colección vive en `~/.config/synapseForge/knowledge/` y se construye subiendo archivos y URLs, que se procesan y almacenan como documentos vectoriales.
+
+- Las colecciones se listan y consultan desde la interfaz.
+- Sirven para darle al agente acceso a conocimiento específico del dominio (documentos, manuales, bases de datos de texto) mediante búsqueda semántica.
+
+---
+
+**Ante cualquier duda, el usuario puede consultar la documentación del agente en la sección `docs`**.

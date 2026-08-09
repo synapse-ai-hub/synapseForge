@@ -41,12 +41,6 @@ except ImportError as e:
     SessionManager = None  # type: ignore
     logger.debug("backend.agent.session not yet available")
 
-try:
-    from backend.agent.context import ContextManager
-except ImportError as e:
-    log_error(str(e), source="agent/__init__.py(context)")
-    ContextManager = None  # type: ignore
-    logger.debug("backend.agent.context not yet available")
 
 try:
     from backend.agent.loop import AgentLoop

@@ -30,7 +30,7 @@ if _project_root not in sys.path:
 from backend.instances import agent, session_manager
 from backend.agent.utils.model_resolver import get_groq_models, get_ollama_models
 from backend.agent.utils.error_logger import log_error
-from backend.routes.agent_helpers import get_skills_list, get_tools_list, get_agents_list, get_mcp_list
+from backend.agent.utils.agent_helpers import get_skills_list, get_tools_list, get_agents_list, get_mcp_list
 
 logger = logging.getLogger(__name__)
 

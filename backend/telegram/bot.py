@@ -42,14 +42,10 @@ class TelegramBot:
         self,
         token: str,
         session_manager,
-        chat_id: int | None = None,
-        password: str | None = None,
         allowed_chat_ids: set[int] | None = None,
     ) -> None:
         self.token = token
         self.session_manager = session_manager
-        self.chat_id = chat_id  # optional authorized chat id
-        self.password = password
         self.allowed_chat_ids = allowed_chat_ids if allowed_chat_ids is not None else set()
         # chat_id -> current session_id (set via /nueva, /usar, /borrar)
         self._session: dict[int, str | None] = {}
@@ -138,7 +134,7 @@ class TelegramBot:
                 if not updates:
                     return
                 self._offset = updates[-1]["update_id"] + 1
-                print(f"[DEBUG fantasma] bot._skip_queued_updates descartados={len(updates)} new_offset={self._offset}")
+
                 if len(updates) < 100:
                     return
         except Exception as exc:
@@ -151,14 +147,14 @@ class TelegramBot:
         if not data.get("ok"):
             return []
         updates = data.get("result", [])
-        print(f"[DEBUG fantasma] bot._get_updates offset={self._offset} -> {len(updates)} updates")
+
         if updates:
             for u in updates:
                 msg = u.get("message") or u.get("edited_message") or {}
                 chat = msg.get("chat", {})
-                print(f"[DEBUG fantasma] bot._get_updates update_id={u.get('update_id')} chat_id={chat.get('id')} text={(msg.get('text') or '')[:60]!r}")
+
             self._offset = updates[-1]["update_id"] + 1
-            print(f"[DEBUG fantasma] bot._get_updates new_offset={self._offset}")
+
         return updates
 
     # ------------------------------------------------------------------
@@ -174,7 +170,7 @@ class TelegramBot:
         voice = message.get("voice")
         audio = message.get("audio")
         caption = message.get("caption") or ""
-        print(f"[DEBUG fantasma] bot._handle_update update_id={update.get('update_id')} chat_id={chat_id} text={text[:60]!r}")
+
 
         # Whitelist: only allow configured chat ids.
         if chat_id not in self.allowed_chat_ids:
@@ -222,7 +218,7 @@ class TelegramBot:
         # session: it continues the currently active session (the one the user
         # has open in the web UI) instead of creating a new one. Only the
         # /nueva command starts a fresh conversation.
-        print(f"[DEBUG fantasma] bot._handle_update EMIT telegram_message chat_id={chat_id} session_id={self._session.get(chat_id)} text={text[:60]!r}")
+
         await event_bus.emit({
             "type": "telegram_message",
             "content": text,
@@ -238,11 +234,11 @@ class TelegramBot:
         parts = text.split()
         cmd = parts[0].lower()
         arg = " ".join(parts[1:]) if len(parts) > 1 else ""
-        print(f"[DEBUG fantasma] bot._handle_command chat_id={chat_id} cmd={cmd} arg={arg[:40]!r}")
+
 
         if cmd == "/nueva":
             self._session[chat_id] = None
-            print(f"[DEBUG fantasma] bot._handle_command EMIT telegram_command nueva chat_id={chat_id}")
+
             await event_bus.emit({
                 "type": "telegram_command",
                 "command": "nueva",
@@ -287,7 +283,7 @@ class TelegramBot:
         cmd = self._awaiting.pop(chat_id, None)
         if not cmd:
             return
-        print(f"[DEBUG fantasma] bot._process_awaiting chat_id={chat_id} cmd={cmd} answer={text[:60]!r}")
+
         if text.strip().lower() == "cancelar":
             await self.send_message(chat_id, "Cancelado.")
             return
@@ -458,7 +454,7 @@ class TelegramBot:
         if not self.is_dev:
             await self.send_message(chat_id, "Disponible solo en modo dev.")
             return
-        from backend.routes.agent_helpers import get_skills_list
+        from backend.agent.utils.agent_helpers import get_skills_list
         skills = get_skills_list()
         if not skills:
             await self.send_message(chat_id, "No hay skills.")
@@ -472,7 +468,7 @@ class TelegramBot:
         if not self.is_dev:
             await self.send_message(chat_id, "Disponible solo en modo dev.")
             return
-        from backend.routes.agent_helpers import get_tools_list
+        from backend.agent.utils.agent_helpers import get_tools_list
         tools = get_tools_list()
         if not tools:
             await self.send_message(chat_id, "No hay tools.")
@@ -486,7 +482,7 @@ class TelegramBot:
         if not self.is_dev:
             await self.send_message(chat_id, "Disponible solo en modo dev.")
             return
-        from backend.routes.agent_helpers import get_agents_list
+        from backend.agent.utils.agent_helpers import get_agents_list
         agents = get_agents_list()
         if not agents:
             await self.send_message(chat_id, "No hay agentes.")
@@ -559,7 +555,7 @@ class TelegramBot:
             return
 
         full = f"{caption}\n\n**Archivo: {filename}**\n{text}".strip()
-        print(f"[DEBUG fantasma] bot._handle_attachment EMIT telegram_message chat_id={chat_id} file={filename}")
+
         await event_bus.emit({
             "type": "telegram_message",
             "content": full,
@@ -575,10 +571,12 @@ class TelegramBot:
         """Send a text message to a chat (used for the final answer)."""
         if not text:
             return
-        print(f"[DEBUG fantasma] bot.send_message chat_id={chat_id} text={text[:80]!r}")
+
         url = _TELEGRAM_API.format(token=self.token) + "/sendMessage"
         try:
-            await self._client.post(url, json={"chat_id": chat_id, "text": text})
+            resp = await self._client.post(url, json={"chat_id": chat_id, "text": text})
+            
+
         except Exception as exc:
             logger.warning("Failed to send Telegram message: %s", exc)
 

@@ -37,6 +37,7 @@ The generated project includes:
 - **Metrics**: Aggregated usage stats, per-session breakdown, token usage by model/provider
 - **File Extraction**: Shared module supporting plain text, Markdown, CSV, JSON, XML, YAML, Python, DOCX, DOC (via LibreOffice), XLSX, XLS (via LibreOffice), PDF (pdfminer + optional Tesseract OCR)
 - **Frontend** (React/Vite/TS): Chat SSE streaming, config panel (provider/model/context), sessions sidebar, context files management, tool calls visualization, metrics dashboard
+- **Telegram Bot**: Long-polling bridge that forwards messages to the agent through the web UI, with commands (sessions, model/provider, stop), voice transcription and file attachments
 - **User Config** (`~/.config/synapseForge/`): Custom tools, skills, agent definitions with permissions, MCP server config
 - **Docker**: Multi-stage Dockerfile + docker-compose.yml for single-container deployment
 - **Desktop App Mode**: Heartbeat watchdog (3min timeout → auto-exit), shutdown endpoint, `synapseforge run` for dev
@@ -112,6 +113,17 @@ synapseforge run ./my-project
 ```
 
 Starts `uvicorn backend.main:app --reload --port 8000` + `npm run dev` in `frontend/`, waits 3s, opens `http://localhost:5173`. **Ctrl+C stops both.**
+
+### Telegram
+
+The generated project includes a **Telegram bot** that bridges messages to the agent through the web UI. Configure it in `.env`:
+
+| Variable | Description |
+|----------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather. If empty, the bot is disabled. |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Comma-separated list of authorized `chat_id`s. |
+
+The bot supports commands (`/sesiones`, `/usar`, `/nueva`, `/actual`, `/borrar`, `/detener`, `/proveedor`, `/modelo`, `/skills`, `/tools`, `/agentes`, `/ayuda`, `/cancelar`), voice transcription (faster-whisper) and file attachments. Enable/disable it from the frontend header toggle.
 
 ---
 

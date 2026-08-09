@@ -91,16 +91,16 @@ def _get_last_assistant_text(session_id: str, turn_number: int) -> str:
     """
     try:
         messages = session_manager.load_messages(session_id, max_turns=0)
-        print(f"[DEBUG fantasma] chat._get_last_assistant_text session_id={session_id!r} turn_number={turn_number} total_msgs={len(messages)}")
+
         for msg in reversed(messages):
             if msg.get("role") == "assistant" and msg.get("turn_number") == turn_number:
                 content = (msg.get("content") or "").strip()
-                print(f"[DEBUG fantasma] chat._get_last_assistant_text FOUND turn={turn_number} content={content[:80]!r}")
+
                 return content
     except Exception as exc:
         log_error(str(exc), source="backend/routes/chat.py:_get_last_assistant_text")
         logger.warning("Failed to load last assistant message: %s", exc)
-    print(f"[DEBUG fantasma] chat._get_last_assistant_text NOT_FOUND session_id={session_id!r} turn_number={turn_number}")
+
     return ""
 
 
@@ -176,7 +176,7 @@ async def chat_endpoint(
     if files_data:
         _save_attachments(session_id, turn_number, files_data)
 
-    print(f"[DEBUG fantasma] chat.chat_endpoint session_id={session_id!r} telegram_chat_id={telegram_chat_id!r} turn_number={turn_number} message={message[:60]!r}")
+
     logger.info("Processing chat request for session_id=%s, turn_number=%d", session_id, turn_number)
 
     # Create a cancellation event tied to the client disconnection
@@ -215,13 +215,13 @@ async def chat_endpoint(
                         # The client aborted the stream: notify Telegram with the
                         # same message the frontend shows, instead of the partial
                         # response that was persisted to the DB.
-                        print(f"[DEBUG fantasma] chat.event_stream SEND_CANCEL telegram_chat_id={telegram_chat_id}")
+
                         await telegram_bot.send_message(
                             int(telegram_chat_id), "*Transmisión cancelada.*"
                         )
                     else:
                         final_text = _get_last_assistant_text(session_id, turn_number)
-                        print(f"[DEBUG fantasma] chat.event_stream SEND_REPLY telegram_chat_id={telegram_chat_id} final_text={final_text[:80]!r}")
+
                         if final_text:
                             await telegram_bot.send_message(int(telegram_chat_id), final_text)
                 except Exception as exc:

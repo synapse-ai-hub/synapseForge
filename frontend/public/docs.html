@@ -489,6 +489,58 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <p>En el panel lateral izquierdo, bajo la pestaña <strong>Conversaciones</strong>, se listan todas las sesiones de chat. Podés crear nuevas conversaciones, seleccionar sesiones anteriores y eliminar conversaciones existentes.</p>
         </section>
 
+        <section id="telegram">
+          <h2>Telegram</h2>
+          <h3>¿Qué es?</h3>
+          <p>El template incluye un <strong>bot de Telegram</strong> que actúa como puente hacia el agente. El bot hace <strong>long-polling</strong> contra la Telegram Bot API, pero <strong>no ejecuta el agent loop</strong>: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía <code>/api/events</code> y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.</p>
+          <h3>Arquitectura</h3>
+          <ul>
+            <li>El bot <strong>solo emite eventos</strong> (<code>telegram_message</code>, <code>telegram_command</code>) al event bus.</li>
+            <li>El frontend recibe esos eventos y ejecuta el flujo normal (<code>chatService.sendMessage</code> → <code>POST /api/chat</code>).</li>
+            <li>Al terminar el request, el backend entrega la respuesta final a Telegram.</li>
+          </ul>
+          <h3>Variables de entorno</h3>
+          <table>
+            <thead>
+              <tr><th>Variable</th><th>Descripción</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>Token del bot (de BotFather). Si no está seteado, el bot queda deshabilitado.</td></tr>
+              <tr><td><code>TELEGRAM_ALLOWED_CHAT_IDS</code></td><td>Lista de <code>chat_id</code> autorizados (separados por coma). Solo estos pueden usar el bot.</td></tr>
+            </tbody>
+          </table>
+          <h3>Comandos</h3>
+          <table>
+            <thead>
+              <tr><th>Comando</th><th>Descripción</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>/sesiones</code></td><td>Lista las sesiones (títulos).</td></tr>
+              <tr><td><code>/usar</code></td><td>Cambia a una sesión por título (pregunta y espera respuesta).</td></tr>
+              <tr><td><code>/cancelar</code></td><td>Cancela cualquier comando en espera.</td></tr>
+              <tr><td><code>/nueva</code></td><td>Crea un chat nuevo.</td></tr>
+              <tr><td><code>/actual</code></td><td>Muestra la sesión actual (solo el título).</td></tr>
+              <tr><td><code>/borrar</code></td><td>Borra un chat (pregunta y espera respuesta).</td></tr>
+              <tr><td><code>/detener</code></td><td>Detiene la tarea en curso.</td></tr>
+              <tr><td><code>/proveedor</code></td><td>Cambia el proveedor (LOCAL/API, pregunta y espera respuesta).</td></tr>
+              <tr><td><code>/modelo</code></td><td>Cambia el modelo (lista y espera respuesta).</td></tr>
+              <tr><td><code>/skills</code></td><td>Lista skills (solo dev).</td></tr>
+              <tr><td><code>/tools</code></td><td>Lista tools (solo dev).</td></tr>
+              <tr><td><code>/agentes</code></td><td>Lista agentes (solo dev).</td></tr>
+              <tr><td><code>/crear</code></td><td>Crea skill/tool/agente (solo dev, no implementado).</td></tr>
+              <tr><td><code>/ayuda</code></td><td>Muestra la ayuda.</td></tr>
+            </tbody>
+          </table>
+          <p>Los comandos que necesitan un argumento (<code>/usar</code>, <code>/borrar</code>, <code>/proveedor</code>, <code>/modelo</code>) usan un sistema de <strong>pregunta y respuesta</strong>: el bot muestra la lista de opciones y espera que el usuario responda con el texto. <code>/cancelar</code> (o la palabra "cancelar") aborta la espera.</p>
+          <h3>Funcionalidades</h3>
+          <ul>
+            <li><strong>Notas de voz</strong>: se transcriben localmente con faster-whisper y se envían como mensaje.</li>
+            <li><strong>Adjuntos</strong>: los archivos enviados con el botón de adjuntar de Telegram se descargan y procesan igual que el backend (extracción de texto con <code>extract_text_from_bytes</code>).</li>
+            <li><strong>Toggle en el frontend</strong>: el header tiene un toggle para activar/desactivar el bot (persistido en SQLite).</li>
+            <li><strong>Descarte de mensajes en cola</strong>: al reactivar el bot, se descartan los mensajes que llegaron mientras estaba apagado (solo se procesan los nuevos). Al activar, el frontend muestra un contador de 3 segundos para que no envíes durante el descarte.</li>
+          </ul>
+        </section>
+
         <section id="api">
           <h2>API Reference</h2>
           <h3>¿Qué expone el backend?</h3>

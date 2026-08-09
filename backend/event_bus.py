@@ -37,7 +37,7 @@ class EventBus:
         """Publish an event to every subscriber (non-blocking, drop-oldest)."""
         async with self._lock:
             subs = list(self._subscribers)
-        print(f"[DEBUG fantasma] event_bus.emit type={event.get('type')} n_subs={len(subs)} event={event}")
+
         for q in subs:
             try:
                 q.put_nowait(event)

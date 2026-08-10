@@ -518,6 +518,11 @@ class TelegramBot:
             from backend.instances import agent
             agent._resolved_model = selected
             self.session_manager.set_config("selected_model", selected)
+            # Persist the model's context window at the same moment (same
+            # helper used by the web UI model selection).
+            from backend.routes.config import _detect_and_persist_context_window
+            provider = (agent.provider or "LOCAL").strip().upper()
+            await asyncio.to_thread(_detect_and_persist_context_window, selected, provider)
         except Exception as exc:
             logger.warning("No se pudo cambiar el modelo: %s", exc)
             await self.send_message(chat_id, f"No se pudo cambiar el modelo: {exc}")

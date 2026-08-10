@@ -347,6 +347,90 @@ def ensure_context_window(agent, model: str) -> int | None:
 
 
 # ---------------------------------------------------------------------------
+# VRAM detection (for the context-window recommendation)
+# ---------------------------------------------------------------------------
+
+_vram_cache: int | None | object = None
+"""Cache for ``get_vram_gb`` (``None`` = not computed yet)."""
+
+
+def get_vram_gb() -> int | None:
+    """Return the total VRAM in GB of the primary GPU, or ``None`` if unknown.
+
+    Tries ``nvidia-smi`` first, then ``wmic`` (Windows). The result is cached
+    so it is only queried once per process.
+
+    Returns:
+        Total VRAM in GB, or ``None`` if it cannot be determined.
+    """
+    global _vram_cache
+    if _vram_cache is not None:
+        return _vram_cache if isinstance(_vram_cache, int) else None
+
+    import subprocess
+
+    vram = None
+    # nvidia-smi (NVIDIA GPUs)
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            first = result.stdout.strip().splitlines()[0].strip()
+            vram = int(float(first) / 1024)
+    except Exception:
+        vram = None
+
+    # wmic (Windows fallback)
+    if vram is None:
+        try:
+            result = subprocess.run(
+                ["wmic", "path", "win32_VideoController", "get", "AdapterRAM"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    line = line.strip()
+                    if line.isdigit():
+                        vram = int(int(line) / (1024**3))
+                        break
+        except Exception:
+            vram = None
+
+    _vram_cache = vram if vram is not None else -1
+    print(f"[DEBUG] get_vram_gb: {vram}")
+    return vram
+
+
+def ollama_default_context(vram_gb: int | None) -> int | None:
+    """Return the default context length Ollama configures for a given VRAM.
+
+    Based on Ollama's documented VRAM-based defaults:
+    - < 24 GiB VRAM: 4,096 context
+    - 24-48 GiB VRAM: 32,768 context
+    - >= 48 GiB VRAM: 262,144 context
+
+    Args:
+        vram_gb: Total VRAM in GB, or ``None`` if unknown.
+
+    Returns:
+        The default context length in tokens, or ``None`` if VRAM is unknown.
+    """
+    if vram_gb is None:
+        return None
+    if vram_gb < 24:
+        return 4096
+    if vram_gb < 48:
+        return 32768
+    return 262144
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 

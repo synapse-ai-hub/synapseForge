@@ -14,6 +14,8 @@ export interface ModelsResponse {
 export interface ContextWindowResponse {
   status: string;
   max_turns: number;
+  context_window_tokens: number | null;
+  vram_gb: number | null;
 }
 
 export interface ProvidersResponse {

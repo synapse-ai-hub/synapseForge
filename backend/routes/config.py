@@ -33,6 +33,8 @@ from backend.agent.utils.model_resolver import (
     get_ollama_models,
     get_groq_context_window,
     get_ollama_context_window,
+    get_vram_gb,
+    ollama_default_context,
 )
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.agent_helpers import get_skills_list, get_tools_list, get_agents_list, get_mcp_list
@@ -89,14 +91,57 @@ def _default_model_for_provider(provider: str, models: list[str]) -> str | None:
     return models[0]
 
 
+def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
+    """Resolve the model's context window, cache it and persist it in one place.
+
+    Single source of truth for context-window detection. Every code path that
+    sets the active model (first-startup default resolution, user model
+    selection, background startup fix) calls this so ``selected_model`` and
+    ``selected_model_context_window`` are always persisted together.
+
+    Args:
+        model: The model name/ID.
+        provider: ``"LOCAL"`` or ``"API"``.
+
+    Returns:
+        The context window in tokens, or ``None`` if it cannot be resolved.
+    """
+    global _context_window_tokens
+    cw = None
+    try:
+        if provider == "LOCAL":
+            cw = get_ollama_context_window(model)
+        else:
+            cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:_detect_and_persist_context_window")
+        logger.warning("No se pudo detectar la context window de %s: %s", model, exc)
+        return None
+    if cw:
+        _context_window_tokens = cw
+        if agent is not None:
+            agent._context_window = cw
+        if session_manager is not None:
+            session_manager.set_config("selected_model_context_window", str(cw))
+        logger.info("Context window for %s: %d tokens", model, cw)
+    else:
+        logger.warning("No se pudo detectar la context window de %s", model)
+    return cw
+
+
 @router.get("/context-window")
 async def get_context_window() -> JSONResponse:
     """Return the current context-window turn limit (``-1`` = all)."""
+    vram = get_vram_gb()
+    print(f"[DEBUG] get_context_window: max_turns={_context_window_turns}, context_window_tokens={_context_window_tokens}, vram_gb={vram}")
     return JSONResponse(
         status_code=200,
         content={
             "status": "success",
             "max_turns": _context_window_turns,
+            "context_window_tokens": _context_window_tokens,
+            "vram_gb": vram,
+            "ollama_default_context": ollama_default_context(vram),
         },
     )
 
@@ -336,6 +381,9 @@ async def list_models(provider: str | None = None) -> JSONResponse:
             except Exception as exc:
                 log_error(str(exc), source="backend/routes/config.py")
                 logger.warning("No se pudo persistir modelo/proveedor por defecto: %s", exc)
+            # Persist the model's context window at the same moment the model is
+            # persisted (first startup with no DB).
+            await asyncio.to_thread(_detect_and_persist_context_window, default, provider)
 
     if agent is not None and session_manager is not None:
         try:
@@ -418,26 +466,10 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo persistir el modelo o proveedor seleccionado: %s", exc)
 
-    # Detect and persist the model's context window (tokens)
-    global _context_window_tokens
-    context_window = None
-    try:
-        if provider == "LOCAL":
-            context_window = await asyncio.to_thread(get_ollama_context_window, model)
-        elif provider == "API":
-            api_key = os.getenv("GROQ_API_KEY", "").strip()
-            context_window = await asyncio.to_thread(get_groq_context_window, model, api_key)
-        if context_window:
-            _context_window_tokens = context_window
-            agent._context_window = context_window
-            if session_manager is not None:
-                session_manager.set_config("selected_model_context_window", str(context_window))
-            logger.info("Context window for %s: %d tokens", model, context_window)
-        else:
-            logger.warning("No se pudo detectar la context window de %s", model)
-    except Exception as exc:
-        log_error(str(exc), source="backend/routes/config.py:select_model(context_window)")
-        logger.warning("No se pudo detectar la context window de %s: %s", model, exc)
+    # Detect and persist the model's context window (tokens) — same helper used
+    # by the first-startup default resolution, so both are always persisted
+    # together.
+    await asyncio.to_thread(_detect_and_persist_context_window, model, provider)
 
     logger.info("Model selected: %s (%s)", model, provider)
     return JSONResponse(
@@ -513,6 +545,15 @@ def load_persisted_config() -> None:
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo cargar verbose_mode: %s", exc)
+
+# Detect VRAM once at startup (it does not change while the app runs).
+    # The result is cached in model_resolver, so this is a single query.
+    try:
+        vram = get_vram_gb()
+        print(f"[DEBUG] VRAM detectada al iniciar: {vram} GB")
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:load_persisted_config(vram)")
+        print(f"[DEBUG] VRAM no detectada al iniciar: {exc}")
 
 
 # ---------------------------------------------------------------------------

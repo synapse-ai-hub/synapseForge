@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import LogoImage from "../assets/logo_cliente.png";
 import chatService from "../services/chatService";
+import configService from "../services/configService";
 import { Button } from "./ui/button";
 import { FileChip, FileWarningBanner, MessageRow } from "./chatBlocks";
 import { ContextGauge } from "./ContextGauge";
@@ -104,6 +105,12 @@ export interface ChatInterfaceHandle {
   ) => void;
   /** Set the context-window gauge percentage (used on session reload). */
   setContextPercent: (percent: number) => void;
+  /** Set the full context info (window, tokens used, percent) on session reload. */
+  setContextInfo: (info: {
+    contextWindow: number | null;
+    tokensUsed: number | null;
+    percent: number | null;
+  }) => void;
 }
 
 export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(
@@ -131,6 +138,10 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   const [files, setFiles] = useState<File[]>([]);
   const [fileWarning, setFileWarning] = useState<string | null>(null);
   const [contextPercent, setContextPercent] = useState(0);
+  const [contextWindow, setContextWindow] = useState<number | null>(null);
+  const [tokensUsed, setTokensUsed] = useState<number | null>(null);
+  const [vramGb, setVramGb] = useState<number | null>(null);
+  const [ollamaDefaultContext, setOllamaDefaultContext] = useState<number | null>(null);
 
   /* ---- refs ---- */
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -168,6 +179,39 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
       scrollToBraintom("smooth");
     }
   }, [messages, autoScrollEnabled, scrollToBraintom]);
+
+  // Load the model's context window (in tokens) on mount so the gauge info
+  // shows it immediately instead of waiting for the first token_counter event.
+  // If the backend has not resolved it yet (fresh DB), retry non-blocking.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      configService
+        .getContextWindow()
+        .then((data) => {
+          console.log("[DEBUG] getContextWindow response:", JSON.stringify(data));
+          if (data.context_window_tokens != null) {
+            setContextWindow(data.context_window_tokens);
+          }
+          if (data.vram_gb != null) {
+            setVramGb(data.vram_gb);
+            console.log("[DEBUG] setVramGb:", data.vram_gb);
+          }
+          if (data.ollama_default_context != null) {
+            setOllamaDefaultContext(data.ollama_default_context);
+            console.log("[DEBUG] setOllamaDefaultContext:", data.ollama_default_context);
+          }
+          if (data.context_window_tokens == null && !cancelled) {
+            setTimeout(load, 1000);
+          }
+        })
+        .catch((err) => console.log("[DEBUG] getContextWindow error:", err));
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleMessagesScroll = useCallback(() => {
     const el = messagesContainerRef.current;
@@ -614,6 +658,11 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
 
           case "token_counter":
             setContextPercent(event.content?.percent ?? 0);
+            setContextWindow(event.content?.context_window ?? null);
+            setTokensUsed(event.content?.prompt_tokens ?? null);
+            if (event.content?.vram_gb != null) setVramGb(event.content.vram_gb);
+            if (event.content?.ollama_default_context != null)
+              setOllamaDefaultContext(event.content.ollama_default_context);
             break;
 
           case "usage":
@@ -680,10 +729,18 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   const applyContextPercent = useCallback((percent: number) => {
     setContextPercent(percent);
   }, []);
+  const applyContextInfo = useCallback(
+    (info: { contextWindow: number | null; tokensUsed: number | null; percent: number | null }) => {
+      setContextWindow(info.contextWindow);
+      setTokensUsed(info.tokensUsed);
+      setContextPercent(info.percent ?? 0);
+    },
+    [],
+  );
   useImperativeHandle(
     ref,
-    () => ({ sendMessage, setContextPercent: applyContextPercent }),
-    [sendMessage, applyContextPercent],
+    () => ({ sendMessage, setContextPercent: applyContextPercent, setContextInfo: applyContextInfo }),
+    [sendMessage, applyContextPercent, applyContextInfo],
   );
 
   /* ---- send button / Enter ---- */
@@ -717,8 +774,8 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
                    bg-white"
         style={{ height: "95px" }}
       >
-        {/* Left: Ventana de Contexto gauge */}
-        <div className="flex items-center shrink-0 pr-4">
+        {/* Left: Ventana de Contexto gauge + info */}
+        <div className="flex items-center gap-3 shrink-0 pr-4">
           <div
             className="flex flex-col items-center"
             title="Cuánto espacio de contexto del modelo se está usando"
@@ -727,6 +784,26 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
               Ventana de Contexto
             </span>
             <ContextGauge percent={contextPercent} />
+          </div>
+          <div className="flex flex-col text-xs text-app-text-secondary leading-tight">
+            <span>
+              Ventana de contexto del modelo:{" "}
+              <span className="font-medium text-app-text">
+                {contextWindow != null ? contextWindow.toLocaleString() : "—"}
+              </span>{" "}
+              tokens
+            </span>
+            <span>
+              Tokens utilizados:{" "}
+              <span className="font-medium text-app-text">
+                {tokensUsed != null ? tokensUsed.toLocaleString() : "—"}
+              </span>
+            </span>
+            <span className="mt-1 text-[11px] text-app-text-secondary/80">
+              {vramGb != null && ollamaDefaultContext != null
+                ? `Con tu VRAM de ${vramGb} GB, se recomienda no superar ${ollamaDefaultContext.toLocaleString()} tokens de contexto.`
+                : "VRAM no detectada. Contexto sugerido según VRAM: < 24 GB → 4.096 tokens · 24-48 GB → 32.768 · ≥ 48 GB → 262.144"}
+            </span>
           </div>
         </div>
 

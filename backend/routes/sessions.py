@@ -28,7 +28,6 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.instances import session_manager, agent
-from backend.agent.utils.model_resolver import ensure_context_window
 from backend.agent.utils.contract import (
     make_error_response,
     make_success_response,
@@ -256,9 +255,11 @@ async def get_session(session_id: str):
                     })
 
         # Compute context usage from the latest assistant message (prompt_tokens
-        # is cumulative) against the model's context window.
+        # is cumulative) against the model's context window. The context window
+        # is always persisted in the DB and loaded at startup, so no HTTP
+        # resolution is needed here.
         model = agent._resolved_model if agent is not None else None
-        context_window = ensure_context_window(agent, model) if model else None
+        context_window = getattr(agent, "_context_window", None) if agent is not None else None
         prompt_tokens = None
         for msg in reversed(raw_messages):
             if msg.get("role") == "assistant" and msg.get("prompt_tokens"):

@@ -225,8 +225,12 @@ const handleTelegramToggle = useCallback((val: boolean) => {
       setIsStreaming(false);
       // Restore the context-window gauge from the saved session data
       const ctx = data.context;
-      if (ctx && ctx.percent != null) {
-        chatRef.current?.setContextPercent(ctx.percent);
+      if (ctx) {
+        chatRef.current?.setContextInfo({
+          contextWindow: ctx.context_window ?? null,
+          tokensUsed: ctx.prompt_tokens ?? null,
+          percent: ctx.percent ?? null,
+        });
       }
       // Sync the active session to Telegram (single source of truth in DB)
       telegramService.setActiveSession(id).catch(() => {});

@@ -69,7 +69,11 @@ from backend.agent.utils.loop_helpers import (
     execute_tool,
     fetch_context_window_turns,
 )
-from backend.agent.utils.model_resolver import ensure_context_window
+from backend.agent.utils.model_resolver import (
+    ensure_context_window,
+    get_vram_gb,
+    ollama_default_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -542,7 +546,8 @@ class AgentLoop:
                     context_window = ensure_context_window(agent, model)
                     prompt_tokens = usage_data.get("prompt_tokens") or 0
                     percent = round((prompt_tokens / context_window) * 100, 2) if context_window else None
-                    yield f"data: {json.dumps({'type': 'token_counter', 'content': {'prompt_tokens': prompt_tokens, 'completion_tokens': usage_data.get('completion_tokens') or 0, 'total_tokens': usage_data.get('total_tokens') or 0, 'context_window': context_window, 'percent': percent}}, ensure_ascii=False)}\n\n"
+                    vram_gb = get_vram_gb()
+                    yield f"data: {json.dumps({'type': 'token_counter', 'content': {'prompt_tokens': prompt_tokens, 'completion_tokens': usage_data.get('completion_tokens') or 0, 'total_tokens': usage_data.get('total_tokens') or 0, 'context_window': context_window, 'percent': percent, 'vram_gb': vram_gb, 'ollama_default_context': ollama_default_context(vram_gb)}}, ensure_ascii=False)}\n\n"
 
                 logger.debug(
                     "LLM response — tool_calls: %s, content_length: %d",

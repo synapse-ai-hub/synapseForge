@@ -368,41 +368,6 @@ function ToolCallBlock({
     }
   }, [isTask, hasResult, result, realtimeChildTools]);
 
-  // Result HTML for non-task tools (markdown + Mermaid) — memoized so the
-  // effect below can run Mermaid after the block is mounted.
-  const resultHtml = useMemo(() => {
-    if (!result || isTask) return null;
-    // If the result is the unified contract {status, message, data, ...},
-    // display only the `data` payload (the actual tool output), not the
-    // whole contract JSON. Legacy string results are shown as-is.
-    let raw: string;
-    if (typeof result.result === "string") {
-      raw = result.result;
-    } else if (
-      result.result &&
-      typeof result.result === "object" &&
-      "data" in result.result
-    ) {
-      const data = (result.result as any).data;
-      raw =
-        typeof data === "string"
-          ? data
-          : JSON.stringify(data, null, 2);
-    } else {
-      raw = JSON.stringify(result.result, null, 2);
-    }
-    try {
-      const html = marked.parse(raw, { async: false }) as string;
-      return DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] });
-    } catch {
-      return null;
-    }
-  }, [result, isTask]);
-
-  useLayoutEffect(() => {
-    if (open && resultHtml !== null) void renderMermaid();
-  }, [open, resultHtml]);
-
   const handleToggle = () => {
     const nextOpen = !open;
     setOpen(nextOpen);
@@ -441,12 +406,20 @@ function ToolCallBlock({
     return childStepsFallback;
   }, [childSessionId, subagentEvents, childStepsFallback]);
 
+  // A tool call is only collapsible if it has something to expand: args,
+  // child steps (task) or child tools (legacy fallback). Otherwise (e.g. a
+  // bare "help" call with no arguments) it renders as a flat, non-collapsible row.
+  const hasExpandableContent =
+    (toolCall.parameters && Object.keys(toolCall.parameters).length > 0) ||
+    (isTask && childSteps.length > 0) ||
+    (isTask && childSteps.length === 0 && displayChildTools.length > 0);
+
   return (
     <div className="rounded-lg border border-app-border bg-app-bg-tertiary p-2.5">
       <button
         type="button"
-        onClick={handleToggle}
-        className="flex w-full items-center justify-between gap-2 text-left text-xs hover:text-app-primary"
+        onClick={hasExpandableContent ? handleToggle : undefined}
+        className={`flex w-full items-center justify-between gap-2 text-left text-xs ${hasExpandableContent ? "hover:text-app-primary" : "cursor-default"}`}
       >
         <span className={`font-medium ${statusColors[status]}`}>
           {status === "calling" && <Loader2 className="h-4 w-4 animate-spin inline-block mr-1" />}
@@ -454,10 +427,12 @@ function ToolCallBlock({
           {status === "error" && <span className="text-red-600">✗ </span>}
           🔧 {toolCall.tool}
         </span>
-        <ChevronDown
-          size={14}
-          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-        />
+        {hasExpandableContent && (
+          <ChevronDown
+            size={14}
+            className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        )}
       </button>
 
       {open && (
@@ -480,13 +455,7 @@ function ToolCallBlock({
                 if (step.kind === "reasoning") {
                   return <ReasoningBlock key={i} content={step.content} defaultOpen={isStreaming} />;
                 }
-                if (step.kind === "text") {
-                  return (
-                    <div key={i} className="overflow-x-auto p-2">
-                      <MarkdownRenderer content={step.content} />
-                    </div>
-                  );
-                }
+                if (step.kind === "text") return null;
                 const childStatus = getChildStatus(step.result, !isStreaming);
                 return (
                   <div key={i} className="ml-3 pl-2 border-l-2 border-app-border space-y-1">
@@ -509,8 +478,8 @@ function ToolCallBlock({
             </div>
           )}
 
-          {/* Fallback (sin steps): tools agrupadas + respuesta, para sesiones legacy */}
-          {isTask && childSteps.length === 0 && (displayChildTools.length > 0 || childContent) && (
+          {/* Fallback (sin steps): tools agrupadas, para sesiones legacy */}
+          {isTask && childSteps.length === 0 && displayChildTools.length > 0 && (
             <div className="border-t border-app-border pt-2 space-y-2">
               {displayChildTools.length > 0 && (
                 <div className="space-y-2">
@@ -539,28 +508,6 @@ function ToolCallBlock({
                   })}
                 </div>
               )}
-              {childContent && (
-                <div className="border-t border-app-border pt-2">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
-                    Respuesta del sub-agente
-                  </div>
-                  <div className="overflow-x-auto p-2">
-                    <MarkdownRenderer content={childContent} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Result for non-task tools — renderizado como markdown */}
-          {resultHtml !== null && (
-            <div>
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-app-text-secondary">
-                Resultado
-              </div>
-              <div className="prose prose-sm max-w-none overflow-x-auto whitespace-pre-wrap break-words p-2 text-[11px] text-app-text [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm [&_p]:text-[11px] [&_li]:text-[11px] [&_code]:text-[11px]">
-                <span dangerouslySetInnerHTML={{ __html: resultHtml }} />
-              </div>
             </div>
           )}
         </div>

@@ -156,6 +156,8 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   const wheelUpRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimeoutRef = useRef<number | null>(null);
+  const cancelledRef = useRef(false);
+  const tokensUsedRef = useRef<number | null>(null);
 
   const scrollToBraintom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (messagesContainerRef.current) {
@@ -180,38 +182,60 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
     }
   }, [messages, autoScrollEnabled, scrollToBraintom]);
 
-  // Load the model's context window (in tokens) on mount so the gauge info
-  // shows it immediately instead of waiting for the first token_counter event.
+  // Load the model's context window (in tokens) so the gauge info shows it
+  // immediately instead of waiting for the first token_counter event.
   // If the backend has not resolved it yet (fresh DB), retry non-blocking.
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      configService
-        .getContextWindow()
-        .then((data) => {
-          console.log("[DEBUG] getContextWindow response:", JSON.stringify(data));
-          if (data.context_window_tokens != null) {
-            setContextWindow(data.context_window_tokens);
+  const loadContextWindow = useCallback(() => {
+    configService
+      .getContextWindow()
+      .then((data) => {
+        if (cancelledRef.current) return;
+        console.log("[DEBUG] getContextWindow response:", JSON.stringify(data));
+        if (data.context_window_tokens != null) {
+          setContextWindow(data.context_window_tokens);
+          // Recompute percent against the new window using the last known tokensUsed.
+          const used = tokensUsedRef.current;
+          if (used != null && data.context_window_tokens > 0) {
+            setContextPercent((used / data.context_window_tokens) * 100);
           }
-          if (data.vram_gb != null) {
-            setVramGb(data.vram_gb);
-            console.log("[DEBUG] setVramGb:", data.vram_gb);
-          }
-          if (data.ollama_default_context != null) {
-            setOllamaDefaultContext(data.ollama_default_context);
-            console.log("[DEBUG] setOllamaDefaultContext:", data.ollama_default_context);
-          }
-          if (data.context_window_tokens == null && !cancelled) {
-            setTimeout(load, 1000);
-          }
-        })
-        .catch((err) => console.log("[DEBUG] getContextWindow error:", err));
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
+        }
+        if (data.vram_gb != null) {
+          setVramGb(data.vram_gb);
+          console.log("[DEBUG] setVramGb:", data.vram_gb);
+        }
+        if (data.ollama_default_context != null) {
+          setOllamaDefaultContext(data.ollama_default_context);
+          console.log("[DEBUG] setOllamaDefaultContext:", data.ollama_default_context);
+        }
+        if (data.context_window_tokens == null) {
+          setTimeout(loadContextWindow, 1000);
+        }
+      })
+      .catch((err) => {
+        if (!cancelledRef.current) console.log("[DEBUG] getContextWindow error:", err);
+      });
   }, []);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    loadContextWindow();
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [loadContextWindow]);
+
+  // Keep tokensUsedRef in sync so loadContextWindow can recompute the percent
+  // against a freshly-fetched context window when the model changes.
+  useEffect(() => {
+    tokensUsedRef.current = tokensUsed;
+  }, [tokensUsed]);
+
+  // Refresh the gauge when the model changes (event dispatched by ConfigTab).
+  useEffect(() => {
+    const onModelChange = () => loadContextWindow();
+    window.addEventListener("model-changed", onModelChange);
+    return () => window.removeEventListener("model-changed", onModelChange);
+  }, [loadContextWindow]);
 
   const handleMessagesScroll = useCallback(() => {
     const el = messagesContainerRef.current;

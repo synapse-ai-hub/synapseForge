@@ -74,6 +74,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       setSavingModel(true);
       await configService.selectModel(model, selectedProvider);
       setCurrentModel(model);
+      window.dispatchEvent(new Event("model-changed"));
     } catch (err) {
       console.error("Error seleccionando modelo:", err);
     } finally {

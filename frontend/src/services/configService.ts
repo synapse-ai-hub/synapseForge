@@ -16,6 +16,7 @@ export interface ContextWindowResponse {
   max_turns: number;
   context_window_tokens: number | null;
   vram_gb: number | null;
+  ollama_default_context: number | null;
 }
 
 export interface ProvidersResponse {

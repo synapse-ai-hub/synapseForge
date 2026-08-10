@@ -8,12 +8,12 @@ backend finishes that request it calls ``send_message`` to deliver the final
 answer back to Telegram.
 
 The bot also handles a set of commands directly (``/sesiones``, ``/usar``,
-``/actual``, ``/borrar``, ``/proveedor``, ``/modelo``, ``/skills``,
-``/tools``, ``/agentes``, ``/ayuda``, ``/cancelar``). Commands that need a
-user reply (``/usar``, ``/borrar``, ``/proveedor``, ``/modelo``) use a
-per-chat "awaiting" state: the bot asks a question and the next plain message
-is treated as the answer. ``/cancelar`` (or the word "cancelar") aborts any
-pending question.
+``/actual``, ``/contexto``, ``/borrar``, ``/proveedor``, ``/modelo``,
+``/skills``, ``/tools``, ``/agentes``, ``/ayuda``, ``/cancelar``). Commands
+that need a user reply (``/usar``, ``/borrar``, ``/proveedor``, ``/modelo``)
+use a per-chat "awaiting" state: the bot asks a question and the next plain
+message is treated as the answer. ``/cancelar`` (or the word "cancelar")
+aborts any pending question.
 """
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ class TelegramBot:
         await event_bus.emit({
             "type": "telegram_message",
             "content": text,
-            "session_id": self._session.get(chat_id),
+            "session_id": self._active_session(chat_id),
             "chat_id": chat_id,
         })
 
@@ -238,6 +238,10 @@ class TelegramBot:
 
         if cmd == "/nueva":
             self._session[chat_id] = None
+            try:
+                self.session_manager.set_config("active_session", "")
+            except Exception as exc:
+                logger.warning("No se pudo limpiar la sesión activa: %s", exc)
 
             await event_bus.emit({
                 "type": "telegram_command",
@@ -259,6 +263,8 @@ class TelegramBot:
             await self.send_message(chat_id, "Cancelado.")
         elif cmd == "/actual":
             await self._cmd_actual(chat_id)
+        elif cmd == "/contexto":
+            await self._cmd_contexto(chat_id)
         elif cmd == "/borrar":
             await self._cmd_borrar(chat_id)
         elif cmd == "/proveedor":
@@ -314,6 +320,22 @@ class TelegramBot:
                 return s.get("title") or session_id
         return None
 
+    def _active_session(self, chat_id: int) -> str | None:
+        """Return the active session for a chat.
+
+        Prefers the in-memory per-chat session (set via ``/usar``, ``/nueva``,
+        ``/borrar``). Falls back to the DB-persisted ``active_session`` so a
+        session selected in the frontend is also active in Telegram.
+        """
+        sid = self._session.get(chat_id)
+        if sid:
+            return sid
+        try:
+            return self.session_manager.get_config("active_session")
+        except Exception as exc:
+            logger.warning("No se pudo leer la sesión activa de la DB: %s", exc)
+            return None
+
     async def _cmd_sesiones(self, chat_id: int) -> None:
         sessions = self._list_sessions()
         if not sessions:
@@ -342,6 +364,10 @@ class TelegramBot:
             await self.send_message(chat_id, f"No encontré la sesión '{title}'.")
             return
         self._session[chat_id] = target["session_id"]
+        try:
+            self.session_manager.set_config("active_session", target["session_id"])
+        except Exception as exc:
+            logger.warning("No se pudo persistir la sesión activa: %s", exc)
         # Notify the frontend so it switches to the selected session.
         await event_bus.emit({
             "type": "telegram_command",
@@ -352,12 +378,60 @@ class TelegramBot:
         await self.send_message(chat_id, f"Sesión cambiada a '{target.get('title') or target['session_id']}'.")
 
     async def _cmd_actual(self, chat_id: int) -> None:
-        sid = self._session.get(chat_id)
+        sid = self._active_session(chat_id)
         if not sid:
             await self.send_message(chat_id, "No hay sesión activa.")
             return
         title = self._session_title(sid)
         await self.send_message(chat_id, f"Sesión actual: {title or sid}")
+
+    async def _cmd_contexto(self, chat_id: int) -> None:
+        """Report the context usage of the active session.
+
+        Shows session title, model, model context window, tokens used
+        (cumulative ``prompt_tokens`` of the latest assistant message) and
+        the percentage of the context window consumed.
+        """
+        sid = self._active_session(chat_id)
+        if not sid:
+            await self.send_message(chat_id, "No hay sesión activa.")
+            return
+
+        model = None
+        context_window = None
+        try:
+            from backend.instances import agent
+            model = agent._resolved_model if agent is not None else None
+            context_window = agent._context_window if agent is not None else None
+        except Exception as exc:
+            logger.warning("No se pudo leer modelo/context window: %s", exc)
+
+        title = self._session_title(sid) or sid
+
+        prompt_tokens = None
+        try:
+            msgs = self.session_manager.load_messages(sid) or []
+            for m in reversed(msgs):
+                if m.get("role") == "assistant" and m.get("prompt_tokens"):
+                    prompt_tokens = m["prompt_tokens"]
+                    break
+        except Exception as exc:
+            logger.warning("No se pudieron leer los tokens de la sesión: %s", exc)
+
+        percent = (
+            round((prompt_tokens / context_window) * 100, 2)
+            if (prompt_tokens and context_window)
+            else None
+        )
+
+        lines = [
+            f"Título: {title}",
+            f"Modelo: {model or 'desconocido'}",
+            f"Ventana de contexto: {context_window if context_window else 'desconocida'} tokens",
+            f"Tokens utilizados: {prompt_tokens if prompt_tokens is not None else 'desconocido'}",
+            f"Porcentaje: {percent if percent is not None else 'desconocido'}%",
+        ]
+        await self.send_message(chat_id, "\n".join(lines))
 
     async def _cmd_borrar(self, chat_id: int, title: str | None = None) -> None:
         sessions = self._list_sessions()
@@ -500,6 +574,7 @@ class TelegramBot:
             "/cancelar - Cancelar comando en espera\n"
             "/nueva - Crear chat nuevo\n"
             "/actual - Mostrar sesión actual\n"
+            "/contexto - Ver uso de ventana de contexto\n"
             "/borrar - Borrar un chat\n"
             "/detener - Detener tarea en curso\n"
             "/proveedor - Cambiar proveedor\n"

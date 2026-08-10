@@ -69,6 +69,7 @@ from backend.agent.utils.loop_helpers import (
     execute_tool,
     fetch_context_window_turns,
 )
+from backend.agent.utils.model_resolver import ensure_context_window
 
 logger = logging.getLogger(__name__)
 
@@ -538,9 +539,9 @@ class AgentLoop:
 
                 # Emit token counter after each LLM call (prompt_tokens is cumulative)
                 if usage_data:
-                    context_window = getattr(agent, "_context_window", None)
+                    context_window = ensure_context_window(agent, model)
                     prompt_tokens = usage_data.get("prompt_tokens") or 0
-                    percent = round((prompt_tokens / context_window) * 100, 1) if context_window else None
+                    percent = round((prompt_tokens / context_window) * 100, 2) if context_window else None
                     yield f"data: {json.dumps({'type': 'token_counter', 'content': {'prompt_tokens': prompt_tokens, 'completion_tokens': usage_data.get('completion_tokens') or 0, 'total_tokens': usage_data.get('total_tokens') or 0, 'context_window': context_window, 'percent': percent}}, ensure_ascii=False)}\n\n"
 
                 logger.debug(

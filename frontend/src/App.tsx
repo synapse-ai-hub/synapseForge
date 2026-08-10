@@ -205,11 +205,15 @@ const handleTelegramToggle = useCallback((val: boolean) => {
     setMessages([WELCOME_MESSAGE]);
     setIsStreaming(false);
     setRefreshTrigger((t) => t + 1);
+    // Reset the context-window gauge to 0 for the new session
+    chatRef.current?.setContextPercent(0);
   }, []);
 
   const handleSessionStart = useCallback((id: string) => {
     setCurrentSessionId(id);
     setRefreshTrigger((t) => t + 1);
+    // Sync the new session as active so Telegram knows it (single source of truth)
+    telegramService.setActiveSession(id).catch(() => {});
   }, []);
 
   const handleSelectSession = useCallback(async (id: string) => {
@@ -219,6 +223,13 @@ const handleTelegramToggle = useCallback((val: boolean) => {
       setCurrentSessionId(id);
       setMessages([WELCOME_MESSAGE, ...mapSessionMessages(data.messages)]);
       setIsStreaming(false);
+      // Restore the context-window gauge from the saved session data
+      const ctx = data.context;
+      if (ctx && ctx.percent != null) {
+        chatRef.current?.setContextPercent(ctx.percent);
+      }
+      // Sync the active session to Telegram (single source of truth in DB)
+      telegramService.setActiveSession(id).catch(() => {});
     } catch (err) {
       console.error("Error cargando la sesión:", err);
     }

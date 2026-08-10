@@ -30,6 +30,10 @@ class TogglePayload(BaseModel):
     enabled: bool
 
 
+class ActiveSessionPayload(BaseModel):
+    session_id: str
+
+
 @router.get("/telegram/status")
 async def telegram_status() -> dict:
     """Return whether the Telegram bot is currently enabled."""
@@ -43,3 +47,18 @@ async def telegram_toggle(payload: TogglePayload) -> dict:
     session_manager.set_config("telegram_enabled", "true" if payload.enabled else "false")
     logger.info("Telegram toggle -> %s", payload.enabled)
     return {"enabled": payload.enabled}
+
+
+@router.get("/telegram/active-session")
+async def telegram_active_session() -> dict:
+    """Return the active session id shared between frontend and Telegram."""
+    sid = session_manager.get_config("active_session")
+    return {"session_id": sid}
+
+
+@router.post("/telegram/active-session")
+async def telegram_set_active_session(payload: ActiveSessionPayload) -> dict:
+    """Persist the active session id (single source of truth for front/Telegram)."""
+    session_manager.set_config("active_session", payload.session_id)
+    logger.info("Active session -> %s", payload.session_id)
+    return {"session_id": payload.session_id}

@@ -313,6 +313,39 @@ def get_ollama_context_window(model: str) -> int | None:
         return None
 
 
+def ensure_context_window(agent, model: str) -> int | None:
+    """Return the model's context window, detecting and caching it if needed.
+
+    If ``agent._context_window`` is already set, returns it. Otherwise it
+    detects the context window for the given model (Ollama ``/api/show`` or
+    Groq ``/models``) and caches it on the agent instance.
+
+    Args:
+        agent: The ``Agent`` instance (may be ``None``).
+        model: The model name.
+
+    Returns:
+        The context window in tokens, or ``None`` if it cannot be resolved.
+    """
+    if agent is not None and getattr(agent, "_context_window", None):
+        return agent._context_window
+
+    provider = (getattr(agent, "provider", None) or "LOCAL").strip().upper()
+    cw = None
+    try:
+        if provider == "LOCAL":
+            cw = get_ollama_context_window(model)
+        else:
+            cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
+    except Exception as e:
+        log_error(str(e), source="model_resolver.py:ensure_context_window")
+        cw = None
+
+    if cw and agent is not None:
+        agent._context_window = cw
+    return cw
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------

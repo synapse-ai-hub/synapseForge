@@ -1119,9 +1119,10 @@ class Tools:
                     workdir: str | None = None) -> dict:
         """Run a terminal command in the system shell.
 
-        Executes a command, captures output, and enforces timeout.
-        Output larger than 50 KB is truncated. The working directory
-        can be overridden via ``workdir``.
+        Non-blocking: runs the command as an async subprocess so the event
+        loop keeps serving Telegram polling / SSE while the command executes.
+        Supports cancellation via the stream cancel event (kills the child
+        process) and a timeout. Output larger than 50 KB is truncated.
 
         Args:
             command: The command to execute (e.g. ``"dir"``, ``"python script.py"``).
@@ -1132,19 +1133,71 @@ class Tools:
             dict with ``{status, message, data, usage}``.
             ``data`` contains ``output``, ``returncode``, and ``truncated``.
         """
+        cancel_event = getattr(self, "_stream_cancel_event", None)
         try:
             cwd = workdir or os.getcwd()
-            result = subprocess.run(
+            proc = await asyncio.create_subprocess_shell(
                 command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout / 1000,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
-            output = result.stdout
-            if result.stderr:
-                output += "\n" + result.stderr
+
+            communicate_task = asyncio.create_task(proc.communicate())
+            timeout_task = asyncio.create_task(asyncio.sleep(timeout / 1000))
+            cancel_task = (
+                asyncio.create_task(cancel_event.wait())
+                if cancel_event is not None
+                else None
+            )
+
+            tasks = [communicate_task, timeout_task]
+            if cancel_task is not None:
+                tasks.append(cancel_task)
+
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+
+            timed_out = timeout_task in done
+            cancelled = cancel_task is not None and cancel_task in done
+
+            if timed_out or cancelled:
+                for t in pending:
+                    t.cancel()
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                await proc.wait()
+                if timed_out:
+                    log_error(
+                        f"run_cmd: command timed out after {timeout}ms",
+                        source="tools.py:shell(timeout)",
+                    )
+                    return make_error_response(
+                        message=f"run_cmd: command timed out after {timeout}ms. "
+                                "If this command is expected to take longer, retry with a larger timeout.",
+                        usage=zero_usage(),
+                    )
+                return make_error_response(
+                    message="run_cmd: command cancelled by user.",
+                    usage=zero_usage(),
+                )
+
+            # communicate finished normally
+            for t in pending:
+                t.cancel()
+            try:
+                stdout_b, stderr_b = communicate_task.result()
+            except Exception:
+                stdout_b, stderr_b = b"", b""
+
+            output = ""
+            if stdout_b:
+                output += stdout_b.decode("utf-8", errors="replace")
+            if stderr_b:
+                output += "\n" + stderr_b.decode("utf-8", errors="replace")
 
             MAX_BYTES = 50 * 1024
             truncated = len(output.encode("utf-8")) > MAX_BYTES
@@ -1156,17 +1209,10 @@ class Tools:
                 message="Command executed.",
                 data={
                     "output": output or "(no output)",
-                    "returncode": result.returncode,
+                    "returncode": proc.returncode,
                     "truncated": truncated,
                     "workdir": cwd,
                 },
-                usage=zero_usage(),
-            )
-        except subprocess.TimeoutExpired as e:
-            log_error(str(e), source="tools.py:shell(timeout)")
-            return make_error_response(
-                message=f"run_cmd: command timed out after {timeout}ms. "
-                        "If this command is expected to take longer, retry with a larger timeout.",
                 usage=zero_usage(),
             )
         except Exception as e:

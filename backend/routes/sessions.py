@@ -27,7 +27,8 @@ _project_root = os.path.dirname(os.path.dirname(_current_dir))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from backend.instances import session_manager
+from backend.instances import session_manager, agent
+from backend.agent.utils.model_resolver import ensure_context_window
 from backend.agent.utils.contract import (
     make_error_response,
     make_success_response,
@@ -254,10 +255,34 @@ async def get_session(session_id: str):
                         "turn_number": tn,
                     })
 
+        # Compute context usage from the latest assistant message (prompt_tokens
+        # is cumulative) against the model's context window.
+        model = agent._resolved_model if agent is not None else None
+        context_window = ensure_context_window(agent, model) if model else None
+        prompt_tokens = None
+        for msg in reversed(raw_messages):
+            if msg.get("role") == "assistant" and msg.get("prompt_tokens"):
+                prompt_tokens = msg["prompt_tokens"]
+                break
+        percent = (
+            round((prompt_tokens / context_window) * 100, 2)
+            if (prompt_tokens and context_window)
+            else None
+        )
+        context = {
+            "prompt_tokens": prompt_tokens,
+            "context_window": context_window,
+            "percent": percent,
+        }
+
         return validate_response(
             make_success_response(
                 message="Mensajes obtenidos",
-                data={"session_id": session_id, "messages": mapped},
+                data={
+                    "session_id": session_id,
+                    "messages": mapped,
+                    "context": context,
+                },
                 usage=zero_usage(),
             )
         )

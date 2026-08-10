@@ -224,6 +224,14 @@ async def chat_endpoint(
 
                         if final_text:
                             await telegram_bot.send_message(int(telegram_chat_id), final_text)
+                        else:
+                            # The agent finished without producing output (e.g. it
+                            # failed silently). Notify Telegram so the user knows,
+                            # even if they are not looking at the frontend.
+                            await telegram_bot.send_message(
+                                int(telegram_chat_id),
+                                "La solicitud no pudo completarse. Revisá la aplicación para más detalles.",
+                            )
                 except Exception as exc:
                     log_error(str(exc), source="backend/routes/chat.py:telegram_reply")
                     logger.warning("Failed to send final answer to Telegram: %s", exc)
@@ -233,6 +241,18 @@ async def chat_endpoint(
             # Yield a terminal error event so the client sees something
             yield f"data: {json.dumps({'type': 'chunk', 'content': 'En este momento no se puede ejecutar la solicitud. Por favor, intentá más tarde.'})}\n\n"
             yield "data: [DONE]\n\n"
+            # Notify Telegram so the user knows even if they are not watching
+            # the frontend.
+            if telegram_chat_id:
+                try:
+                    from backend.telegram.instance import telegram_bot
+                    await telegram_bot.send_message(
+                        int(telegram_chat_id),
+                        "La solicitud no pudo completarse. Revisá la aplicación para más detalles.",
+                    )
+                except Exception as exc2:
+                    log_error(str(exc2), source="backend/routes/chat.py:telegram_error_notify")
+                    logger.warning("Failed to send Telegram error notification: %s", exc2)
         finally:
             _t_fin = _time.time()
             # # logger.info("[DEBUG_TIEMPO_SSE] event_stream() finished — t=%.3f, total=%.3f", _t_fin, _t_fin - _t0)

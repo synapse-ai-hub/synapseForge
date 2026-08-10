@@ -24,6 +24,21 @@ async function toggle(enabled: boolean): Promise<boolean> {
   return data.enabled;
 }
 
-const telegramService = { getStatus, toggle };
+async function getActiveSession(): Promise<string | null> {
+  const res = await fetch(`${API_BASE_URL}/api/telegram/active-session`);
+  if (!res.ok) throw new Error("Error obteniendo sesión activa");
+  const data = (await res.json()) as { session_id: string | null };
+  return data.session_id || null;
+}
+
+async function setActiveSession(sessionId: string): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/telegram/active-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+}
+
+const telegramService = { getStatus, toggle, getActiveSession, setActiveSession };
 
 export default telegramService;

@@ -22,6 +22,7 @@ import LogoImage from "../assets/logo_cliente.png";
 import chatService from "../services/chatService";
 import { Button } from "./ui/button";
 import { FileChip, FileWarningBanner, MessageRow } from "./chatBlocks";
+import { ContextGauge } from "./ContextGauge";
 import type { Message, SubagentEvent, SubagentStep, ContentBlock } from "../App";
 
 /* ------------------------------------------------------------------ */
@@ -101,6 +102,8 @@ export interface ChatInterfaceHandle {
     telegramChatId?: string | null,
     telegramSessionId?: string | null,
   ) => void;
+  /** Set the context-window gauge percentage (used on session reload). */
+  setContextPercent: (percent: number) => void;
 }
 
 export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>(
@@ -127,6 +130,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [fileWarning, setFileWarning] = useState<string | null>(null);
+  const [contextPercent, setContextPercent] = useState(0);
 
   /* ---- refs ---- */
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -608,6 +612,10 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
             });
             break;
 
+          case "token_counter":
+            setContextPercent(event.content?.percent ?? 0);
+            break;
+
           case "usage":
             break;
 
@@ -669,7 +677,14 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   }, [isStreaming, files, setMessages, setIsStreaming, sessionId, onSessionStart, verboseMode]);
 
   /* ---- expose sendMessage to the parent (Telegram bridge) ---- */
-  useImperativeHandle(ref, () => ({ sendMessage }), [sendMessage]);
+  const applyContextPercent = useCallback((percent: number) => {
+    setContextPercent(percent);
+  }, []);
+  useImperativeHandle(
+    ref,
+    () => ({ sendMessage, setContextPercent: applyContextPercent }),
+    [sendMessage, applyContextPercent],
+  );
 
   /* ---- send button / Enter ---- */
   const handleSend = useCallback(() => {
@@ -702,6 +717,19 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
                    bg-white"
         style={{ height: "95px" }}
       >
+        {/* Left: Ventana de Contexto gauge */}
+        <div className="flex items-center shrink-0 pr-4">
+          <div
+            className="flex flex-col items-center"
+            title="Cuánto espacio de contexto del modelo se está usando"
+          >
+            <span className="text-sm text-app-text-secondary">
+              Ventana de Contexto
+            </span>
+            <ContextGauge percent={contextPercent} />
+          </div>
+        </div>
+
         {/* Center: logo + title */}
         <div className="flex-1 flex items-center justify-center gap-2 sm:gap-3">
           <img

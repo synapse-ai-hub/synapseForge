@@ -211,6 +211,8 @@ function ToolCallBlock({
   // autoritativo del contrato. Se conserva un fallback por contenido para
   // resultados legacy que lleguen como string crudo.
   const isError = hasResult && result.result && (
+    (isTask && typeof result.result === "object" && result.result !== null && result.result.status === "error") ||
+    (isTask && typeof result.result === "object" && result.result !== null && "error" in result.result) ||
     (isTask && typeof result.result === "object" && result.result !== null && typeof result.result.data === "string" && (
       /state="error"/.test(result.result.data) ||
       /<task_result>\s*<\/task_result>/.test(result.result.data) ||
@@ -370,10 +372,25 @@ function ToolCallBlock({
   // effect below can run Mermaid after the block is mounted.
   const resultHtml = useMemo(() => {
     if (!result || isTask) return null;
-    const raw =
-      typeof result.result === "string"
-        ? result.result
-        : JSON.stringify(result.result, null, 2);
+    // If the result is the unified contract {status, message, data, ...},
+    // display only the `data` payload (the actual tool output), not the
+    // whole contract JSON. Legacy string results are shown as-is.
+    let raw: string;
+    if (typeof result.result === "string") {
+      raw = result.result;
+    } else if (
+      result.result &&
+      typeof result.result === "object" &&
+      "data" in result.result
+    ) {
+      const data = (result.result as any).data;
+      raw =
+        typeof data === "string"
+          ? data
+          : JSON.stringify(data, null, 2);
+    } else {
+      raw = JSON.stringify(result.result, null, 2);
+    }
     try {
       const html = marked.parse(raw, { async: false }) as string;
       return DOMPurify.sanitize(openLinksInNewTab(html), { ADD_ATTR: ["target"] });

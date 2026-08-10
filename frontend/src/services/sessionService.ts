@@ -43,9 +43,16 @@ export interface SessionMessage {
   files?: Array<{ name: string; size?: number }> | null;
 }
 
+export interface SessionContext {
+  prompt_tokens: number | null;
+  context_window: number | null;
+  percent: number | null;
+}
+
 export interface SessionMessages {
   session_id: string;
   messages: SessionMessage[];
+  context?: SessionContext;
 }
 
 export interface SessionListResponse {

@@ -753,8 +753,8 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   }, []);
   const applyContextInfo = useCallback(
     (info: { contextWindow: number | null; tokensUsed: number | null; percent: number | null }) => {
-      setContextWindow(info.contextWindow);
-      setTokensUsed(info.tokensUsed);
+      if (info.contextWindow != null) setContextWindow(info.contextWindow);
+      if (info.tokensUsed != null) setTokensUsed(info.tokensUsed);
       setContextPercent(info.percent ?? 0);
     },
     [],

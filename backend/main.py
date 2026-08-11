@@ -220,6 +220,19 @@ async def lifespan(app: FastAPI):
         logger.warning("Failed to start Telegram bot: %s", exc)
 
     logger.info("<descripcion>Nombre del proyecto</descripcion> API started successfully.")
+
+    # Pre-load the RAG embedding model once at startup. It is shared and
+    # never killed, so the first use of RAG (e.g. listing collections in
+    # AgentInfo) does not pay the model-load cost.
+    try:
+        from backend.agent.utils.vector_db import get_vector_db
+
+        await asyncio.to_thread(get_vector_db)
+        logger.info("RAG embedding model loaded at startup.")
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(vector_db)")
+        logger.warning("Failed to pre-load RAG embedding model: %s", exc)
+
     yield
     try:
         from backend.telegram.instance import telegram_bot

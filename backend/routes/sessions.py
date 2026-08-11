@@ -211,6 +211,20 @@ async def get_session(session_id: str):
         return make_error_response(message="Session manager no disponible")
     try:
         raw_messages = session_manager.load_messages(session_id)
+        # "Tokens used" = the current prompt size (the last assistant message's
+        # prompt_tokens), which is what fills the context window. Summing would
+        # double-count the conversation history across turns.
+        prompt_tokens = max(
+            (int(m.get("prompt_tokens") or 0) for m in raw_messages),
+            default=0,
+        )
+        total_tokens = max(
+            (int(m.get("total_tokens") or 0) for m in raw_messages),
+            default=0,
+        )
+        cw_str = session_manager.get_config("selected_model_context_window")
+        context_window = int(cw_str) if cw_str else None
+        percent = round((prompt_tokens / context_window) * 100, 2) if context_window else None
         # Fetch attachments for this session
         attachments = _fetch_attachments(session_id)
         # Group by turn_number
@@ -257,7 +271,16 @@ async def get_session(session_id: str):
         return validate_response(
             make_success_response(
                 message="Mensajes obtenidos",
-                data={"session_id": session_id, "messages": mapped},
+                data={
+                    "session_id": session_id,
+                    "messages": mapped,
+                    "context": {
+                        "context_window": context_window,
+                        "prompt_tokens": prompt_tokens,
+                        "total_tokens": total_tokens,
+                        "percent": percent,
+                    },
+                },
                 usage=zero_usage(),
             )
         )

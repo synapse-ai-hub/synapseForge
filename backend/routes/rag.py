@@ -41,7 +41,7 @@ from backend.agent.utils.contract import (
     validate_response,
     zero_usage,
 )
-from backend.agent.utils.vector_db import VectorDB
+from backend.agent.utils.vector_db import VectorDB, get_vector_db
 from backend.routes.file_text_extractor import (
     ExtractionResult,
     extract_text_from_bytes,
@@ -168,14 +168,17 @@ class _PinnedIPTransport(httpx.AsyncHTTPTransport):
 
 
 def _get_db() -> VectorDB:
-    """Return a singleton instance of the VectorDB wrapper.
+    """Return the shared VectorDB wrapper instance.
+
+    The shared instance is pre-loaded at app startup (see ``main.py``) so
+    the embedding model is loaded once and never killed.
 
     Returns:
         The shared VectorDB instance.
     """
     global _db
     if _db is None:
-        _db = VectorDB()
+        _db = get_vector_db()
     return _db
 
 

@@ -944,7 +944,7 @@ class Tools:
             the search results (ids, documents, metadatas, distances).
         """
         try:
-            from backend.agent.utils.vector_db import VectorDB
+            from backend.agent.utils.vector_db import get_vector_db
 
             if not query or not query.strip():
                 return make_error_response(
@@ -952,11 +952,9 @@ class Tools:
                     usage=zero_usage(),
                 )
 
-            # Singleton: avoids reloading the embedding model and the Chroma
-            # client on every call (and avoids "database is locked").
-            if getattr(self, "_rag_db", None) is None:
-                self._rag_db = VectorDB()
-            db = self._rag_db
+            # Shared instance (pre-loaded at app startup): the embedding model
+            # and the Chroma client are loaded once and never killed.
+            db = get_vector_db()
 
             try:
                 db.get_collection(collection)

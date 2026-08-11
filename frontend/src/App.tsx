@@ -205,8 +205,8 @@ const handleTelegramToggle = useCallback((val: boolean) => {
     setMessages([WELCOME_MESSAGE]);
     setIsStreaming(false);
     setRefreshTrigger((t) => t + 1);
-    // Reset the context-window gauge to 0 for the new session
-    chatRef.current?.setContextPercent(0);
+    // Reset the context-window gauge and tokens text to 0 for the new session
+    chatRef.current?.setContextInfo({ contextWindow: null, tokensUsed: 0, percent: 0 });
   }, []);
 
   const handleSessionStart = useCallback((id: string) => {

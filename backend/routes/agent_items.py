@@ -37,7 +37,7 @@ from backend.agent.utils.config_dir import (
     save_mcp_servers,
 )
 from backend.agent.utils.error_logger import log_error
-from backend.agent.utils.vector_db import VectorDB
+from backend.agent.utils.vector_db import VectorDB, get_vector_db
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def _unlink(path: Path) -> bool:
 async def list_knowledge_collections() -> JSONResponse:
     """Lista las colecciones vectoriales disponibles."""
     try:
-        db = VectorDB()
+        db = get_vector_db()
         cols = db.list_collections()
         names = [c["name"] for c in cols]
         return JSONResponse(

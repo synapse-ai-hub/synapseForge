@@ -346,3 +346,23 @@ class VectorDB:
             where=where,
             include=["documents", "metadatas", "distances"],
         )
+
+
+_db_singleton: VectorDB | None = None
+
+
+def get_vector_db() -> VectorDB:
+    """Return the process-wide shared VectorDB instance.
+
+    The embedding model is loaded once (pre-loaded at app startup via
+    ``main.py``) and shared by every consumer (RAG routes, the ``rag`` tool
+    and the AgentInfo listing). It is never killed, so the first use of RAG
+    does not pay the model-load cost.
+
+    Returns:
+        The shared VectorDB instance.
+    """
+    global _db_singleton
+    if _db_singleton is None:
+        _db_singleton = VectorDB()
+    return _db_singleton

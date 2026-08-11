@@ -20,10 +20,10 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Ensure the project root is in sys.path so absolute imports (backend.*)
 # resolve correctly regardless of how the file is invoked.
-# loop_helpers.py is at backend/agent/ -> need 2 dirname() calls to reach root.
+# loop_helpers.py is at backend/agent/utils/ -> need 3 dirname() calls to reach root.
 # ---------------------------------------------------------------------------
 _current_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(os.path.dirname(_current_dir))
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(_current_dir)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
@@ -37,7 +37,7 @@ from backend.agent.utils.config_dir import get_agents_dir
 logger = logging.getLogger(__name__)
 
 _CONFIG_BASE_URL = os.getenv("CONFIG_BASE_URL", "http://127.0.0.1:8000/api/config")
-_SESSION_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(_current_dir)), "backend", "agent", "agent_db", "agent.db")
+_SESSION_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 
 def _mandatory_block() -> str:

@@ -966,7 +966,7 @@ class Tools:
                     usage=zero_usage(),
                 )
 
-            results = db.query(collection, query, n_results=10)
+            results = db.query(collection, query, n_results=5)
             return make_success_response(
                 message=f"Resultados de '{collection}'.",
                 data=results,

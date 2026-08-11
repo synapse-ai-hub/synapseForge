@@ -36,7 +36,8 @@ Thumbs.db
 # Node modules
 node_modules/
 
-
+# Pruebas
+pruebas.ipynb
 
 # Archivos subidos
 uploads/

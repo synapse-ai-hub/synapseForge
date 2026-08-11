@@ -184,7 +184,8 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
 
   // Load the model's context window (in tokens) so the gauge info shows it
   // immediately instead of waiting for the first token_counter event.
-  // If the backend has not resolved it yet (fresh DB), retry non-blocking.
+  // No polling: it is refreshed only by events (mount, model-changed,
+  // session change, token_counter SSE).
   const loadContextWindow = useCallback(() => {
     configService
       .getContextWindow()
@@ -206,9 +207,6 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
         if (data.ollama_default_context != null) {
           setOllamaDefaultContext(data.ollama_default_context);
           console.log("[DEBUG] setOllamaDefaultContext:", data.ollama_default_context);
-        }
-        if (data.context_window_tokens == null) {
-          setTimeout(loadContextWindow, 1000);
         }
       })
       .catch((err) => {

@@ -1,7 +1,10 @@
-"""Wrapper para base de datos vectorial (ChromaDB).
+"""Wrapper for the vector database (ChromaDB).
 
-Abstrae las operaciones de ChromaDB detrás de una interfaz simple.
-Si en el futuro se cambia a pgvector u otro motor, solo se modifica este archivo.
+Abstracts ChromaDB operations behind a simple interface. If the engine is
+switched later (e.g. pgvector), only this file needs to change.
+
+The embedding model (SentenceTransformer) is loaded once at initialization
+and kept in memory to avoid per-operation reload latency.
 
 Typical usage::
 
@@ -13,6 +16,8 @@ Typical usage::
     results = db.query("manual-producto", "¿cómo se instala?")
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 
@@ -23,24 +28,24 @@ from backend.agent.utils.config_dir import get_knowledge_dir
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "all-mpnet-base-v2"
+_DEFAULT_MODEL = "all-MiniLM-L6-v2"
 
 
 class VectorDB:
-    """Wrapper para operaciones vectoriales con ChromaDB.
+    """ChromaDB vector operations wrapper.
 
     Attributes:
-        chroma_path: Ruta absoluta al directorio persistente de Chroma.
-        embed_func: Función de embedding (SentenceTransformer).
-        _client: Instancia de ``chromadb.PersistentClient``.
+        chroma_path: Absolute path to the persistent Chroma directory.
+        embed_func: Embedding function (SentenceTransformer), loaded once at init.
+        _client: ``chromadb.PersistentClient`` instance.
     """
 
     def __init__(self, collection_name: str | None = None) -> None:
-        """Inicializa el cliente ChromaDB persistente.
+        """Initialize the persistent ChromaDB client and the embedding model.
 
         Args:
-            collection_name: Si se pasa, crea/obtiene automáticamente
-                esa colección y la deja como ``self.collection``.
+            collection_name: If provided, creates/gets that collection and
+                stores it as ``self.collection``.
         """
         self.chroma_path = get_knowledge_dir()
         self.chroma_path.mkdir(parents=True, exist_ok=True)
@@ -57,7 +62,7 @@ class VectorDB:
             self.collection = self._client.get_or_create_collection(
                 name=collection_name,
                 embedding_function=self.embed_func,
-                metadata={"embedding_model": _DEFAULT_MODEL},
+                metadata={"embedding_model": _DEFAULT_MODEL, "hnsw:space": "cosine"},
             )
 
         logger.info(
@@ -66,27 +71,28 @@ class VectorDB:
             _DEFAULT_MODEL,
         )
 
-    # ── Gestión de colecciones ──────────────────────────────────────
+    # ── Collection management ────────────────────────────────────────────
 
     def create_collection(
         self,
         name: str,
         metadata: dict[str, Any] | None = None,
     ) -> chromadb.Collection:
-        """Crea una nueva colección vectorial.
+        """Create a new vector collection.
 
         Args:
-            name: Nombre único de la colección.
-            metadata: Metadatos opcionales (embedding_model, descripción, etc.).
+            name: Unique collection name.
+            metadata: Optional metadata (embedding_model, description, etc.).
 
         Returns:
-            La instancia de la colección creada.
+            The created collection instance.
 
         Raises:
-            ValueError: Si la colección ya existe.
+            ValueError: If the collection already exists.
         """
         meta = metadata or {}
         meta.setdefault("embedding_model", _DEFAULT_MODEL)
+        meta.setdefault("hnsw:space", "cosine")
 
         try:
             col = self._client.create_collection(
@@ -101,16 +107,16 @@ class VectorDB:
             raise
 
     def get_collection(self, name: str) -> chromadb.Collection:
-        """Obtiene una colección existente.
+        """Get an existing collection.
 
         Args:
-            name: Nombre de la colección.
+            name: Name of the collection.
 
         Returns:
-            La colección.
+            The collection.
 
         Raises:
-            ValueError: Si no existe.
+            ValueError: If the collection does not exist.
         """
         return self._client.get_collection(
             name=name,
@@ -122,17 +128,18 @@ class VectorDB:
         name: str,
         metadata: dict[str, Any] | None = None,
     ) -> chromadb.Collection:
-        """Obtiene o crea una colección (idempotente).
+        """Get or create a collection (idempotent).
 
         Args:
-            name: Nombre de la colección.
-            metadata: Metadatos usados solo si se crea.
+            name: Name of the collection.
+            metadata: Metadata used only if the collection is created.
 
         Returns:
-            La colección.
+            The collection.
         """
         meta = metadata or {}
         meta.setdefault("embedding_model", _DEFAULT_MODEL)
+        meta.setdefault("hnsw:space", "cosine")
 
         col = self._client.get_or_create_collection(
             name=name,
@@ -143,10 +150,10 @@ class VectorDB:
         return col
 
     def list_collections(self) -> list[dict[str, Any]]:
-        """Lista todas las colecciones disponibles.
+        """List all available collections.
 
         Returns:
-            Lista de dicts con ``name`` y ``metadata`` de cada colección.
+            List of dicts with ``name`` and ``metadata`` per collection.
         """
         collections = self._client.list_collections()
         return [
@@ -155,10 +162,10 @@ class VectorDB:
         ]
 
     def delete_collection(self, name: str) -> None:
-        """Elimina una colección y todos sus datos.
+        """Delete a collection and all its data.
 
         Args:
-            name: Nombre de la colección a eliminar.
+            name: Name of the collection to delete.
         """
         try:
             self._client.delete_collection(name)
@@ -167,13 +174,13 @@ class VectorDB:
             logger.warning("Colección '%s' no existe.", name)
 
     def get_collection_info(self, name: str) -> dict[str, Any]:
-        """Obtiene información detallada de una colección.
+        """Get detailed info of a collection.
 
         Args:
-            name: Nombre de la colección.
+            name: Name of the collection.
 
         Returns:
-            Dict con ``name``, ``metadata`` y ``count`` (cantidad de docs).
+            Dict with ``name``, ``metadata`` and ``count`` (docs count).
         """
         col = self.get_collection(name)
         count = col.count()
@@ -183,7 +190,7 @@ class VectorDB:
             "count": count,
         }
 
-    # ── Operaciones CRUD ───────────────────────────────────────────
+    # ── CRUD operations ─────────────────────────────────────────────────
 
     def add_documents(
         self,
@@ -192,13 +199,13 @@ class VectorDB:
         documents: list[str],
         metadatas: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Agrega documentos a una colección.
+        """Add documents to a collection.
 
         Args:
-            collection_name: Colección destino.
-            ids: Lista de IDs únicos (strings).
-            documents: Lista de textos a indexar.
-            metadatas: Lista de metadatos por documento.
+            collection_name: Target collection.
+            ids: List of unique IDs (strings).
+            documents: List of texts to index.
+            metadatas: Optional metadata per document.
         """
         col = self.get_collection(collection_name)
         col.add(
@@ -219,13 +226,13 @@ class VectorDB:
         documents: list[str] | None = None,
         metadatas: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Actualiza documentos existentes.
+        """Update existing documents.
 
         Args:
-            collection_name: Colección.
-            ids: IDs a actualizar.
-            documents: Nuevos textos (None = mantener).
-            metadatas: Nuevos metadatos (None = mantener).
+            collection_name: Collection.
+            ids: IDs to update.
+            documents: New texts (None = keep).
+            metadatas: New metadata (None = keep).
         """
         col = self.get_collection(collection_name)
         col.update(
@@ -244,11 +251,11 @@ class VectorDB:
         collection_name: str,
         ids: list[str],
     ) -> None:
-        """Elimina documentos por ID.
+        """Delete documents by ID.
 
         Args:
-            collection_name: Colección.
-            ids: IDs a eliminar.
+            collection_name: Collection.
+            ids: IDs to delete.
         """
         col = self.get_collection(collection_name)
         col.delete(ids=ids)
@@ -266,17 +273,17 @@ class VectorDB:
         limit: int | None = None,
         offset: int | None = None,
     ) -> dict[str, Any]:
-        """Obtiene documentos por ID o filtro.
+        """Get documents by ID or filter.
 
         Args:
-            collection_name: Colección.
-            ids: Lista opcional de IDs.
-            where: Filtro opcional de metadatos.
-            limit: Máximo de resultados.
-            offset: Desplazamiento.
+            collection_name: Collection.
+            ids: Optional list of IDs.
+            where: Optional metadata filter.
+            limit: Maximum results.
+            offset: Offset.
 
         Returns:
-            Dict con ``ids``, ``documents``, ``metadatas``.
+            Dict with ``ids``, ``documents``, ``metadatas``.
         """
         col = self.get_collection(collection_name)
         return col.get(
@@ -286,7 +293,7 @@ class VectorDB:
             offset=offset,
         )
 
-    # ── Búsqueda ────────────────────────────────────────────────────
+    # ── Search ──────────────────────────────────────────────────────────
 
     def query(
         self,
@@ -295,16 +302,16 @@ class VectorDB:
         n_results: int = 10,
         where: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Busca los chunks más similares a un texto.
+        """Find the most similar chunks to a text.
 
         Args:
-            collection_name: Colección donde buscar.
-            query_text: Texto de consulta en lenguaje natural.
-            n_results: Cantidad de resultados a retornar (default 10).
-            where: Filtro opcional de metadatos.
+            collection_name: Collection to search.
+            query_text: Natural language query.
+            n_results: Number of results to return (default 10).
+            where: Optional metadata filter.
 
         Returns:
-            Dict con ``ids``, ``documents``, ``metadatas``, ``distances``.
+            Dict with ``ids``, ``documents``, ``metadatas``, ``distances``.
         """
         col = self.get_collection(collection_name)
         return col.query(
@@ -321,16 +328,16 @@ class VectorDB:
         n_results: int = 10,
         where: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Busca por vector de embedding directamente.
+        """Search directly by an embedding vector.
 
         Args:
-            collection_name: Colección.
-            embedding: Vector precomputado.
-            n_results: Cantidad de resultados.
-            where: Filtro opcional.
+            collection_name: Collection.
+            embedding: Precomputed vector.
+            n_results: Number of results.
+            where: Optional filter.
 
         Returns:
-            Dict con ``ids``, ``documents``, ``metadatas``, ``distances``.
+            Dict with ``ids``, ``documents``, ``metadatas``, ``distances``.
         """
         col = self.get_collection(collection_name)
         return col.query(

@@ -272,12 +272,13 @@ class Agent():
                           tools: list | None = None,
                           json_format: bool = False,
                           reasoning: bool = True,
+                          provider: str | None = None,
                           **kwargs) -> ContractResponse:
         """Send a chat completion and return content + tool_calls.
 
         Accepts either the classic ``prompt`` + ``system_content`` (backwards
-        compatible) OR a full ``messages`` array.  When ``messages`` is
-        provided, ``prompt`` and ``system_content`` are ignored.
+        compatible) OR a full ``messages`` array.  When ``messages`` is provided,
+        ``prompt`` and ``system_content`` are ignored.
 
         Args:
             model: Model name.
@@ -296,6 +297,11 @@ class Agent():
                        it (Ollama ``think=False``, Groq ``reasoning_effort="none"``)
                        with a fallback so models that don't support the flag are
                        not broken.
+            provider: Optional provider override (``"API"`` or ``"LOCAL"``).
+                      When ``None``, falls back to ``self.provider`` so existing
+                      callers keep their current behavior. Pass an explicit value
+                      from the agent loop when a sub-agent overrides the provider
+                      in its frontmatter.
             **kwargs: Forwarded to the provider client.
 
         Returns:
@@ -304,10 +310,11 @@ class Agent():
             - ``tool_calls`` — normalized list ``{"id", "name", "args"}`` or ``None``.
             - ``usage`` — token / time report.
         """
+        effective_provider = provider if provider is not None else self.provider
         try:
             # --- Build messages ---
             if messages is not None:
-                is_groq = self.provider == 'API'
+                is_groq = effective_provider == 'API'
                 msgs = []
                 for m in messages:
                     m_copy = dict(m)
@@ -329,7 +336,7 @@ class Agent():
             if max_tokens is not None:
                 api_kwargs['max_tokens'] = max_tokens
 
-            if self.provider == 'API':
+            if effective_provider == 'API':
                 # ── Groq (OpenAI-compatible) ──
                 groq_kwargs = dict(api_kwargs)
                 if tools:
@@ -369,7 +376,7 @@ class Agent():
                 total_tokens = response.usage.total_tokens
                 total_time = round(response.usage.total_time, 2)
 
-            elif self.provider == 'LOCAL':
+            elif effective_provider == 'LOCAL':
                 # ── Ollama (local) ──
                 options = {}
                 if temperature is not None:
@@ -417,7 +424,7 @@ class Agent():
                 total_tokens = (response.eval_count or 0) + (response.prompt_eval_count or 0)
                 total_time = round((response.total_duration or 0) / 1_000_000_000, 2)
             else:
-                return validate_response(make_error_response(message=f"PROVIDER inválido: '{self.provider}'"))
+                return validate_response(make_error_response(message=f"PROVIDER inválido: '{effective_provider}'"))
 
             tool_calls = self._normalize_tool_calls(raw_tc)
 
@@ -453,7 +460,9 @@ class Agent():
                              top_p: float = 0.5, max_tokens: int = 3000,
                              cleaned_output: bool = True,
                              tools: list | None = None,
-                             stream_cancel_event=None, **kwargs):
+                             stream_cancel_event=None,
+                             provider: str | None = None,
+                             **kwargs):
         """Async generator that streams LLM response chunks.
 
         Accepts either ``prompt`` + ``system_content`` (backwards compatible)
@@ -478,13 +487,19 @@ class Agent():
             cleaned_output: Apply ``self.clean()`` to text chunks.
             tools: Tool definitions for function calling.
             stream_cancel_event: Optional event to cancel mid-stream.
+            provider: Optional provider override (``"API"`` or ``"LOCAL"``).
+                      When ``None``, falls back to ``self.provider`` so existing
+                      callers keep their current behavior. Pass an explicit value
+                      from the agent loop when a sub-agent overrides the provider
+                      in its frontmatter.
             **kwargs: Forwarded to the provider client.
 
         Yields:
             Streaming event dicts.
         """
+        effective_provider = provider if provider is not None else self.provider
         if messages is not None:
-            is_groq = self.provider == 'API'
+            is_groq = effective_provider == 'API'
             msgs = []
             for m in messages:
                 m_copy = dict(m)
@@ -498,7 +513,7 @@ class Agent():
                 msgs.append({'role': 'system', 'content': system_content})
             msgs.append({'role': 'user', 'content': prompt or ''})
 
-        if self.provider == 'API':
+        if effective_provider == 'API':
             groq_kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": msgs,

@@ -58,6 +58,15 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
     load();
   }, [load]);
 
+  // Refresh the dropdown + current model when the model is changed
+  // elsewhere (Telegram, another tab). The gauge already listens to
+  // "model-changed" in ChatInterface to recompute its percentage.
+  useEffect(() => {
+    const onModelChange = () => load();
+    window.addEventListener("model-changed", onModelChange);
+    return () => window.removeEventListener("model-changed", onModelChange);
+  }, [load]);
+
   useEffect(() => {
     contextFilesService.list()
       .then((files) => setContextFiles(files || []))

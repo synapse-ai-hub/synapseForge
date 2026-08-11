@@ -291,6 +291,13 @@ const handleTelegramToggle = useCallback((val: boolean) => {
         if (sessionId && title) {
           handleSessionTitleUpdate(sessionId, title);
         }
+      } else if (data.type === "model_changed") {
+        // Broadcast by the backend whenever the persisted model changes
+        // (Telegram, the /api/config/models/select endpoint, or any future
+        // caller). Dispatch the same CustomEvent the local UI path uses, so
+        // every subscriber — gauge (ChatInterface), ConfigTab dropdown,
+        // etc. — refreshes in lockstep.
+        window.dispatchEvent(new CustomEvent("model-changed"));
       }
     };
     es.onerror = () => {

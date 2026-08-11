@@ -197,6 +197,7 @@ class AgentLoop:
         depth: int = 0,
         parent_id: str | None = None,
         parent_model: str | None = None,
+        parent_provider: str | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Run the agent loop for a single user message.
 
@@ -211,13 +212,18 @@ class AgentLoop:
                 frontmatter). ``None``/``{}`` → no tools (deny by default).
             skill_permissions: Skill permission dict. ``None``/``{}`` → no
                 skills (deny by default).
-            parameters: Model/agent parameters (TODO: from frontmatter).
+            parameters: Model/agent parameters (from frontmatter). May include
+                ``model`` and ``provider`` overrides.
             agent_name: Sub-agent name being executed (``None`` = router).
             depth: Current sub-agent nesting depth (recursion guard).
             parent_id: Parent session identifier (for sub-agents).
-            parent_model: Parent agent's model name. If provided and differs
-                from this agent's model, the parent model is liberated on
-                entry and this agent's model is liberated on exit.
+            parent_model: Parent agent's effective model name. If provided and
+                differs from this agent's model AND both run on ``LOCAL``, the
+                parent model is liberated on entry and this agent's model is
+                liberated on exit. API-side providers don't need VRAM liberation.
+            parent_provider: Parent agent's effective provider (``"API"``/``"LOCAL"``).
+                Used together with ``parent_model`` to decide whether to liberate
+                the parent model (only meaningful when both are LOCAL).
 
         Yields:
             SSE events (raw ``"data: {...}\\n\\n"`` strings):
@@ -274,13 +280,25 @@ class AgentLoop:
                     model = parameters["model"]
                 max_tokens = parameters.get("max_tokens", max_tokens)
 
+            # Resolve this loop's effective provider. If the agent's frontmatter
+            # sets `parameters.provider`, use it for this loop only (passed
+            # explicitly to llm_process / llm_streaming). Otherwise fall back
+            # to the global agent.provider.
+            effective_provider = agent.provider
+            if parameters and parameters.get("provider"):
+                effective_provider = parameters["provider"]
+
             logger.info(
-                "Agent loop started — model: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s",
-                model, session_id, agent_name, depth, temperature, top_p,
+                "Agent loop started — model: %s, provider: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s",
+                model, effective_provider, session_id, agent_name, depth, temperature, top_p,
             )
 
-            # --- Liberate parent model if this agent uses a different one ---
-            if parent_model and model != parent_model:
+            # --- Liberate parent model only when both parent and child run on
+            #     LOCAL with different models. API providers don't consume VRAM
+            #     so there's nothing to free/reload. ---
+            parent_is_local = bool(parent_provider) and parent_provider.upper() == "LOCAL"
+            child_is_local = bool(effective_provider) and effective_provider.upper() == "LOCAL"
+            if parent_model and model != parent_model and parent_is_local and child_is_local:
                 logger.info("Liberando modelo del parent (%s) — subagente usa %s", parent_model, model)
                 ctx = get_error_context()
                 await asyncio.to_thread(
@@ -439,6 +457,7 @@ class AgentLoop:
                                 temperature=temperature,
                                 top_p=top_p,
                                 reasoning=False,
+                                provider=effective_provider,
                             )
                             raw_title = title_result.get("data", "") if isinstance(title_result, dict) else ""
                             title = (raw_title or "").strip().replace('"', "").replace("'", "")
@@ -493,6 +512,7 @@ class AgentLoop:
                         model=model, messages=messages, tools=tools,
                         stream_cancel_event=stream_cancel_event,
                         temperature=temperature, top_p=top_p, max_tokens=max_tokens,
+                        provider=effective_provider,
                     ):
                         if event["type"] == "chunk":
                             collected_content += event.get("content", "")
@@ -618,6 +638,11 @@ class AgentLoop:
                                 "tool_permissions": tool_perms_sub,
                                 "skill_permissions": skill_perms_sub,
                                 "parameters": parameters_sub,
+                                # Parent's effective model/provider so the sub-agent
+                                # loop can decide whether to liberate the parent model
+                                # (only when both are LOCAL with different models).
+                                "parent_model": model,
+                                "parent_provider": effective_provider,
                             }
 
                             # Get actual skill names for the log (uses cached permissions, no extra .md read)
@@ -748,7 +773,7 @@ class AgentLoop:
                             if isinstance(llm_payload, (dict, list))
                             else str(llm_payload)
                         )
-                        is_groq = agent.provider.upper() == "API"
+                        is_groq = effective_provider.upper() == "API"
                         if is_groq:
                             tool_msg = {
                                 "role": "tool",
@@ -816,8 +841,8 @@ class AgentLoop:
                 _t_after_done = _time.time()
                 # # logger.info("[DEBUG_TIEMPO_SSE] after yield [DONE] — t=%.3f, diff=%.3f", _t_after_done, _t_after_done - _t_before_done)
                 logger.info("Agent loop completed in %d iterations", iteration)
-                # Liberate model only if subagent with different model from parent
-                if parent_model and model != parent_model:
+                # Liberate model only if subagent with different LOCAL model from parent
+                if parent_model and model != parent_model and parent_is_local and child_is_local:
                     ctx = get_error_context()
                     await asyncio.to_thread(
                         liberar_modelo, model,
@@ -831,7 +856,7 @@ class AgentLoop:
             logger.warning("Agent loop reached max_iterations (%d)", self.max_iterations)
             yield f"data: {json.dumps({'type': 'chunk', 'content': '\n\n*El agente alcanzó el límite de iteraciones.*'})}\n\n"
             yield "data: [DONE]\n\n"
-            if parent_model and model != parent_model:
+            if parent_model and model != parent_model and parent_is_local and child_is_local:
                 logger.info("Liberando modelo del subagente (%s) por max_iterations", model)
                 ctx = get_error_context()
                 await asyncio.to_thread(

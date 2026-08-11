@@ -957,10 +957,18 @@ class Tools:
             tool_perms = cached["tool_permissions"]
             skill_perms = cached["skill_permissions"]
             parameters = cached["parameters"]
+            parent_model = cached.get("parent_model")
+            parent_provider = cached.get("parent_provider")
             # Clear cache for next delegation
             self._task_config = None
         else:
-            # First-time resolution (called outside loop.py)
+            # First-time resolution (called outside loop.py). Fall back to the
+            # agent singleton's globally-resolved model/provider as the parent
+            # reference for the sub-agent.
+            from backend.instances import agent as _agent_singleton
+            parent_model = getattr(_agent_singleton, "_resolved_model", None)
+            parent_provider = getattr(_agent_singleton, "provider", None)
+
             tool_perms: dict = {}
             tp = get_tool_permissions(agent_name)
             if tp.get("status") == "success":
@@ -1062,7 +1070,8 @@ class Tools:
                 agent_name=agent_name,
                 depth=depth + 1,
                 parent_id=parent_id,
-                parent_model=agent._resolved_model,
+                parent_model=parent_model,
+                parent_provider=parent_provider,
                 stream_cancel_event=stream_cancel_event,
             ):
                 if sse.strip() == "data: [DONE]":

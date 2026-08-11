@@ -471,6 +471,19 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
     # together.
     await asyncio.to_thread(_detect_and_persist_context_window, model, provider)
 
+    # Broadcast the change so every frontend (and any other subscriber)
+    # refreshes — the web UI path already dispatches a local event, but the
+    # SSE broadcast makes Telegram↔Frontend bidirectional and keeps multiple
+    # browser tabs in sync.
+    try:
+        from backend.event_bus import event_bus
+        await event_bus.emit({
+            "type": "model_changed",
+            "content": {"model": model, "provider": provider},
+        })
+    except Exception as exc:
+        logger.warning("No se pudo emitir model_changed: %s", exc)
+
     logger.info("Model selected: %s (%s)", model, provider)
     return JSONResponse(
         status_code=200,

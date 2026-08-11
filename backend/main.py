@@ -4,10 +4,12 @@ This module initializes the FastAPI application, configures CORS middleware,
 mounts route handlers, and provides a health check endpoint.
 """
 
+import json
 import logging
 import os
 import sys
 import time
+import urllib.request
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -128,16 +130,16 @@ async def _heartbeat_watchdog() -> None:
             os._exit(0)
 
 # ---------------------------------------------------------------------------
-# Model resolution at startup (first run: no DB -> default model)
+# Model resolution at startup (via the config endpoint, not a helper)
 # ---------------------------------------------------------------------------
 async def _resolve_model_at_startup() -> None:
-    """Set the default model + context window on first startup (no DB).
+    """Resolve the default model, preferring any persisted selection.
 
     Runs as a background task after the server is listening. If a model was
     already resolved via persisted config (loaded in lifespan), we return early.
-    Otherwise (first run, no DB) we set the default model directly and resolve
-    + persist its context window at the same moment, without listing all models
-    via ``GET /api/config/models``.
+    Otherwise we call the config endpoint (``GET /api/config/models``) to
+    perform the normal resolution and persist the resulting default so it
+    survives the next restart.
     """
     await asyncio.sleep(2)
 
@@ -146,22 +148,23 @@ async def _resolve_model_at_startup() -> None:
         logger.info("Modelo ya resuelto (persistido): %s", agent._resolved_model)
         return
 
-    model = config_module._LOCAL_DEFAULT_MODEL
-    context_window = 262144  # hardcoded context window for the default model
+    # Otherwise resolve via the config endpoint and persist the default.
+    host = os.getenv("HOST", "127.0.0.1")
+    port = os.getenv("PORT", "8000")
+    url = f"http://{host}:{port}/api/config/models"
     try:
-        if agent is not None:
-            agent._resolved_model = model
-            agent.provider = "LOCAL"
-            agent._context_window = context_window
-        if session_manager is not None:
-            session_manager.set_config("selected_model", model)
-            session_manager.set_config("selected_provider", "LOCAL")
-            session_manager.set_config("selected_model_context_window", str(context_window))
-        config_module._context_window_tokens = context_window
-        logger.info("Model set at startup (default): %s (context window %d)", model, context_window)
+        def _get() -> dict:
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                return json.loads(resp.read().decode())
+
+        data = await asyncio.to_thread(_get)
+        logger.info("Model resolved at startup via endpoint: %s", data.get("model"))
+
+        if session_manager is not None and data.get("model"):
+            session_manager.set_config("selected_model", data.get("model"))
     except Exception as exc:
         log_error(str(exc), source="main.py:_resolve_model_at_startup(model)")
-        logger.warning("Failed to set default model at startup: %s", exc)
+        logger.warning("Failed to resolve model at startup via %s: %s", url, exc)
 
 
 # ---------------------------------------------------------------------------

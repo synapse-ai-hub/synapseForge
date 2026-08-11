@@ -527,6 +527,15 @@ class TelegramBot:
             logger.warning("No se pudo cambiar el modelo: %s", exc)
             await self.send_message(chat_id, f"No se pudo cambiar el modelo: {exc}")
             return
+        # Broadcast the model change so the frontend refreshes (Telegram is
+        # bidirectional: any persistence path must push the update).
+        try:
+            await event_bus.emit({
+                "type": "model_changed",
+                "content": {"model": selected, "provider": provider},
+            })
+        except Exception as exc:
+            logger.warning("No se pudo emitir model_changed: %s", exc)
         await self.send_message(chat_id, f"Modelo cambiado a {selected}.")
 
     async def _cmd_skills(self, chat_id: int) -> None:

@@ -31,7 +31,7 @@ export function CreateTab() {
         </Button>
         <Button className="w-full justify-start gap-2" variant="outline" onClick={() => openPage("rag.html")}>
           <Database size={14} />
-          Crear RAG
+          Gestionar RAG
         </Button>
       </div>
     </div>

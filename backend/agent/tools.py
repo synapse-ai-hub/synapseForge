@@ -927,6 +927,59 @@ class Tools:
                 usage=zero_usage(),
             )
 
+    async def rag(self, collection: str, query: str) -> dict:
+        """Query a knowledge base (RAG) collection.
+
+        Finds the chunks most similar to the query inside the given
+        collection and returns the results with their metadata. The agent can
+        only query the collections allowed in its frontmatter
+        (``permission.rag``), just like ``task`` restricts sub-agents.
+
+        Args:
+            collection: Name of the collection to query.
+            query: Natural language query.
+
+        Returns:
+            dict with ``{status, message, data, usage}``. ``data`` contains
+            the search results (ids, documents, metadatas, distances).
+        """
+        try:
+            from backend.agent.utils.vector_db import VectorDB
+
+            if not query or not query.strip():
+                return make_error_response(
+                    message="La consulta no puede estar vacía.",
+                    usage=zero_usage(),
+                )
+
+            # Singleton: avoids reloading the embedding model and the Chroma
+            # client on every call (and avoids "database is locked").
+            if getattr(self, "_rag_db", None) is None:
+                self._rag_db = VectorDB()
+            db = self._rag_db
+
+            try:
+                db.get_collection(collection)
+            except ValueError:
+                return make_error_response(
+                    message=f"La colección '{collection}' no existe.",
+                    usage=zero_usage(),
+                )
+
+            results = db.query(collection, query, n_results=10)
+            return make_success_response(
+                message=f"Resultados de '{collection}'.",
+                data=results,
+                usage=zero_usage(),
+            )
+        except Exception as e:
+            logger.exception("Error in rag: %s", e)
+            log_error(str(e), source="tools.py:rag")
+            return make_error_response(
+                message="Error consultando la colección.",
+                usage=zero_usage(),
+            )
+
     async def task(self, agent_name: str, prompt: str) -> dict:
         """Delegate work to a sub-agent.
 

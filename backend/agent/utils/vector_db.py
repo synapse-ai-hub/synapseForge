@@ -23,7 +23,7 @@ from backend.agent.utils.config_dir import get_knowledge_dir
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "all-MiniLM-L6-v2"
+_DEFAULT_MODEL = "all-mpnet-base-v2"
 
 
 class VectorDB:
@@ -42,7 +42,7 @@ class VectorDB:
             collection_name: Si se pasa, crea/obtiene automáticamente
                 esa colección y la deja como ``self.collection``.
         """
-        self.chroma_path = str(get_knowledge_dir())
+        self.chroma_path = get_knowledge_dir()
         self.chroma_path.mkdir(parents=True, exist_ok=True)
 
         self._client = chromadb.PersistentClient(path=str(self.chroma_path))
@@ -163,7 +163,7 @@ class VectorDB:
         try:
             self._client.delete_collection(name)
             logger.info("Colección '%s' eliminada.", name)
-        except ValueError:
+        except (ValueError, chromadb.errors.NotFoundError):
             logger.warning("Colección '%s' no existe.", name)
 
     def get_collection_info(self, name: str) -> dict[str, Any]:

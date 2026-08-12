@@ -453,12 +453,17 @@ export function SkillInterface() {
                   );
                   setIsStreaming(false);
                   if (data.status === "success") {
+                    const alreadyExists = !!(data.data && data.data.exist === "Sí" && data.data.skill);
                     let msg = data.message || "";
-                    if (data.data && data.data.exist === "Sí" && data.data.skill) {
+                    if (alreadyExists) {
                       msg = "Ya existe la skill \u00ab" + data.data.skill + "\u00bb. " + (data.data.explicacion || data.message);
                     }
                     setResultType("success");
                     setResultMsg(msg);
+                    // La ventana se cierra sola cuando la skill se crea.
+                    if (!alreadyExists) {
+                      setTimeout(() => window.close(), 1500);
+                    }
                   } else {
                     setResultType("error");
                     setResultMsg("Error: " + (data.message || "Error desconocido"));

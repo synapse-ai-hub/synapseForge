@@ -98,13 +98,13 @@
           <h2>Overview</h2>
           <h3>¿Qué es synapseForge?</h3>
           <p><strong>synapseForge</strong> es un paquete de Python (distribuido en PyPI) que te permite crear proyectos completos de agentes de IA desde cero. Con un solo comando, generás un proyecto full-stack con backend, frontend, branding, dependencias y todo lo necesario para empezar a trabajar.</p>
-          <p>El foco está puesto en que puedas dedicarte a definir el comportamiento del agente — sus skills, tools, sub-agentes y reglas de negocio — sin tener que armar la infraestructura técnica cada vez.</p>
+          <p>El foco está puesto en que puedas dedicarte a definir el comportamiento del agente — sus skills, tools, sub-agentes, base de conocimiento (RAG) y reglas de negocio — sin tener que armar la infraestructura técnica cada vez.</p>
           <h3>¿Qué obtenés al usar synapseForge?</h3>
           <ul>
             <li>Una <strong>CLI</strong> con comandos claros para crear, personalizar, ejecutar y empaquetar proyectos.</li>
             <li>Un <strong>backend</strong> robusto listo para producción con FastAPI, streaming en tiempo real, persistencia y motor de agentes.</li>
-            <li>Un <strong>frontend</strong> moderno con chat, historial, adjuntos y panel de configuración.</li>
-            <li>Un <strong>sistema de agentes extensible</strong> basado en archivos Markdown: skills, tools externas y sub-agentes se cargan dinámicamente.</li>
+            <li>Un <strong>frontend</strong> moderno con chat, historial, adjuntos, panel de configuración y base de conocimiento.</li>
+            <li>Un <strong>sistema de agentes extensible</strong> basado en archivos Markdown: skills, tools externas, sub-agentes y colecciones RAG se cargan dinámicamente.</li>
             <li>Un <strong>build distribuible</strong>: con un comando compilás todo a un .exe + frontend estático, empaquetado en un zip.</li>
           </ul>
         </section>
@@ -132,8 +132,8 @@ synapseForge run .
             <tbody>
               <tr><td><code>synapseForge init [directorio]</code></td><td>Crea un proyecto nuevo desde la plantilla (con GUI)</td></tr>
               <tr><td><code>synapseForge colors [directorio]</code></td><td>Edita solo la paleta de colores de un proyecto existente</td></tr>
-              <tr><td><code>synapseForge run [directorio]</code></td><td>Levanta el proyecto en modo desarrollo</td></tr>
-              <tr><td><code>synapseForge launch &lt;directorio&gt; &lt;nombre&gt;</code></td><td>Compila todo a un .exe + zip distribuible</td></tr>
+              <tr><td><code>synapseForge run [directorio]</code></td><td>Levanta el proyecto en modo desarrollo (requiere el venv activado)</td></tr>
+              <tr><td><code>synapseForge launch -p &lt;directorio&gt; -n &lt;nombre&gt;</code></td><td>Compila todo a un .exe + zip distribuible</td></tr>
             </tbody>
           </table>
         </section>
@@ -177,14 +177,15 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <p>Cuando ejecutás <code>init</code>, se abre una ventana con los siguientes pasos:</p>
           <ol>
             <li><strong>Datos del proyecto</strong> — Cargás el logo de la empresa, el logo del cliente (opcional), nombre de empresa, owner, legal, nombre del repositorio, nombre del cliente y colores hexadecimales (opcional).</li>
+            <li><strong>Modelos Ollama</strong> — Se verifica que los modelos requeridos estén instalados; si falta <code>qwen3.5:4b</code> se instala automáticamente.</li>
             <li><strong>Extracción de la plantilla</strong> — Se toma la plantilla base (incluida en el paquete o descargada desde GitHub) y se copia al directorio destino.</li>
             <li><strong>Entorno virtual</strong> — Se crea un <code>venv</code> aislado dentro del proyecto.</li>
             <li><strong>Dependencias de Python</strong> — Se instalan las dependencias del backend dentro del venv.</li>
             <li><strong>Dependencias de Node</strong> — Se corre <code>npm install</code> en el frontend.</li>
-            <li><strong>Configuración</strong> — Se guardan todos los datos ingresados en un archivo de configuración.</li>
             <li><strong>Logos</strong> — Se copia el logo de empresa a la carpeta <code>src/</code> y el logo de cliente al frontend.</li>
             <li><strong>Favicon</strong> — Se genera automáticamente un <code>.ico</code> a partir del logo del cliente.</li>
-            <li><strong>Colores</strong> — Si no ingresaste colores manualmente, se extraen del logo del cliente los tres colores dominantes.</li>
+            <li><strong>Colores</strong> — Si no ingresaste colores manualmente, se extraen del logo del cliente los colores dominantes.</li>
+            <li><strong>Configuración</strong> — Se guardan todos los datos ingresados en un archivo de configuración.</li>
             <li><strong>Reemplazo de placeholders</strong> — Se reemplazan todos los placeholders (nombre de empresa, colores, etc.) en cada archivo del proyecto.</li>
           </ol>
           <h3>Los colores del proyecto</h3>
@@ -207,7 +208,8 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
 ├── backend/             # Backend FastAPI
 ├── frontend/            # Frontend React + Vite + TypeScript
 ├── config/              # Configuración del proyecto
-├── docs/                # Documentación incluida
+├── store/               # Store de tools y skills
+├── on_boarding/         # Onboarding para desarrolladores
 ├── .env.example
 ├── .gitignore
 ├── LICENSE
@@ -217,7 +219,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
         <section id="configuracion-externa">
           <h2>Configuración externa del usuario</h2>
           <h3>¿Qué es?</h3>
-          <p>Además de los archivos del proyecto, synapseForge lee archivos del usuario desde una carpeta de configuración personal. Acá viven tus tools personalizadas, tus agentes definidos a medida, tus skills y la configuración de servidores MCP.</p>
+          <p>Además de los archivos del proyecto, synapseForge lee archivos del usuario desde una carpeta de configuración personal. Acá viven tus tools personalizadas, tus agentes definidos a medida, tus skills, tus colecciones RAG y la configuración de servidores MCP.</p>
           <h3>¿Dónde está esa carpeta?</h3>
           <ul>
             <li><strong>En Linux o macOS:</strong> <code>~/.config/synapseForge/</code></li>
@@ -255,6 +257,32 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </ul>
         </section>
 
+        <section id="rag">
+          <h2>Base de conocimiento (RAG)</h2>
+          <h3>¿Qué es?</h3>
+          <p>El sistema de <strong>RAG</strong> (Retrieval-Augmented Generation) te permite armar una <strong>base de conocimiento</strong> que el agente consulta para responder con información específica de tu dominio. El contenido se guarda en <strong>colecciones vectoriales</strong> (ChromaDB) y se busca por <strong>similitud coseno</strong>.</p>
+          <h3>¿Cómo se organiza?</h3>
+          <p>El contenido se agrupa en <strong>colecciones</strong>. Cada colección es un tema o fuente de información independiente (similar a NotebookLM). Podés tener tantas colecciones como necesites, y cada agente accede solo a las que tiene permitidas.</p>
+          <h3>¿Qué podés cargar?</h3>
+          <ul>
+            <li><strong>Archivos</strong> — PDF, Word (DOCX/DOC), TXT, Markdown, CSV, XLSX/XLS, JSON, XML, YAML, Python. Se extrae el texto, se divide en <strong>chunks</strong> (con overlap inteligente) y se guarda.</li>
+            <li><strong>Páginas web</strong> — Se fetchea el contenido, se convierte a texto, se divide en chunks y se guarda. La URL se conserva en el metadata y el HTML crudo en el primer chunk.</li>
+          </ul>
+          <h3>¿Cómo se crea una colección?</h3>
+          <p>Desde la pestaña <strong>Crear → Gestionar RAG</strong> (modo dev) se abre la página de gestión de RAG, donde podés:</p>
+          <ol>
+            <li>Crear una colección con un nombre (en minúsculas, sin espacios, solo <code>[a-z0-9-]</code>, mínimo 3 caracteres).</li>
+            <li>Seleccionar la colección y subir archivos (arrastrá y soltá o seleccioná) o agregar una URL.</li>
+            <li>Eliminar colecciones cuando ya no las necesites.</li>
+          </ol>
+          <h3>¿Cómo la usa el agente?</h3>
+          <p>El agente usa la tool nativa <code>rag</code> para consultar una colección. Devuelve los <strong>5 chunks más similares</strong> a la consulta. <strong>Deny by default</strong>: un agente solo puede consultar las colecciones que declara explícitamente en su frontmatter:</p>
+          <pre><code>permission:
+  rag:
+    mi_coleccion: allow</code></pre>
+          <p>Esto te permite tener muchas colecciones y darle a cada agente solo las que necesita.</p>
+        </section>
+
         <section id="skills">
           <h2>Skills</h2>
           <h3>¿Qué es una skill?</h3>
@@ -277,15 +305,12 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </blockquote>
           <hr/>
           <h3>Cómo crear una skill</h3>
+          <p>Podés crear una skill de dos formas:</p>
           <ol>
-            <li>Creá una subcarpeta dentro de <code>~/.config/synapseForge/skills/</code> con un nombre corto y descriptivo (en minúsculas, sin espacios). El nombre de la carpeta es el identificador de la skill.</li>
-            <li>Dentro, creá el archivo <code>SKILL.md</code>.</li>
-            <li>Al inicio del archivo, agregá los metadatos en frontmatter YAML: <code>name</code> y <code>description</code> (mínimo). La descripción es lo primero que ve el modelo: tiene que decir <strong>cuándo</strong> se usa la skill.</li>
-            <li>Debajo, escribí el cuerpo con las instrucciones, convenciones, formato de respuesta esperado y, si querés, una sección <code>## Reference Guide</code> con documentación de referencia.</li>
-            <li>(Opcional) Agregá una subcarpeta <code>references/</code> con archivos que la skill pueda cargar bajo demanda usando la tool <code>reference</code>.</li>
-            <li>En el agente que va a usar la skill, declará el permiso en el frontmatter: <code>permission.skill.{nombre_skill}: allow</code>.</li>
-            <li>Reiniciá el backend para que la nueva skill se cargue.</li>
+            <li><strong>Manualmente</strong>: creá una subcarpeta dentro de <code>~/.config/synapseForge/skills/</code> con un nombre corto y descriptivo (en minúsculas, sin espacios), y dentro un archivo <code>SKILL.md</code> con frontmatter YAML (<code>name</code> y <code>description</code> mínimo) y el cuerpo con las instrucciones.</li>
+            <li><strong>Con el LLM</strong>: desde la pestaña <strong>Crear → Crear Skill</strong> (modo dev) o por Telegram. El LLM hace una entrevista iterativa y genera el <code>SKILL.md</code> y los archivos necesarios automáticamente.</li>
           </ol>
+          <p>En el agente que va a usar la skill, declará el permiso en el frontmatter: <code>permission.skill.{nombre_skill}: allow</code>. Reiniciá el backend para que la nueva skill se cargue.</p>
           <h3>Buenas prácticas</h3>
           <ul>
             <li>El nombre de la carpeta es el identificador: usá nombres únicos y descriptivos.</li>
@@ -322,11 +347,15 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>grep</code></td><td>Búsqueda de contenido en archivos usando expresiones regulares.</td></tr>
               <tr><td><code>webfetch</code></td><td>Descarga el contenido de una URL y lo convierte a markdown, texto o HTML.</td></tr>
               <tr><td><code>websearch</code></td><td>Busca en la web usando DuckDuckGo.</td></tr>
-              <tr><td><code>shell</code></td><td>Ejecuta un comando en la terminal del sistema.</td></tr>
+              <tr><td><code>shell</code></td><td>Ejecuta un comando en la terminal del sistema (async, con timeout y cancelación).</td></tr>
+              <tr><td><code>list_dir</code></td><td>Lista un directorio.</td></tr>
               <tr><td><code>task</code></td><td>Delega una tarea a un sub-agente especializado.</td></tr>
               <tr><td><code>skill</code></td><td>Carga el contenido de una skill por nombre.</td></tr>
               <tr><td><code>reference</code></td><td>Carga un archivo de referencia específico de una skill.</td></tr>
+              <tr><td><code>rag</code></td><td>Consulta una colección RAG (solo las permitidas en <code>permission.rag</code>).</td></tr>
               <tr><td><code>check_email</code></td><td>Verifica correos no leídos en un buzón IMAP.</td></tr>
+              <tr><td><code>send_email</code></td><td>Envía un email.</td></tr>
+              <tr><td><code>help</code></td><td>Documentación interna de las tools.</td></tr>
             </tbody>
           </table>
           <h3>Características clave</h3>
@@ -392,14 +421,14 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <ul>
             <li>Las tools de cada servidor se descubren automáticamente al iniciar y se registran como tools del agente.</li>
             <li>Cada servidor tiene su propio timeout: si falla o no responde, <strong>se aísla</strong> — se marca en rojo en la interfaz y el resto del sistema sigue funcionando normalmente.</li>
-            <li>El estado de cada servidor se muestra en la pestaña <strong>MCP</strong> del panel de configuración: <strong>Conectado</strong> (verde) o <strong>Error</strong> (rojo).</li>
+            <li>El estado de cada servidor se muestra en la pestaña <strong>MCP</strong> del panel de agentes: <strong>Conectado</strong> (verde) o <strong>Error</strong> (rojo).</li>
           </ul>
         </section>
 
         <section id="subagentes">
           <h2>Sub-agentes</h2>
           <h3>¿Qué es un sub-agente?</h3>
-          <p>El sistema permite que un agente delegue tareas a <strong>sub-agentes especializados</strong>. Cada sub-agente es una configuración completa con su propio prompt, sus propias tools permitidas, sus propias skills permitidas y sus propios parámetros del modelo.</p>
+          <p>El sistema permite que un agente delegue tareas a <strong>sub-agentes especializados</strong>. Cada sub-agente es una configuración completa con su propio prompt, sus propias tools permitidas, sus propias skills permitidas, sus propias colecciones RAG permitidas y sus propios parámetros del modelo.</p>
           <p>Esto te permite construir sistemas complejos donde cada agente se enfoca en lo que sabe hacer, en lugar de tener un solo agente gigante que intenta hacer todo.</p>
           <h3>¿Cómo se define un agente?</h3>
           <p>Cada agente es un archivo <code>.md</code> dentro de <code>~/.config/synapseForge/agents/</code>. El archivo tiene dos partes: metadatos al inicio (en formato YAML) y el cuerpo con la instrucción del agente (en Markdown).</p>
@@ -409,7 +438,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li><strong>Nombre</strong> — Identificador del agente. Tiene que coincidir con el nombre del archivo (sin la extensión <code>.md</code>).</li>
             <li><strong>Descripción</strong> — Una línea que describe qué hace el agente. Se usa en listados y búsquedas.</li>
             <li><strong>Parámetros del modelo</strong> — Temperatura, top-p, modelo, semilla, etc.</li>
-            <li><strong>Permisos</strong> — Qué tools y skills puede usar este agente, y cuáles no.</li>
+            <li><strong>Permisos</strong> — Qué tools, skills y colecciones RAG puede usar este agente, y cuáles no.</li>
           </ul>
           <h3>Parámetros del modelo</h3>
           <p>Podés ajustar cómo se comporta el modelo cuando ejecuta este agente:</p>
@@ -426,7 +455,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             </tbody>
           </table>
           <h3>Permisos</h3>
-          <p>El sistema de permisos te permite controlar qué tools y skills están disponibles para cada agente. <strong>Deny by default</strong>: si un agente no declara permisos, no tiene acceso a ninguna tool ni skill. Cada agente debe declarar explícitamente qué tools y skills puede usar.</p>
+          <p>El sistema de permisos te permite controlar qué tools, skills y colecciones RAG están disponibles para cada agente. <strong>Deny by default</strong>: si un agente no declara permisos, no tiene acceso a ninguna tool, skill ni colección. Cada agente debe declarar explícitamente qué puede usar.</p>
           <blockquote>
             <strong>Nota sobre contexto:</strong> tanto las tools como las skills disponibles consumen contexto de ventana. Se recomienda que cada agente declare solo las que realmente necesita para sus tareas específicas.
           </blockquote>
@@ -444,7 +473,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>Cómo crear un agente</h3>
           <ol>
             <li>Creá un archivo <code>nombre-agente.md</code> directamente en <code>~/.config/synapseForge/agents/</code>. El nombre del archivo (sin <code>.md</code>) es el identificador.</li>
-            <li>Al inicio del archivo, escribí los metadatos en frontmatter YAML: nombre (debe coincidir con el archivo), descripción, parámetros del modelo y permisos de tools/skills.</li>
+            <li>Al inicio del archivo, escribí los metadatos en frontmatter YAML: nombre (debe coincidir con el archivo), descripción, parámetros del modelo y permisos de tools/skills/rag.</li>
             <li>Debajo, escribí el cuerpo con la instrucción del agente: personalidad, reglas, formato de respuesta, etc.</li>
             <li>El agente queda disponible para ser invocado por otros agentes (incluido el principal) usando el comando de delegación de tareas.</li>
             <li>Reiniciá el backend para que el nuevo agente se cargue en el sistema.</li>
@@ -457,25 +486,32 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
         <section id="interfaz-usuario">
           <h2>Interfaz de usuario</h2>
           <h3>¿Qué incluye?</h3>
-          <p>La aplicación incluye una interfaz web moderna con chat, historial de conversaciones y un panel de configuración. La interfaz se abre automáticamente cuando ejecutás <code>synapseForge run</code>.</p>
+          <p>La aplicación incluye una interfaz web moderna con chat, historial de conversaciones, un panel de configuración y un panel de agentes. La interfaz se abre automáticamente cuando ejecutás <code>synapseForge run</code>.</p>
           <h3>Creación (modo desarrollador)</h3>
-          <p>El panel lateral incluye una sección <strong>Crear</strong> con 4 pestañas: <strong>Skills</strong>, <strong>Tools</strong>, <strong>Agentes</strong> y <strong>RAG</strong>. Cada una abre un formulario standalone en una nueva pestaña del navegador:</p>
+          <p>El panel lateral incluye una sección <strong>Crear</strong> (modo dev) con accesos a las páginas standalone que se abren en una nueva pestaña del navegador:</p>
           <ul>
-            <li><strong>Skill</strong>: formulario con nombre, tarea, cuándo usarla, cuándo NO, y material de referencia. El LLM busca skills existentes que coincidan; si no encuentra, genera una nueva.</li>
-            <li><strong>Tool</strong>: formulario para crear una tool externa. El LLM genera el código Python con la estructura requerida.</li>
-            <li><strong>Agente</strong>: formulario para crear un agente con permisos, parámetros del modelo y prompt personalizado.</li>
-            <li><strong>RAG</strong>: formulario para crear una colección RAG subiendo archivos y URLs, procesada con ChromaDB.</li>
+            <li><strong>Crear Skill</strong>: formulario con nombre, tarea, cuándo usarla, cuándo NO, y material de referencia. El LLM busca skills existentes que coincidan; si no encuentra, genera una nueva.</li>
+            <li><strong>Gestionar RAG</strong>: página para crear colecciones RAG, subir archivos y agregar URLs, procesada con ChromaDB.</li>
           </ul>
-          <p>Cada formulario muestra un indicador de trabajo (tres bolitas animadas) mientras el backend procesa. Al finalizar, muestra un mensaje de éxito y un botón Aceptar que cierra la pestaña.</p>
+          <p>Cada página muestra un indicador de trabajo mientras el backend procesa. Al finalizar, muestra un mensaje de éxito.</p>
+          <h3>Panel de agentes (modo desarrollador)</h3>
+          <p>La pestaña <strong>Agente</strong> (modo dev) muestra el estado de los elementos del agente, con opción de eliminarlos:</p>
+          <ul>
+            <li><strong>Tools</strong> — Lista las tools disponibles (nativas + externas) con su descripción.</li>
+            <li><strong>Skills</strong> — Lista las skills instaladas.</li>
+            <li><strong>Agentes</strong> — Lista los sub-agentes configurados.</li>
+            <li><strong>MCP</strong> — Lista los servidores MCP con su estado (Conectado/Error).</li>
+            <li><strong>RAG</strong> — Lista las colecciones de la base de conocimiento.</li>
+          </ul>
           <h3>Panel de configuración</h3>
-          <p>En el panel lateral derecho, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
+          <p>En el panel lateral, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
           <h4>Proveedor y modelo</h4>
           <p>Podés seleccionar el proveedor de modelos (Ollama local o Groq API) y el modelo específico a utilizar. La selección se persiste entre sesiones.</p>
           <h4>Contexto (turnos)</h4>
           <p>Controla cuántos turnos de conversación se mantienen en el contexto del modelo. <code>-1</code> significa todo el historial. Reducir este número ayuda a controlar el uso de tokens y el costo.</p>
           <h4>Modo verbose</h4>
           <p>Activando el modo verbose, la interfaz muestra tarjetas visuales para las llamadas a tools y las delegaciones a sub-agentes, lo que facilita entender qué está haciendo el agente en cada momento.</p>
-          <h4>Contexto del agente</h4>
+          <h4>Instrucciones y documentos</h4>
           <p>Podés subir archivos (PDF, Word, TXT, Markdown, CSV, JSON, YAML, XML, Python) que se usarán como contexto adicional para el agente. Estos archivos se procesan y se inyectan en el system prompt del agente, proporcionando información de empresa, instrucciones o datos de referencia. Los archivos subidos aparecen en una lista con opción de eliminarlos individualmente.</p>
           <h3>Chat</h3>
           <p>La interfaz de chat muestra los mensajes de usuario y asistente en burbujas. Los mensajes del asistente pueden incluir:</p>
@@ -485,19 +521,22 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li><strong>Tarjetas de sub-agente</strong> — Cuando se delega a un sub-agente, se muestra el nombre y el resultado.</li>
             <li><strong>Adjuntos</strong> — Los archivos que el usuario sube aparecen como chips debajo del mensaje.</li>
           </ul>
+          <h3>Gauge de contexto</h3>
+          <p>En el header del chat hay un <strong>velocímetro</strong> que muestra el porcentaje de ventana de contexto usado por la sesión actual. Se llena de verde a rojo a medida que se acerca al límite del modelo.</p>
           <h3>Historial</h3>
-          <p>En el panel lateral izquierdo, bajo la pestaña <strong>Conversaciones</strong>, se listan todas las sesiones de chat. Podés crear nuevas conversaciones, seleccionar sesiones anteriores y eliminar conversaciones existentes.</p>
+          <p>En el panel lateral, bajo la pestaña <strong>Conversaciones</strong>, se listan todas las sesiones de chat. Podés crear nuevas conversaciones, seleccionar sesiones anteriores y eliminar conversaciones existentes.</p>
         </section>
 
         <section id="telegram">
           <h2>Telegram</h2>
           <h3>¿Qué es?</h3>
-          <p>El template incluye un <strong>bot de Telegram</strong> que actúa como puente hacia el agente. El bot hace <strong>long-polling</strong> contra la Telegram Bot API, pero <strong>no ejecuta el agent loop</strong>: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía <code>/api/events</code> y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.</p>
+          <p>El template incluye un <strong>bot de Telegram</strong> que actúa como control remoto del agente. El bot hace <strong>long-polling</strong> contra la Telegram Bot API, pero <strong>no ejecuta el agent loop</strong>: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía <code>/api/events</code> y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.</p>
           <h3>Arquitectura</h3>
           <ul>
-            <li>El bot <strong>solo emite eventos</strong> (<code>telegram_message</code>, <code>telegram_command</code>) al event bus.</li>
+            <li>El bot <strong>solo emite eventos</strong> (<code>telegram_message</code>, <code>telegram_command</code>, <code>telegram_create</code>) al event bus.</li>
             <li>El frontend recibe esos eventos y ejecuta el flujo normal (<code>chatService.sendMessage</code> → <code>POST /api/chat</code>).</li>
             <li>Al terminar el request, el backend entrega la respuesta final a Telegram.</li>
+            <li>Para la creación de skills/RAG, el bot emite <code>telegram_create</code> con <code>open</code>/<code>close</code> para abrir/cerrar la ventana correspondiente en el frontend.</li>
           </ul>
           <h3>Variables de entorno</h3>
           <table>
@@ -517,9 +556,10 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <tbody>
               <tr><td><code>/sesiones</code></td><td>Lista las sesiones (títulos).</td></tr>
               <tr><td><code>/usar</code></td><td>Cambia a una sesión por título (pregunta y espera respuesta).</td></tr>
-              <tr><td><code>/cancelar</code></td><td>Cancela cualquier comando en espera.</td></tr>
+              <tr><td><code>/cancelar</code></td><td>Cancela cualquier comando en espera o sale del modo de creación.</td></tr>
               <tr><td><code>/nueva</code></td><td>Crea un chat nuevo.</td></tr>
               <tr><td><code>/actual</code></td><td>Muestra la sesión actual (solo el título).</td></tr>
+              <tr><td><code>/contexto</code></td><td>Muestra la ventana de contexto actual.</td></tr>
               <tr><td><code>/borrar</code></td><td>Borra un chat (pregunta y espera respuesta).</td></tr>
               <tr><td><code>/detener</code></td><td>Detiene la tarea en curso.</td></tr>
               <tr><td><code>/proveedor</code></td><td>Cambia el proveedor (LOCAL/API, pregunta y espera respuesta).</td></tr>
@@ -527,11 +567,17 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>/skills</code></td><td>Lista skills (solo dev).</td></tr>
               <tr><td><code>/tools</code></td><td>Lista tools (solo dev).</td></tr>
               <tr><td><code>/agentes</code></td><td>Lista agentes (solo dev).</td></tr>
-              <tr><td><code>/crear</code></td><td>Crea skill/tool/agente (solo dev, no implementado).</td></tr>
+              <tr><td><code>/crear</code></td><td>Crea skill o RAG (solo dev). Pregunta qué crear y guía el flujo.</td></tr>
               <tr><td><code>/ayuda</code></td><td>Muestra la ayuda.</td></tr>
             </tbody>
           </table>
-          <p>Los comandos que necesitan un argumento (<code>/usar</code>, <code>/borrar</code>, <code>/proveedor</code>, <code>/modelo</code>) usan un sistema de <strong>pregunta y respuesta</strong>: el bot muestra la lista de opciones y espera que el usuario responda con el texto. <code>/cancelar</code> (o la palabra "cancelar") aborta la espera.</p>
+          <p>Los comandos que necesitan un argumento (<code>/usar</code>, <code>/borrar</code>, <code>/proveedor</code>, <code>/modelo</code>, <code>/crear</code>) usan un sistema de <strong>pregunta y respuesta</strong>: el bot muestra la lista de opciones y espera que el usuario responda con el texto. <code>/cancelar</code> (o la palabra "cancelar") aborta la espera.</p>
+          <h3>Creación de skills y RAG por Telegram</h3>
+          <p>El bot detecta la intención de crear una skill o un RAG (por ejemplo, "crear skill" o "crear rag") y entra en un <strong>modo de creación</strong>:</p>
+          <ul>
+            <li><strong>Skill</strong>: abre la página de creación de skills en el frontend y guía la entrevista. Al crear la skill, la ventana se cierra.</li>
+            <li><strong>RAG</strong>: abre la página de gestión de RAG en el frontend. Tras cada acción (crear colección, subir archivo, agregar URL) pregunta en Telegram si querés terminar; respondé "sí" para cerrar la ventana o "no" para seguir. El comando <code>terminar</code> también cierra la ventana.</li>
+          </ul>
           <h3>Funcionalidades</h3>
           <ul>
             <li><strong>Notas de voz</strong>: se transcriben localmente con faster-whisper y se envían como mensaje.</li>
@@ -544,19 +590,17 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
         <section id="api">
           <h2>API Reference</h2>
           <h3>¿Qué expone el backend?</h3>
-          <p>El backend expone una API HTTP con streaming para el chat, y endpoints REST para gestionar sesiones, configuración y otras operaciones.</p>
+          <p>El backend expone una API HTTP con streaming para el chat, y endpoints REST para gestionar sesiones, configuración, base de conocimiento y otras operaciones.</p>
           <h3>Endpoints principales</h3>
           <table>
             <thead>
               <tr><th>Método</th><th>Ruta</th><th>Descripción</th></tr>
             </thead>
             <tbody>
-              <tr><td>POST</td><td><code>/api/chat/stream</code></td><td>Enviar un mensaje al agente. La respuesta se recibe por streaming (SSE).</td></tr>
-              <tr><td>POST</td><td><code>/api/create/skill</code></td><td>Crear una skill mediante LLM (formulario standalone).</td></tr>
-              <tr><td>POST</td><td><code>/api/create/tool</code></td><td>Crear una tool externa mediante LLM.</td></tr>
-              <tr><td>POST</td><td><code>/api/create/agent</code></td><td>Crear un agente con permisos y prompt mediante LLM.</td></tr>
-              <tr><td>POST</td><td><code>/api/create/rag</code></td><td>Crear una colección RAG a partir de archivos y URLs.</td></tr>
+              <tr><td>POST</td><td><code>/api/chat</code></td><td>Enviar un mensaje al agente. La respuesta se recibe por streaming (SSE).</td></tr>
+              <tr><td>POST</td><td><code>/api/create/skill</code></td><td>Crear una skill mediante LLM (entrevista + agente, streaming SSE).</td></tr>
               <tr><td>GET</td><td><code>/api/sessions</code></td><td>Listar todas las sesiones de chat.</td></tr>
+              <tr><td>GET</td><td><code>/api/sessions/titles</code></td><td>Listar los títulos de las sesiones.</td></tr>
               <tr><td>GET</td><td><code>/api/sessions/{id}</code></td><td>Cargar una sesión completa con todos sus mensajes.</td></tr>
               <tr><td>DELETE</td><td><code>/api/sessions/{id}</code></td><td>Eliminar una sesión y todos sus datos asociados.</td></tr>
               <tr><td>POST</td><td><code>/api/heartbeat</code></td><td>Keep-alive del frontend (latido cada 10 segundos).</td></tr>
@@ -567,8 +611,31 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td>POST</td><td><code>/api/config/context-window</code></td><td>Configurar el límite de turnos en contexto.</td></tr>
               <tr><td>GET</td><td><code>/api/config/verbose-mode</code></td><td>Obtener el estado del modo verbose.</td></tr>
               <tr><td>POST</td><td><code>/api/config/verbose-mode</code></td><td>Activar o desactivar el modo verbose.</td></tr>
-              <tr><td>GET</td><td><code>/api/config/mcp/servers</code></td><td>Listar servidores MCP configurados.</td></tr>
-              <tr><td>GET</td><td><code>/api/config/mcp/health</code></td><td>Verificar salud de servidores MCP.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/skills</code></td><td>Listar skills disponibles.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/tools</code></td><td>Listar tools disponibles.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/agents</code></td><td>Listar sub-agentes disponibles.</td></tr>
+              <tr><td>GET</td><td><code>/api/config/mcp</code></td><td>Listar servidores MCP con su estado.</td></tr>
+              <tr><td>GET/POST</td><td><code>/api/context-files</code></td><td>Listar / subir archivos de contexto (instrucciones y documentos).</td></tr>
+              <tr><td>DELETE</td><td><code>/api/context-files/{id}</code></td><td>Eliminar un archivo de contexto.</td></tr>
+              <tr><td>GET</td><td><code>/api/metrics/overview</code></td><td>Métricas agregadas (sesiones, mensajes, tools, errores).</td></tr>
+              <tr><td>GET</td><td><code>/api/metrics/sessions</code></td><td>Métricas por sesión.</td></tr>
+              <tr><td>GET</td><td><code>/api/metrics/tools</code></td><td>Uso de tools.</td></tr>
+              <tr><td>GET</td><td><code>/api/metrics/errors</code></td><td>Métricas de errores.</td></tr>
+              <tr><td>GET</td><td><code>/api/rag/collections</code></td><td>Listar colecciones RAG.</td></tr>
+              <tr><td>POST</td><td><code>/api/rag/collections</code></td><td>Crear una colección RAG.</td></tr>
+              <tr><td>DELETE</td><td><code>/api/rag/collections/{name}</code></td><td>Eliminar una colección RAG.</td></tr>
+              <tr><td>POST</td><td><code>/api/rag/collections/{name}/files</code></td><td>Subir archivos a una colección (extracción + chunking).</td></tr>
+              <tr><td>POST</td><td><code>/api/rag/collections/{name}/urls</code></td><td>Agregar una página web a una colección.</td></tr>
+              <tr><td>GET</td><td><code>/api/agent/knowledge</code></td><td>Listar colecciones de la base de conocimiento.</td></tr>
+              <tr><td>DELETE</td><td><code>/api/agent/skills/{name}</code></td><td>Eliminar una skill.</td></tr>
+              <tr><td>DELETE</td><td><code>/api/agent/tools/{name}</code></td><td>Eliminar una tool externa.</td></tr>
+              <tr><td>DELETE</td><td><code>/api/agent/agents/{name}</code></td><td>Eliminar un agente.</td></tr>
+              <tr><td>DELETE</td><td><code>/api/agent/mcp/{label}</code></td><td>Eliminar un servidor MCP.</td></tr>
+              <tr><td>DELETE</td><td><code>/api/agent/knowledge/{collection}</code></td><td>Eliminar una colección RAG.</td></tr>
+              <tr><td>GET</td><td><code>/api/events</code></td><td>Streaming SSE del event bus (Telegram → Frontend).</td></tr>
+              <tr><td>GET</td><td><code>/api/telegram/status</code></td><td>Estado del bot de Telegram.</td></tr>
+              <tr><td>POST</td><td><code>/api/telegram/toggle</code></td><td>Activar/desactivar el bot de Telegram.</td></tr>
+              <tr><td>GET/POST</td><td><code>/api/telegram/active-session</code></td><td>Obtener/establecer la sesión activa compartida.</td></tr>
               <tr><td>POST</td><td><code>/api/shutdown</code></td><td>Cerrar el backend de forma ordenada.</td></tr>
             </tbody>
           </table>
@@ -579,14 +646,16 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li><strong>tool_call</strong> — El modelo decidió usar una tool. Incluye el nombre y los argumentos.</li>
             <li><strong>tool_result</strong> — La respuesta que devolvió la tool.</li>
             <li><strong>subagent_event</strong> — El agente principal delegó a un sub-agente. Incluye el nombre del sub-agente y su contenido.</li>
+            <li><strong>session_title</strong> — El título generado para la sesión.</li>
             <li><strong>done</strong> — Marca el final del stream e incluye el ID de la sesión.</li>
+            <li><strong>error</strong> — Un error durante el procesamiento.</li>
           </ul>
           <h3>Modelo de sesión</h3>
           <ul>
             <li>Cada sesión tiene un <strong>ID único</strong> que se crea al enviar el primer mensaje.</li>
             <li>Los mensajes se numeran por <strong>turnos</strong> dentro de cada sesión.</li>
             <li>Los <strong>adjuntos</strong> (archivos) se almacenan vinculados a la sesión y al turno correspondiente.</li>
-            <li><strong>Límite de adjuntos</strong>: hasta 3 archivos por mensaje, con un máximo total configurable. Esto se hace para cuidar el contexto del modelo.</li>
+            <li><strong>Límite de adjuntos</strong>: hasta 3 archivos por mensaje, con un máximo total de 25 MB. Esto se hace para cuidar el contexto del modelo.</li>
           </ul>
         </section>
 
@@ -602,13 +671,15 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </ul>
           <h3>Levantar el proyecto</h3>
           <pre><code>cd mi-proyecto
+# Activar el entorno virtual primero
+.venv\Scripts\activate        # Windows
+source .venv/bin/activate     # Linux/Mac
 synapseForge run .</code></pre>
           <p>Este comando:</p>
           <ol>
-            <li>Activa el entorno virtual del proyecto.</li>
-            <li>Levanta el backend con autoreload (los cambios se reflejan automáticamente).</li>
+            <li>Verifica que el entorno virtual esté activado.</li>
+            <li>Levanta el backend con autoreload (los cambios se reflejan automáticamente) y espera a que responda.</li>
             <li>Levanta el frontend con Vite, que incluye hot-reload de los cambios.</li>
-            <li>Configura CORS entre ambos.</li>
             <li>Abre el navegador automáticamente en la URL del frontend.</li>
           </ol>
           <h3>Configurar las claves de tu proveedor</h3>
@@ -617,9 +688,9 @@ synapseForge run .</code></pre>
 # Editar .env con PROVIDER, MODEL y API_KEY</code></pre>
           <p>Las variables mínimas que necesitás configurar son:</p>
           <ul>
-            <li><strong>Proveedor</strong> — El servicio que usás para los modelos (OpenAI, Anthropic, Ollama, Groq, etc.).</li>
-            <li><strong>Modelo</strong> — Qué modelo específico querés usar (por ejemplo, <code>gpt-4o-mini</code>).</li>
-            <li><strong>API Key</strong> — Tu clave del proveedor.</li>
+            <li><strong>Proveedor</strong> — El servicio que usás para los modelos (Ollama local o Groq API).</li>
+            <li><strong>Modelo</strong> — Qué modelo específico querés usar.</li>
+            <li><strong>API Key</strong> — Tu clave del proveedor (solo para Groq).</li>
             <li><strong>URL del backend</strong> — Dónde está corriendo el backend (por defecto <code>http://localhost:8000</code>).</li>
           </ul>
           <h3>Probar en otra máquina de la red</h3>
@@ -632,23 +703,12 @@ synapseForge run .</code></pre>
           </ol>
         </section>
 
-        <section id="futuro-vercel">
-          <h2>Integración futura — Skills Vercel</h2>
-          <h3>Integración con Vercel Skills</h3>
-          <p>Se está planificando la integración con el ecosistema de <a href="https://github.com/vercel-labs/skills" target="_blank" rel="noopener noreferrer">Vercel Skills</a> (<code>npx skills</code>), que permite buscar, instalar y gestionar skills desde repositorios públicos. El flujo planeado funciona en dos etapas:</p>
-          <ol>
-            <li><strong>Búsqueda</strong>: ejecutar <code>npx skills find &lt;query&gt;</code> para descubrir skills disponibles en el ecosistema.</li>
-            <li><strong>Evaluación/Instalación</strong>: un LLM evalúa los resultados contra la necesidad del usuario. Si corresponde, instala la skill automáticamente desde su source.</li>
-          </ol>
-          <p>Esto permitirá ampliar el repositorio de skills sin tener que crearlas manualmente, aprovechando el ecosistema abierto de agent skills.</p>
-        </section>
-
         <section id="deploy-cloud">
           <h2>Deploy en cloud</h2>
           <h3>Introducción</h3>
           <p>Para distribuir el agente como producto terminado, synapseForge incluye un comando que compila todo a un ejecutable standalone más el frontend, todo empaquetado en un zip listo para distribuir.</p>
           <h3>Build con el comando launch</h3>
-          <pre><code>synapseForge launch ./mi-proyecto "MiApp"</code></pre>
+          <pre><code>synapseForge launch -p ./mi-proyecto -n "MiApp"</code></pre>
           <p>Este comando hace tres cosas:</p>
           <ol>
             <li><strong>Compila el backend</strong> en un ejecutable standalone que incluye todas las dependencias de Python.</li>

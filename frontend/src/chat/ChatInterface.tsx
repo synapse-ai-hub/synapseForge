@@ -21,10 +21,10 @@ import {
 import LogoImage from "../assets/logo_cliente.png";
 import chatService from "../services/chatService";
 import configService from "../services/configService";
-import { Button } from "./ui/button";
-import { FileChip, FileWarningBanner, MessageRow } from "./chatBlocks";
-import { ContextGauge } from "./ContextGauge";
-import type { Message, SubagentEvent, SubagentStep, ContentBlock } from "../App";
+import { Button } from "../components/ui/button";
+import { FileChip, FileWarningBanner, MessageRow } from "../components/chatBlocks";
+import { ContextGauge } from "../components/ContextGauge";
+import type { Message, SubagentEvent, SubagentStep, ContentBlock } from "../../App";
 
 /* ------------------------------------------------------------------ */
 /*  Exported welcome message for App initialization                   */

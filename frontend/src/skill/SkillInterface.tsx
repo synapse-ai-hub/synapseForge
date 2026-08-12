@@ -9,8 +9,8 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Send, Square, Paperclip } from "lucide-react";
-import { FileChip, FileWarningBanner, MessageRow } from "./chatBlocks";
-import type { Message, ContentBlock } from "../App";
+import { FileChip, FileWarningBanner, MessageRow } from "../components/chatBlocks";
+import type { Message, ContentBlock } from "../../App";
 
 const API = (import.meta.env.VITE_URL_BASE || "http://localhost:8000") + "/api";
 

@@ -339,17 +339,25 @@ class TelegramBot:
     # ------------------------------------------------------------------
 
     def _detect_intent(self, text: str) -> str | None:
-        """Detect whether a message asks to create a skill or a RAG collection.
+        """Detect whether a message asks to create a skill, tool or RAG collection.
 
         Args:
             text: The incoming message text.
 
         Returns:
-            ``"skill"``, ``"rag"`` or ``None`` if no creation intent is found.
+            ``"skill"``, ``"tool"``, ``"rag"`` or ``None`` if no creation intent is found.
         """
         t = text.strip().lower()
         if "crear skill" in t or "crear una skill" in t or "crear la skill" in t:
             return "skill"
+        if (
+            "crear tool" in t
+            or "crear una tool" in t
+            or "crear la tool" in t
+            or "crear una herramienta" in t
+            or "crear herramienta" in t
+        ):
+            return "tool"
         if (
             "crear rag" in t
             or "crear un rag" in t
@@ -379,14 +387,39 @@ class TelegramBot:
                 return desc or None
         return None
 
+    def _extract_tool_descripcion(self, text: str) -> str | None:
+        """Extract the tool description that follows 'crear tool/herramienta'.
+
+        Args:
+            text: The full message text.
+
+        Returns:
+            The description, or ``None`` if nothing follows the trigger.
+        """
+        t = text.strip()
+        lower = t.lower()
+        markers = (
+            "crear una herramienta",
+            "crear herramienta",
+            "crear una tool",
+            "crear la tool",
+            "crear tool",
+        )
+        for marker in markers:
+            idx = lower.find(marker)
+            if idx != -1:
+                desc = t[idx + len(marker):].strip()
+                return desc or None
+        return None
+
     async def _enter_mode(self, chat_id: int, intent: str, text: str) -> None:
-        """Enter a skill or RAG creation mode for a chat.
+        """Enter a skill, tool or RAG creation mode for a chat.
 
         Saves the current session so it can be restored when the mode ends.
 
         Args:
             chat_id: The Telegram chat id.
-            intent: ``"skill"`` or ``"rag"``.
+            intent: ``"skill"``, ``"tool"`` or ``"rag"``.
             text: The triggering message text.
         """
         self._prev_session[chat_id] = self._active_session(chat_id)
@@ -405,6 +438,21 @@ class TelegramBot:
                 )
                 return
             await self._run_skill_iteration(chat_id)
+        elif intent == "tool":
+            descripcion = self._extract_tool_descripcion(text)
+            self._mode[chat_id] = "tool"
+            self._mode_data[chat_id] = {
+                "descripcion": descripcion,
+                "name": None,
+                "mensajes": [],
+            }
+            await self._emit_create_window(chat_id, intent, "open")
+            if not descripcion:
+                await self.send_message(
+                    chat_id, "¿Qué tool querés crear? Describí la tarea (o /cancelar)."
+                )
+                return
+            await self._run_tool_iteration(chat_id)
         elif intent == "rag":
             self._mode[chat_id] = "rag"
             self._mode_data[chat_id] = {"collection": None}
@@ -414,7 +462,7 @@ class TelegramBot:
             )
 
     async def _handle_mode_message(self, chat_id: int, text: str) -> None:
-        """Route a message while a skill/RAG mode is active.
+        """Route a message while a skill/tool/RAG mode is active.
 
         Args:
             chat_id: The Telegram chat id.
@@ -431,6 +479,15 @@ class TelegramBot:
                 {"role": "user", "content": text}
             ]
             await self._run_skill_iteration(chat_id)
+        elif mode == "tool":
+            if not data.get("descripcion"):
+                data["descripcion"] = text.strip()
+                await self._run_tool_iteration(chat_id)
+                return
+            data["mensajes"] = data.get("mensajes", []) + [
+                {"role": "user", "content": text}
+            ]
+            await self._run_tool_iteration(chat_id)
         elif mode == "rag":
             if data.get("awaiting_finish"):
                 await self._handle_rag_finish(chat_id, text.strip())
@@ -505,6 +562,81 @@ class TelegramBot:
                         return
         except Exception as exc:
             logger.warning("Error en skill iteration: %s", exc)
+            await self.send_message(chat_id, "Error al comunicarse con el backend.")
+            await self._exit_mode(chat_id)
+
+    async def _run_tool_iteration(self, chat_id: int) -> None:
+        """Run one tool-creation iteration against the /api/create/tool route.
+
+        Streams the SSE response and either asks the next question (staying in
+        the mode) or finishes the tool (exiting the mode).
+
+        Args:
+            chat_id: The Telegram chat id.
+        """
+        data = self._mode_data.get(chat_id, {})
+        descripcion = data.get("descripcion")
+        if not descripcion:
+            return
+        mensajes = data.get("mensajes", [])
+        try:
+            from backend.routes.create import CreateToolRequest, post_create_tool_stream
+
+            resp = await post_create_tool_stream(
+                CreateToolRequest(
+                    descripcion=descripcion,
+                    name=data.get("name"),
+                    mensajes=mensajes,
+                )
+            )
+            accumulated = ""
+            async for raw in resp.body_iterator:
+                for event in self._parse_sse(raw):
+                    etype = event.get("type")
+                    if etype == "chunk":
+                        accumulated += event.get("content", "")
+                    elif etype == "tool_action":
+                        action = (event.get("content") or {}).get("action")
+                        if action == "question":
+                            question = (event.get("content") or {}).get("question", "")
+                            if accumulated.strip():
+                                mensajes.append(
+                                    {"role": "assistant", "content": accumulated}
+                                )
+                            data["mensajes"] = mensajes
+                            await self.send_message(
+                                chat_id, question or accumulated or "Continuá."
+                            )
+                            return
+                        if action == "creating":
+                            await self.send_message(
+                                chat_id, "Creando tool..."
+                            )
+                    elif etype == "tool_result_final":
+                        content = event.get("content") or {}
+                        if isinstance(content, dict):
+                            msg = content.get("message", "")
+                            status = content.get("status", "success")
+                        else:
+                            msg = str(content)
+                            status = "success"
+                        if status == "success":
+                            await self.send_message(chat_id, msg or "Tool creada.")
+                        else:
+                            await self.send_message(
+                                chat_id,
+                                "Error: " + (msg or "Error desconocido"),
+                            )
+                        await self._exit_mode(chat_id)
+                        return
+                    elif etype == "error":
+                        await self.send_message(
+                            chat_id, event.get("content") or "Error al crear la tool."
+                        )
+                        await self._exit_mode(chat_id)
+                        return
+        except Exception as exc:
+            logger.warning("Error en tool iteration: %s", exc)
             await self.send_message(chat_id, "Error al comunicarse con el backend.")
             await self._exit_mode(chat_id)
 
@@ -961,9 +1093,9 @@ class TelegramBot:
     async def _cmd_crear(self, chat_id: int, arg: str) -> None:
         """Handle ``/crear``.
 
-        With an argument (``/crear skill <desc>`` or ``/crear rag``) it enters
-        the mode directly. Without arguments it asks what to create and routes
-        the reply (or /cancelar).
+        With an argument (``/crear skill <desc>``, ``/crear tool <desc>`` or
+        ``/crear rag``) it enters the mode directly. Without arguments it asks
+        what to create and routes the reply (or /cancelar).
 
         Args:
             chat_id: The Telegram chat id.
@@ -973,12 +1105,21 @@ class TelegramBot:
         if sub.startswith("skill"):
             desc = arg.strip()[5:].strip()
             await self._enter_mode(chat_id, "skill", f"crear skill {desc}")
+        elif sub.startswith("tool") or sub.startswith("herramienta"):
+            desc_marker = arg.strip()
+            lower_marker = arg.strip().lower()
+            for marker in ("tool", "herramienta"):
+                idx = lower_marker.find(marker)
+                if idx != -1:
+                    desc_marker = arg.strip()[idx + len(marker):].strip()
+                    break
+            await self._enter_mode(chat_id, "tool", f"crear tool {desc_marker}")
         elif sub.startswith("rag") or sub.startswith("coleccion") or sub.startswith("colección"):
             await self._enter_mode(chat_id, "rag", "crear rag")
         else:
             self._awaiting[chat_id] = "crear"
             await self.send_message(
-                chat_id, "¿Qué querés crear? (skill o rag, o /cancelar)"
+                chat_id, "¿Qué querés crear? (skill, tool o rag, o /cancelar)"
             )
 
     async def _cmd_ayuda(self, chat_id: int) -> None:

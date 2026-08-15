@@ -20,6 +20,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime
 from typing import Any, AsyncGenerator
 
 # ---------------------------------------------------------------------------
@@ -42,12 +43,31 @@ _DEFAULT_TOP_P = 0.8
 _DEFAULT_MAX_TOKENS = 3000
 
 
+def _resolve_create_model_provider() -> tuple[str, str]:
+    """Resolve the (model, provider) used by the creation flows.
+
+    When the Groq client is available the flows keep using Groq with
+    ``qwen/qwen3.6-27b``. If Groq could not be instantiated at startup
+    (missing/invalid API key), fall back to the provider and model saved
+    in the DB (``agent.provider`` / ``agent._resolved_model``).
+
+    Returns:
+        Tuple of ``(model, provider)``.
+    """
+    if agent.groq_client is not None:
+        return _DEFAULT_MODEL, _DEFAULT_PROVIDER
+    return (
+        getattr(agent, "_resolved_model", None) or _DEFAULT_MODEL,
+        getattr(agent, "provider", None) or "LOCAL",
+    )
+
+
 async def stream_tool_calling_loop(
     msgs: list[dict[str, Any]],
     tools: list[dict[str, Any]],
     friendly_error: str,
-    model: str = _DEFAULT_MODEL,
-    provider: str = _DEFAULT_PROVIDER,
+    model: str | None = None,
+    provider: str | None = None,
     max_iter: int = _DEFAULT_MAX_ITERATIONS,
     temperature: float = _DEFAULT_TEMPERATURE,
     top_p: float = _DEFAULT_TOP_P,
@@ -65,8 +85,10 @@ async def stream_tool_calling_loop(
             expected to already be present.
         tools: Tool definitions passed to the provider for function calling.
         friendly_error: User-friendly error message yielded on failure.
-        model: Model identifier sent to the provider.
-        provider: Provider name (``"Groq"`` or ``"LOCAL"``).
+        model: Model identifier sent to the provider. If ``None``,
+            resolved via ``_resolve_create_model_provider``.
+        provider: Provider name (``"Groq"`` or ``"LOCAL"``). If ``None``,
+            resolved via ``_resolve_create_model_provider``.
         max_iter: Maximum number of loop iterations.
         temperature: Sampling temperature.
         top_p: Nucleus sampling parameter.
@@ -76,6 +98,8 @@ async def stream_tool_calling_loop(
         SSE event dicts: ``chunk``, ``reasoning``, ``tool_call``,
         ``tool_result``, ``aborted`` or ``error``.
     """
+    if model is None or provider is None:
+        model, provider = _resolve_create_model_provider()
     iteration = 0
     while iteration < max_iter:
         iteration += 1
@@ -99,7 +123,7 @@ async def stream_tool_calling_loop(
                     yield {"type": "chunk", "content": event.get("content", "")}
 
                 elif event["type"] == "reasoning":
-                    print(f"[CREATE-HELPERS] {time.strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
+                    print(f"[CREATE-HELPERS] {datetime.now().strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
                     logger.info("[CREATE-HELPERS] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield {"type": "reasoning", "content": event.get("content", "")}
 

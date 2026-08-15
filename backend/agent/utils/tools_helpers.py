@@ -27,6 +27,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.config_dir import get_tools_dir
+from backend.agent.utils.create_helpers import _resolve_create_model_provider
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,8 @@ async def _evaluar_si_existe(
     Returns:
         ``{"exist": "Sí", "tool": ...}`` o ``{"exist": "No", "tool": None}``.
     """
-    if not agent._resolved_model:
+    eval_model, eval_provider = _resolve_create_model_provider()
+    if not eval_model:
         logger.warning("Sin modelo configurado.")
         return None
 
@@ -114,7 +116,8 @@ async def _evaluar_si_existe(
     )
 
     result = await agent.llm_process(
-        model=agent._resolved_model,
+        model=eval_model,
+        provider=eval_provider,
         prompt=prompt,
         temperature=0.0,
         top_p=0.6,

@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter
@@ -43,7 +44,7 @@ from backend.agent.utils.skills_helpers import (
     _listar_skills_locales,
 )
 from backend.agent.utils.tools_helpers import _listar_tools_locales
-from backend.agent.utils.create_helpers import stream_tool_calling_loop
+from backend.agent.utils.create_helpers import stream_tool_calling_loop, _resolve_create_model_provider
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -233,9 +234,10 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         tool_calls_data = None
 
         try:
+            _create_model, _create_provider = _resolve_create_model_provider()
             async for event in agent.llm_streaming(
-                model="qwen/qwen3.6-27b",
-                provider="Groq",
+                model=_create_model,
+                provider=_create_provider,
                 prompt=prompt,
                 tools=[_INTERVIEW_TOOL],
                 temperature=0.3,
@@ -248,7 +250,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     yield _sse({"type": "chunk", "content": event.get("content", "")})
 
                 elif event["type"] == "reasoning":
-                    print(f"[CREATE-SKILL] {time.strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
+                    print(f"[CREATE-SKILL] {datetime.now().strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
                     logger.info("[CREATE-SKILL] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield _sse({"type": "reasoning", "content": event.get("content", "")})
 
@@ -592,9 +594,10 @@ async def post_create_tool_stream(req: CreateToolRequest):
         tool_calls_data = None
 
         try:
+            _create_model, _create_provider = _resolve_create_model_provider()
             async for event in agent.llm_streaming(
-                model="qwen/qwen3.6-27b",
-                provider="Groq",
+                model=_create_model,
+                provider=_create_provider,
                 prompt=prompt,
                 tools=[_TOOL_INTERVIEW_TOOL],
                 temperature=0.3,
@@ -607,7 +610,7 @@ async def post_create_tool_stream(req: CreateToolRequest):
                     yield _sse({"type": "chunk", "content": event.get("content", "")})
 
                 elif event["type"] == "reasoning":
-                    print(f"[CREATE-TOOL] {time.strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
+                    print(f"[CREATE-TOOL] {datetime.now().strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
                     logger.info("[CREATE-TOOL] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield _sse({"type": "reasoning", "content": event.get("content", "")})
 

@@ -30,6 +30,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.config_dir import get_skills_dir
+from backend.agent.utils.create_helpers import _resolve_create_model_provider
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,8 @@ async def _evaluar_si_existe(
     Returns:
         ``{"exist": "Sí", "skill": ...}`` o ``{"exist": "No", "skill": None}``.
     """
-    if not agent._resolved_model:
+    eval_model, eval_provider = _resolve_create_model_provider()
+    if not eval_model:
         logger.warning("Sin modelo configurado.")
         return None
 
@@ -131,7 +133,8 @@ async def _evaluar_si_existe(
     # print("=" * 60)
 
     result = await agent.llm_process(
-        model=agent._resolved_model,
+        model=eval_model,
+        provider=eval_provider,
         prompt=prompt,
         temperature=0.0,
         top_p=0.6,
@@ -177,7 +180,8 @@ async def _explicar_skill(tarea: str, skill_dir: Path) -> str | None:
     Returns:
         Explicación breve, o None si falla.
     """
-    if not agent._resolved_model:
+    eval_model, eval_provider = _resolve_create_model_provider()
+    if not eval_model:
         return None
 
     md_path = skill_dir / "SKILL.md"
@@ -195,7 +199,8 @@ async def _explicar_skill(tarea: str, skill_dir: Path) -> str | None:
     prompt = template.format(tarea=tarea, contenido=contenido)
 
     result = await agent.llm_process(
-        model=agent._resolved_model,
+        model=eval_model,
+        provider=eval_provider,
         prompt=prompt,
         temperature=0.3,
         top_p=0.8,
@@ -238,7 +243,8 @@ async def _generar_skill(
     Raises:
         RuntimeError: Si el LLM falla o no hay modelo.
     """
-    if not agent._resolved_model:
+    eval_model, eval_provider = _resolve_create_model_provider()
+    if not eval_model:
         raise RuntimeError("No hay modelo configurado. Seleccioná un modelo en Configuración.")
 
     try:
@@ -251,10 +257,11 @@ async def _generar_skill(
         conversacion=conversacion,
     )
 
-    logger.info("Generando skill con LLM (%s)...", agent._resolved_model)
+    logger.info("Generando skill con LLM (%s)...", eval_model)
 
     result = await agent.llm_process(
-        model=agent._resolved_model,
+        model=eval_model,
+        provider=eval_provider,
         prompt=prompt,
         temperature=0.4,
         top_p=0.85,

@@ -198,6 +198,23 @@ async def lifespan(app: FastAPI):
         log_error(str(exc), source="main.py:lifespan(load_persisted_config)")
         logger.warning("Failed to load persisted config: %s", exc)
 
+    # Cache providers + models once at startup (persisted in the providers table)
+    try:
+        await asyncio.to_thread(config_module.refresh_providers_cache)
+        logger.info("Providers cache loaded at startup.")
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(providers_cache)")
+        logger.warning("Failed to load providers cache: %s", exc)
+
+    # Detect the active model's context window once at startup (like VRAM),
+    # in the background so it never blocks a request.
+    try:
+        asyncio.create_task(asyncio.to_thread(config_module.detect_context_window_background))
+        logger.info("Context window detection scheduled at startup.")
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(context_window)")
+        logger.warning("Failed to schedule context window detection: %s", exc)
+
     # Resolve the model via the config endpoint once the server is up (fallback if no persisted model)
     asyncio.create_task(_resolve_model_at_startup())
 

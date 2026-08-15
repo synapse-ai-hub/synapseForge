@@ -221,7 +221,7 @@ class AgentLoop:
                 differs from this agent's model AND both run on ``LOCAL``, the
                 parent model is liberated on entry and this agent's model is
                 liberated on exit. API-side providers don't need VRAM liberation.
-            parent_provider: Parent agent's effective provider (``"API"``/``"LOCAL"``).
+            parent_provider: Parent agent's effective provider (``"GROQ"``/``"LOCAL"``).
                 Used together with ``parent_model`` to decide whether to liberate
                 the parent model (only meaningful when both are LOCAL).
 
@@ -294,7 +294,7 @@ class AgentLoop:
             )
 
             # --- Liberate parent model only when both parent and child run on
-            #     LOCAL with different models. API providers don't consume VRAM
+            #     LOCAL with different models. Groq providers don't consume VRAM
             #     so there's nothing to free/reload. ---
             parent_is_local = bool(parent_provider) and parent_provider.upper() == "LOCAL"
             child_is_local = bool(effective_provider) and effective_provider.upper() == "LOCAL"
@@ -773,7 +773,7 @@ class AgentLoop:
                             if isinstance(llm_payload, (dict, list))
                             else str(llm_payload)
                         )
-                        is_groq = effective_provider.upper() == "API"
+                        is_groq = effective_provider.upper() == 'GROQ'
                         if is_groq:
                             tool_msg = {
                                 "role": "tool",

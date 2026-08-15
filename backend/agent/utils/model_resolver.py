@@ -1,12 +1,17 @@
-"""Model resolver — descubre modelos disponibles según el provider.
+"""Model resolver — discovers available models per provider.
 
-Lee ``PROVIDER`` de ``.env`` y:
-- ``LOCAL`` → ejecuta ``ollama list`` y muestra los modelos disponibles.
-- ``API`` → consulta la API de Groq (``https://api.groq.com/openai/v1/models``)
-  y muestra los modelos disponibles.
+The provider is resolved at runtime from the persisted configuration
+(``config_kv`` / ``providers`` tables) rather than from environment
+variables. Environment variables (``PROVIDER``, ``MODEL_NAME_2``,
+``MODEL_NAME_3``) are only used as a legacy fallback when no persisted
+selection exists.
 
-El usuario selecciona un modelo de una lista numerada. El modelo seleccionado
-se retorna como string para ser usado por el ``Agent`` y el loop.
+- ``LOCAL`` → runs ``ollama list`` and lists the available models.
+- ``GROQ`` → queries the Groq API (``https://api.groq.com/openai/v1/models``)
+  and lists the available models.
+
+The user selects a model from a numbered list. The selected model is returned
+as a string to be used by the ``Agent`` and the loop.
 """
 
 import json
@@ -188,7 +193,7 @@ def resolve_model() -> str:
 
     Reads ``PROVIDER`` from the environment (``.env`` file). If the
     corresponding env var for the model is already set (e.g. ``MODEL_NAME_2``
-    for LOCAL, ``MODEL_NAME_3`` for API), returns it directly (legacy
+    for LOCAL, ``MODEL_NAME_3`` for GROQ), returns it directly (legacy
     behaviour). Otherwise, discovers available models and prompts the user
     to select one.
 
@@ -199,10 +204,10 @@ def resolve_model() -> str:
     from dotenv import load_dotenv
     load_dotenv()
 
-    provider = os.getenv("PROVIDER", "API").strip().upper()
+    provider = os.getenv("PROVIDER", "GROQ").strip().upper()
     logger.info("Resolving model for provider: %s", provider)
 
-    if provider == "LOCAL":
+    if provider.upper() == "LOCAL":
         # Legacy: check if MODEL_NAME_2 is already set
         legacy = os.getenv("MODEL_NAME_2", "").strip()
         if legacy:
@@ -213,7 +218,7 @@ def resolve_model() -> str:
         selected = _prompt_user_selection(models, "Ollama (local)")
         return selected or ""
 
-    elif provider == "API":
+    elif provider.upper() == 'GROQ':
         # Legacy: check if MODEL_NAME_3 is already set
         legacy = os.getenv("MODEL_NAME_3", "").strip()
         if legacy:
@@ -333,7 +338,7 @@ def ensure_context_window(agent, model: str) -> int | None:
     provider = (getattr(agent, "provider", None) or "LOCAL").strip().upper()
     cw = None
     try:
-        if provider == "LOCAL":
+        if provider.upper() == "LOCAL":
             cw = get_ollama_context_window(model)
         else:
             cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
@@ -357,8 +362,12 @@ _vram_cache: int | None | object = None
 def get_vram_gb() -> int | None:
     """Return the total VRAM in GB of the primary GPU, or ``None`` if unknown.
 
-    Tries ``nvidia-smi`` first, then ``wmic`` (Windows). The result is cached
-    so it is only queried once per process.
+    Resolution order:
+    1. In-memory cache (``_vram_cache``).
+    2. Value persisted in ``config_kv`` (``vram_gb``), set at application
+       startup.
+    3. Detect via ``nvidia-smi`` then ``wmic`` (Windows), persisting the
+       result to ``config_kv`` so it is only queried once per process.
 
     Returns:
         Total VRAM in GB, or ``None`` if it cannot be determined.
@@ -366,6 +375,23 @@ def get_vram_gb() -> int | None:
     global _vram_cache
     if _vram_cache is not None:
         return _vram_cache if isinstance(_vram_cache, int) else None
+
+    # Prefer the value persisted at startup so we never re-run nvidia-smi/wmic
+    # on every request.
+    try:
+        from backend.instances import session_manager
+
+        persisted = (
+            session_manager.get_config("vram_gb")
+            if session_manager is not None
+            else None
+        )
+        if persisted is not None:
+            vram = int(persisted)
+            _vram_cache = vram
+            return vram
+    except Exception:
+        pass
 
     import subprocess
 
@@ -401,6 +427,16 @@ def get_vram_gb() -> int | None:
                         break
         except Exception:
             vram = None
+
+    # Persist so future processes/requests read from config_kv.
+    if vram is not None:
+        try:
+            from backend.instances import session_manager
+
+            if session_manager is not None:
+                session_manager.set_config("vram_gb", str(vram))
+        except Exception:
+            pass
 
     _vram_cache = vram if vram is not None else -1
     print(f"[DEBUG] get_vram_gb: {vram}")

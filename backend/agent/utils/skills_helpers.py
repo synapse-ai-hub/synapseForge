@@ -1,6 +1,6 @@
-"""Helpers para la creación de skills.
+"""Helpers for skill creation.
 
-Contiene funciones internas de bajo nivel:
+Low-level internal functions:
 - ``_parse_frontmatter``
 - ``_listar_skills_locales``
 - ``_evaluar_si_existe``
@@ -8,7 +8,7 @@ Contiene funciones internas de bajo nivel:
 - ``_generar_skill``
 - ``_copiar_referencias``
 
-Todas son importadas por ``creator.py``.
+All are imported by ``backend/routes/create.py``.
 """
 
 from __future__ import annotations

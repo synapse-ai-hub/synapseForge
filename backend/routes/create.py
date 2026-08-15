@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import sys
+import time
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter
@@ -36,12 +37,13 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.config_dir import get_skills_dir, get_tools_dir
-from backend.agent.utils.skill_creator.helpers import (
+from backend.agent.utils.skills_helpers import (
     _copiar_referencias,
     _evaluar_si_existe,
     _listar_skills_locales,
 )
-from backend.agent.utils.tool_creator.helpers import _listar_tools_locales
+from backend.agent.utils.tools_helpers import _listar_tools_locales
+from backend.agent.utils.create_helpers import stream_tool_calling_loop
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -232,12 +234,13 @@ async def post_create_skill_stream(req: CreateSkillRequest):
 
         try:
             async for event in agent.llm_streaming(
-                model=agent._resolved_model,
+                model="qwen/qwen3.6-27b",
+                provider="Groq",
                 prompt=prompt,
                 tools=[_INTERVIEW_TOOL],
                 temperature=0.3,
                 top_p=0.8,
-                max_tokens=5000,
+                max_tokens=3000,
                 cleaned_output=True,
             ):
                 if event["type"] == "chunk":
@@ -245,6 +248,8 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     yield _sse({"type": "chunk", "content": event.get("content", "")})
 
                 elif event["type"] == "reasoning":
+                    print(f"[CREATE-SKILL] {time.strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
+                    logger.info("[CREATE-SKILL] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield _sse({"type": "reasoning", "content": event.get("content", "")})
 
                 elif event["type"] == "tool_calls_detected":
@@ -365,99 +370,10 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             {"role": "user", "content": user_msg},
         ]
 
-        max_iter = 25
-        iteration = 0
-        while iteration < max_iter:
-            iteration += 1
-            # print(f">>> CREATE SKILL - Iteración {iteration}/{max_iter}")
-
-            collected_content = ""
-            tool_calls = None
-
-            try:
-                async for event in agent.llm_streaming(
-                    model=agent._resolved_model,
-                    messages=msgs,
-                    tools=tools,
-                    temperature=0.3,
-                    top_p=0.8,
-                    max_tokens=10000,
-                    cleaned_output=True,
-                ):
-                    if event["type"] == "chunk":
-                        collected_content += event.get("content", "")
-                        yield _sse({"type": "chunk", "content": event.get("content", "")})
-
-                    elif event["type"] == "reasoning":
-                        yield _sse({"type": "reasoning", "content": event.get("content", "")})
-
-                    elif event["type"] == "tool_calls_detected":
-                        tool_calls = event["content"]
-                        break
-
-                    elif event["type"] == "aborted":
-                        yield _sse({"type": "aborted", "content": "Stream cancelado."})
-                        return
-
-            except Exception as e:
-                logger.exception("Error en streaming create agent: %s", e)
-                # print(f">>>> CREATE SKILL - Error técnico (create): {e}")
-                yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
+        async for event in stream_tool_calling_loop(msgs, tools, _FRIENDLY_ERROR):
+            yield _sse(event)
+            if event["type"] == "error":
                 return
-
-            # print(f">>> CREATE SKILL - LLM: content_len={len(collected_content)}, tool_calls={len(tool_calls) if tool_calls else 0}")
-
-            # ── Procesar tool_calls ──
-            if tool_calls:
-                # Guardar mensaje assistant con tool_calls
-                assistant_msg: dict[str, Any] = {
-                    "role": "assistant",
-                    "content": collected_content,
-                    "tool_calls": tool_calls,
-                }
-                msgs.append(assistant_msg)
-
-                for tc in tool_calls:
-                    tc_id = tc.get("id", "")
-                    tc_name = tc.get("name", "")
-                    tc_args = tc.get("args", {})
-
-                    # print(f">>> CREATE SKILL - Tool call: {tc_name}")
-                    yield _sse({"type": "tool_call", "content": {"name": tc_name, "args": tc_args}})
-
-                    # Ejecutar tool
-                    try:
-                        result = await agent.tools._execute_tool(tc_name, **tc_args)
-                    except Exception as e:
-                        logger.exception("Tool '%s' failed", tc_name)
-                        result = {"status": "error", "message": str(e)}
-
-                    # Extraer contenido del resultado
-                    if isinstance(result, dict):
-                        if result.get("status") == "error":
-                            result_content = result.get("message", "Error desconocido")
-                        else:
-                            result_content = result.get("data", json.dumps(result))
-                    else:
-                        result_content = str(result)
-
-                    if not isinstance(result_content, str):
-                        result_content = json.dumps(result_content)
-
-                    # print(f">>> CREATE SKILL - Tool result: {tc_name} -> {str(result_content)}")
-                    yield _sse({"type": "tool_result", "content": {"name": tc_name, "result": result_content}})
-
-                    msgs.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": result_content,
-                    })
-
-                # Continuar loop → siguiente iteración stremea la respuesta con tools results
-            else:
-                # Sin tool calls → terminó
-                # print(">>> CREATE SKILL - Sin tool calls, finalizando.")
-                break
 
         # ════════════════════════════════════════════════════════════════
         # FASE 4: BUSCAR lo que creó el agente
@@ -624,8 +540,6 @@ async def post_create_tool_stream(req: CreateToolRequest):
         # (antes de iterar para no gastar tokens si ya hay una)
         # ════════════════════════════════════════════════════════════════
         try:
-            from backend.agent.utils.tool_creator.helpers import _evaluar_si_existe_tool_inline
-
             tools_locales = _listar_tools_locales()
             decision = await _evaluar_si_existe_tool_inline(descripcion, tools_locales, agent)
 
@@ -679,12 +593,13 @@ async def post_create_tool_stream(req: CreateToolRequest):
 
         try:
             async for event in agent.llm_streaming(
-                model=agent._resolved_model,
+                model="qwen/qwen3.6-27b",
+                provider="Groq",
                 prompt=prompt,
                 tools=[_TOOL_INTERVIEW_TOOL],
                 temperature=0.3,
                 top_p=0.8,
-                max_tokens=5000,
+                max_tokens=3000,
                 cleaned_output=True,
             ):
                 if event["type"] == "chunk":
@@ -692,6 +607,8 @@ async def post_create_tool_stream(req: CreateToolRequest):
                     yield _sse({"type": "chunk", "content": event.get("content", "")})
 
                 elif event["type"] == "reasoning":
+                    print(f"[CREATE-TOOL] {time.strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
+                    logger.info("[CREATE-TOOL] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield _sse({"type": "reasoning", "content": event.get("content", "")})
 
                 elif event["type"] == "tool_calls_detected":
@@ -803,85 +720,10 @@ async def post_create_tool_stream(req: CreateToolRequest):
             {"role": "user", "content": user_msg},
         ]
 
-        max_iter = 25
-        iteration = 0
-        while iteration < max_iter:
-            iteration += 1
-
-            collected_content = ""
-            tool_calls = None
-
-            try:
-                async for event in agent.llm_streaming(
-                    model=agent._resolved_model,
-                    messages=msgs,
-                    tools=tools,
-                    temperature=0.3,
-                    top_p=0.8,
-                    max_tokens=10000,
-                    cleaned_output=True,
-                ):
-                    if event["type"] == "chunk":
-                        collected_content += event.get("content", "")
-                        yield _sse({"type": "chunk", "content": event.get("content", "")})
-
-                    elif event["type"] == "reasoning":
-                        yield _sse({"type": "reasoning", "content": event.get("content", "")})
-
-                    elif event["type"] == "tool_calls_detected":
-                        tool_calls = event["content"]
-                        break
-
-                    elif event["type"] == "aborted":
-                        yield _sse({"type": "aborted", "content": "Stream cancelado."})
-                        return
-
-            except Exception as e:
-                logger.exception("Error en streaming create agent: %s", e)
-                yield _sse({"type": "error", "content": _FRIENDLY_ERROR_TOOL})
+        async for event in stream_tool_calling_loop(msgs, tools, _FRIENDLY_ERROR_TOOL):
+            yield _sse(event)
+            if event["type"] == "error":
                 return
-
-            if tool_calls:
-                assistant_msg: dict[str, Any] = {
-                    "role": "assistant",
-                    "content": collected_content,
-                    "tool_calls": tool_calls,
-                }
-                msgs.append(assistant_msg)
-
-                for tc in tool_calls:
-                    tc_id = tc.get("id", "")
-                    tc_name = tc.get("name", "")
-                    tc_args = tc.get("args", {})
-
-                    yield _sse({"type": "tool_call", "content": {"name": tc_name, "args": tc_args}})
-
-                    try:
-                        result = await agent.tools._execute_tool(tc_name, **tc_args)
-                    except Exception as e:
-                        logger.exception("Tool '%s' failed", tc_name)
-                        result = {"status": "error", "message": str(e)}
-
-                    if isinstance(result, dict):
-                        if result.get("status") == "error":
-                            result_content = result.get("message", "Error desconocido")
-                        else:
-                            result_content = result.get("data", json.dumps(result))
-                    else:
-                        result_content = str(result)
-
-                    if not isinstance(result_content, str):
-                        result_content = json.dumps(result_content)
-
-                    yield _sse({"type": "tool_result", "content": {"name": tc_name, "result": result_content}})
-
-                    msgs.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": result_content,
-                    })
-            else:
-                break
 
         # ════════════════════════════════════════════════════════════════
         # FASE 4: BUSCAR lo que creó el agente
@@ -946,5 +788,5 @@ async def post_create_tool_stream(req: CreateToolRequest):
 # Helper para evaluar inline sin reimportar todo el módulo
 async def _evaluar_si_existe_tool_inline(tarea, tools_locales, agent):
     """Wrapper sobre el helper compartido."""
-    from backend.agent.utils.tool_creator.helpers import _evaluar_si_existe
+    from backend.agent.utils.tools_helpers import _evaluar_si_existe
     return await _evaluar_si_existe(tarea, tools_locales)

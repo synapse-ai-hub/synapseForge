@@ -38,8 +38,6 @@ interface CampoDeclarado {
 
 const TIPOS_CAMPO = ["string", "number", "boolean", "object", "array"] as const;
 
-const CAMPOS_INICIALES: CampoDeclarado[] = [{ name: "", type: "string", description: "", required: false }];
-
 export function ToolInterface() {
   /* ---- state ---- */
   const [setupDone, setSetupDone] = useState(false);
@@ -48,8 +46,11 @@ export function ToolInterface() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
 
-  const [parametros, setParametros] = useState<CampoDeclarado[]>(CAMPOS_INICIALES);
-  const [datos, setDatos] = useState<CampoDeclarado[]>(CAMPOS_INICIALES);
+  // Parámetros y datos externos son opcionales: el LLM los puede inferir.
+  const [parametros, setParametros] = useState<CampoDeclarado[]>([]);
+  const [datos, setDatos] = useState<CampoDeclarado[]>([]);
+  const [parametrosAbierto, setParametrosAbierto] = useState(false);
+  const [datosAbierto, setDatosAbierto] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const historialRef = useRef<HistorialMsg[]>([]);
@@ -172,10 +173,6 @@ export function ToolInterface() {
     setLista: (v: CampoDeclarado[]) => void,
     index: number,
   ): void => {
-    if (lista.length === 1) {
-      setLista([{ name: "", type: "string", description: "", required: false }]);
-      return;
-    }
     setLista(lista.filter((_, i) => i !== index));
   };
 
@@ -286,6 +283,7 @@ export function ToolInterface() {
                 }
 
                 case "reasoning": {
+                  console.log(`[REASONING-FRONT] ${new Date().toISOString()}`, event.content);
                   accumulatedReasoning += (event.content || "").replace(/\n+/g, " ");
                   updateReasoningBlock();
                   setMessages((prev) =>
@@ -436,8 +434,10 @@ export function ToolInterface() {
         );
       } catch (err: unknown) {
         if ((err as Error)?.name === "AbortError") {
-          historialRef.current = historialRef.current.slice(0, -1);
-          setMessages((prev) => prev.slice(0, -2));
+          // Cancelado por el usuario: conservar lo generado hasta acá (como ChatInterface).
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
+          );
         } else {
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
@@ -484,8 +484,8 @@ export function ToolInterface() {
       const nameVal = nombre.trim();
       const desc = descripcion.trim();
       if (!desc) { setSetupError("Completá la descripción."); return; }
-      if (!nameVal) { setSetupError("El nombre es obligatorio."); return; }
-      if (!validarNombre(nameVal)) { setSetupError("Corregí el campo Nombre."); return; }
+      // El nombre es opcional: si lo declara, debe cumplir el formato.
+      if (nameVal && !validarNombre(nameVal)) { setSetupError("Corregí el campo Nombre."); return; }
       // Validar campos: si tienen texto en name, deben tener descripción.
       for (const p of parametros) {
         if (p.name.trim() && !p.description.trim()) {
@@ -518,70 +518,93 @@ export function ToolInterface() {
     [],
   );
 
-  /* ---- editor de campos reutilizable ---- */
+  /* ---- editor de campos reutilizable (colapsable, opcional) ---- */
   const renderEditor = (
     titulo: string,
     ayuda: string,
     lista: CampoDeclarado[],
     setLista: (v: CampoDeclarado[]) => void,
+    abierto: boolean,
+    setAbierto: (v: boolean) => void,
   ): JSX.Element => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{titulo}</label>
-      <p className="text-xs text-gray-400 mb-2">{ayuda}</p>
-      <div className="space-y-2">
-        {lista.map((campo, i) => (
-          <div key={i} className="flex flex-wrap gap-2 items-start">
-            <input
-              type="text"
-              value={campo.name}
-              onChange={(e) => actualizarCampo(lista, setLista, i, "name", e.target.value)}
-              placeholder="nombre"
-              className="flex-1 min-w-[120px] border border-gray-300 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-            />
-            <select
-              value={campo.type}
-              onChange={(e) => actualizarCampo(lista, setLista, i, "type", e.target.value)}
-              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-            >
-              {TIPOS_CAMPO.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={campo.description}
-              onChange={(e) => actualizarCampo(lista, setLista, i, "description", e.target.value)}
-              placeholder="descripción"
-              className="flex-[2] min-w-[180px] border border-gray-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-            />
-            <label className="flex items-center gap-1 text-xs text-gray-600 px-1 py-1.5 select-none">
-              <input
-                type="checkbox"
-                checked={campo.required}
-                onChange={(e) => actualizarCampo(lista, setLista, i, "required", e.target.checked)}
-                className="rounded text-amber-500 focus:ring-amber-400"
-              />
-              req
-            </label>
-            <button
-              type="button"
-              onClick={() => quitarCampo(lista, setLista, i)}
-              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-              aria-label="Quitar campo"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
-      </div>
+    <div className="border border-app-border rounded-lg">
       <button
         type="button"
-        onClick={() => agregarCampo(lista, setLista)}
-        className="mt-2 inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 font-medium"
+        onClick={() => setAbierto(!abierto)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left"
+        aria-expanded={abierto}
       >
-        <Plus size={12} />
-        Agregar campo
+        <div className="flex items-center gap-2">
+          <Plus
+            size={14}
+            className={`text-app-primary transition-transform ${abierto ? "rotate-45" : ""}`}
+          />
+          <span className="text-sm font-medium text-app-text">{titulo}</span>
+          <span className="text-xs text-app-text-secondary">(opcional)</span>
+        </div>
+        <span className="text-xs text-app-text-secondary">
+          {lista.length > 0 ? `${lista.length} declarado${lista.length === 1 ? "" : "s"}` : "inferir por el LLM"}
+        </span>
       </button>
+      {abierto && (
+        <div className="px-3 pb-3 space-y-2 border-t border-app-border pt-3">
+          <p className="text-xs text-app-text-secondary">{ayuda}</p>
+          <div className="space-y-2">
+            {lista.map((campo, i) => (
+              <div key={i} className="flex flex-wrap gap-2 items-start">
+                <input
+                  type="text"
+                  value={campo.name}
+                  onChange={(e) => actualizarCampo(lista, setLista, i, "name", e.target.value)}
+                  placeholder="nombre"
+                  className="flex-1 min-w-[120px] border border-app-border rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+                />
+                <select
+                  value={campo.type}
+                  onChange={(e) => actualizarCampo(lista, setLista, i, "type", e.target.value)}
+                  className="border border-app-border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+                >
+                  {TIPOS_CAMPO.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={campo.description}
+                  onChange={(e) => actualizarCampo(lista, setLista, i, "description", e.target.value)}
+                  placeholder="descripción"
+                  className="flex-[2] min-w-[180px] border border-app-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+                />
+                <label className="flex items-center gap-1 text-xs text-app-text-secondary px-1 py-1.5 select-none">
+                  <input
+                    type="checkbox"
+                    checked={campo.required}
+                    onChange={(e) => actualizarCampo(lista, setLista, i, "required", e.target.checked)}
+                    className="rounded text-app-primary focus:ring-app-primary-light"
+                  />
+                  req
+                </label>
+                <button
+                  type="button"
+                  onClick={() => quitarCampo(lista, setLista, i)}
+                  className="p-1.5 text-app-text-secondary hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                  aria-label="Quitar campo"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => agregarCampo(lista, setLista)}
+            className="inline-flex items-center gap-1 text-xs text-app-primary hover:text-app-primary-light font-medium"
+          >
+            <Plus size={12} />
+            Agregar campo
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -629,7 +652,7 @@ export function ToolInterface() {
             <form onSubmit={handleSetupSubmit} className="space-y-4">
               <div>
                 <label htmlFor="tool-name" className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre <span className="text-red-500">*</span>
+                  Nombre <span className="text-xs text-app-text-secondary">(opcional)</span>
                 </label>
                 <input
                   id="tool-name"
@@ -640,11 +663,11 @@ export function ToolInterface() {
                     validarNombre(e.target.value);
                   }}
                   onKeyDown={setupKeyDown}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                  className="w-full border border-app-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
                   placeholder="Ej: consultar-clima"
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                  Solo minúsculas, números y guiones. Sin espacios ni mayúsculas.
+                <p className="text-xs text-app-text-secondary mt-1">
+                  Si lo dejás vacío, el LLM infiere un nombre. Si lo escribís, debe tener solo minúsculas, números y guiones.
                 </p>
                 {nameError && <p className="text-xs text-red-500 mt-1">{nameError}</p>}
               </div>
@@ -658,7 +681,7 @@ export function ToolInterface() {
                   rows={4}
                   value={descripcion}
                   onChange={(e) => setDescripcion(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent resize-y"
+                  className="w-full border border-app-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary resize-y"
                   placeholder="Ej: Una tool que reciba una ciudad y devuelva el clima actual usando la API de OpenWeather."
                 />
               </div>
@@ -668,6 +691,8 @@ export function ToolInterface() {
                 "Cada parámetro es un dato que el modelo completa cuando llama a la tool. Describilo bien para que el LLM sepa qué mandar.",
                 parametros,
                 setParametros,
+                parametrosAbierto,
+                setParametrosAbierto,
               )}
 
               {renderEditor(
@@ -675,11 +700,13 @@ export function ToolInterface() {
                 "Cosas que la tool lee del entorno: API keys, URLs, configuración fija. NO los valores: solo declaralos para que el agente sepa qué necesita.",
                 datos,
                 setDatos,
+                datosAbierto,
+                setDatosAbierto,
               )}
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90"
+                className="w-full bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90"
               >
                 Comenzar
               </button>
@@ -752,7 +779,7 @@ export function ToolInterface() {
                   <p className="text-sm text-app-text">{resultMsg}</p>
                   <button
                     onClick={() => window.close()}
-                    className="bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
+                    className="bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
                   >
                     Aceptar
                   </button>

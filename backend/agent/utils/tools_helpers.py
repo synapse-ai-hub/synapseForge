@@ -1,10 +1,11 @@
-"""Helpers para la creación de tools externas.
+"""Helpers for external tool creation.
 
-Funciones internas de bajo nivel:
-- ``_listar_tools_locales`` — Escanea ``~/.config/synapseForge/tools/``.
-- ``_evaluar_si_existe`` — Pregunta al LLM si alguna tool ya cubre la tarea.
+Low-level internal functions:
+- ``_listar_tools_locales`` — Scans ``~/.config/synapseForge/tools/``.
+- ``_evaluar_si_existe`` — Asks the LLM whether an existing tool already
+  covers the task.
 
-Todas son importadas por ``creator.py``.
+All are imported by ``backend/routes/create.py``.
 """
 
 from __future__ import annotations

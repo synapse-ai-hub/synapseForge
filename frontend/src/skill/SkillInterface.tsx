@@ -497,9 +497,10 @@ export function SkillInterface() {
         );
       } catch (err: unknown) {
         if ((err as Error)?.name === "AbortError") {
-          // Cancelado por el usuario: quitar el mensaje del usuario y el placeholder
-          historialRef.current = historialRef.current.slice(0, -1);
-          setMessages((prev) => prev.slice(0, -2));
+          // Cancelado por el usuario: conservar lo generado hasta acá (como ChatInterface).
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
+          );
         } else {
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),

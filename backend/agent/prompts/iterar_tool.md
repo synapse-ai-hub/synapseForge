@@ -53,7 +53,7 @@ async def nombre_tool(param1: str, param2: int | None = None) -> str:
         # ... lógica ...
         return "Resultado"
     except Exception as e:
-        return f"Error en nombre_tool: {e}"
+        return f"Error en nombre_tool: {{e}}"
 
 
 if __name__ == "__main__":

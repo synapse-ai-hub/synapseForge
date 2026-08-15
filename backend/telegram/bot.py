@@ -978,11 +978,11 @@ class TelegramBot:
     async def _cmd_proveedor(self, chat_id: int, provider: str | None = None) -> None:
         if not provider:
             self._awaiting[chat_id] = "proveedor"
-            await self.send_message(chat_id, "¿Qué proveedor? (LOCAL o API, o 'cancelar')")
+            await self.send_message(chat_id, "¿Qué proveedor? (LOCAL o GROQ, o 'cancelar')")
             return
         provider = provider.strip().upper()
-        if provider not in ("LOCAL", "API"):
-            await self.send_message(chat_id, "Proveedor inválido. Usá LOCAL o API.")
+        if provider not in ("LOCAL", "GROQ"):
+            await self.send_message(chat_id, "Proveedor inválido. Usá LOCAL o GROQ.")
             return
         try:
             from backend.instances import agent
@@ -1001,7 +1001,7 @@ class TelegramBot:
             provider = (agent.provider or "LOCAL").strip().upper()
         except Exception:
             provider = "LOCAL"
-        if provider == "API":
+        if provider.upper() == 'GROQ':
             import os as _os
             models = get_groq_models(_os.getenv("GROQ_API_KEY", "").strip())
         else:

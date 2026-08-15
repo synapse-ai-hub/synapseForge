@@ -256,7 +256,7 @@ Los siguientes parámetros se seleccionan desde el **frontend** y se guardan en 
 
 | Clave | Descripción | Endpoint |
 |-------|-------------|----------|
-| `selected_model` | Modelo activo (ej. `llama-3.3-70b-versatile`, `llama3.2:3b`) | `POST /config/models/select` |
+| `selected_model` | Modelo activo (ej. `qwen/qwen3.6-27b`, `llama3.2:3b`) | `POST /config/models/select` |
 | `selected_provider` | Proveedor activo: `LOCAL` (Ollama) o `API` (Groq) | `POST /config/models/select` |
 | `context_window_turns` | Turnos de historial a mantener (`-1` = todos) | `POST /config/context-window` |
 

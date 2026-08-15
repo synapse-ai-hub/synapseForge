@@ -49,7 +49,7 @@ async def <nombre_tool>(<param1>: <tipo>, <param2>: <tipo> = <default>) -> str:
         # ... operaciones ...
         return "Resultado"
     except Exception as e:
-        return f"Error en <nombre_tool>: {e}"
+        return f"Error en <nombre_tool>: {{e}}"
 
 
 if __name__ == "__main__":

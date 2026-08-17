@@ -538,7 +538,7 @@ class Agent():
             if tools:
                 groq_kwargs["tools"] = tools
                 groq_kwargs["tool_choice"] = "auto"
-# Groq: pedir reasoning como campo separado (delta.reasoning_content).
+            # Groq: pedir reasoning como campo separado (delta.reasoning_content).
             # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
             # lo rechaza, reintentar sin el campo (igual que en llm_process).
             groq_kwargs["reasoning_format"] = "parsed"
@@ -554,10 +554,12 @@ class Agent():
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
             in_think_tag = False  #  thinking tag state machine
-            has_dedicated_thinking = False  # si vimos reasoning_content, no parseamos  thinking
+            has_dedicated_thinking = False  # si vimos delta.reasoning, no parseamos  thinking
             usage_data: dict[str, Any] | None = None
 
+            # print(f"[DEBUG-STREAM] Starting stream iteration, groq_kwargs keys: {list(groq_kwargs.keys())}")
             async for chunk in stream:
+                # print(f"[DEBUG-CHUNK] chunk type={type(chunk).__name__}, choices={len(chunk.choices) if hasattr(chunk, 'choices') and chunk.choices else 0}, usage={getattr(chunk, 'usage', None)}, x_groq={getattr(chunk, 'x_groq', None)}")
                 if stream_cancel_event and stream_cancel_event.is_set():
                     yield {'type': 'aborted'}
                     return
@@ -595,10 +597,11 @@ class Agent():
                                 if tc.function.arguments:
                                     accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
 
-                    # Groq / OpenAI-compatible reasoning_content (parsed mode)
-                    if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                    # Groq / OpenAI-compatible reasoning (parsed mode)
+                    # print(f"[DEBUG-REASONING] delta.reasoning={getattr(delta, 'reasoning', 'MISSING')!r}, delta.content={getattr(delta, 'content', 'MISSING')!r}")
+                    if delta and hasattr(delta, 'reasoning') and delta.reasoning:
                         has_dedicated_thinking = True
-                        yield {'type': 'reasoning', 'content': delta.reasoning_content}
+                        yield {'type': 'reasoning', 'content': delta.reasoning}
                         await asyncio.sleep(0.01)
 
                     # Stream text content

@@ -598,8 +598,6 @@ class Agent():
                     # Groq / OpenAI-compatible reasoning_content (parsed mode)
                     if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                         has_dedicated_thinking = True
-                        print(f"[REASONING] {datetime.now().strftime('%H:%M:%S.%f')} Groq reasoning_content: {delta.reasoning_content[:200]!r}")
-                        logger.info("[REASONING] Groq reasoning_content: %r", delta.reasoning_content[:200])
                         yield {'type': 'reasoning', 'content': delta.reasoning_content}
                         await asyncio.sleep(0.01)
 
@@ -616,8 +614,6 @@ class Agent():
                             # Fallback: parsear  thinking tags del content
                             rzn, clean_text, in_think_tag = self._process_think_tags(text, in_think_tag)
                             if rzn:
-                                print(f"[REASONING] {datetime.now().strftime('%H:%M:%S.%f')} Groq think-tags: {rzn[:200]!r}")
-                                logger.info("[REASONING] Groq think-tags: %r", rzn[:200])
                                 yield {'type': 'reasoning', 'content': rzn}
                                 await asyncio.sleep(0.01)
                             if clean_text:
@@ -859,7 +855,7 @@ class Agent():
             str: Cleaned text.
 
         ## Example:
-            >>> agent.clean('Hello\\u200bWorld')
+            >>> agent.clean('Hello World')
             'HelloWorld'
         '''
         text = text.replace('\ufeff', '')

@@ -110,6 +110,13 @@ except ImportError as e:
     rag_router = None
     logging.warning("backend.routes.rag could not be imported.")
 
+try:
+    from backend.routes.conversation import router as conversation_router
+except ImportError as e:
+    log_error(str(e), source="main.py:conversation_import")
+    conversation_router = None
+    logging.warning("backend.routes.conversation could not be imported.")
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -313,6 +320,9 @@ if telegram_router is not None:
 
 if rag_router is not None:
     app.include_router(rag_router, prefix="/api")
+
+if conversation_router is not None:
+    app.include_router(conversation_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

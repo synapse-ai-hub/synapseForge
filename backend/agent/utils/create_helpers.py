@@ -123,8 +123,6 @@ async def stream_tool_calling_loop(
                     yield {"type": "chunk", "content": event.get("content", "")}
 
                 elif event["type"] == "reasoning":
-                    print(f"[CREATE-HELPERS] {datetime.now().strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
-                    logger.info("[CREATE-HELPERS] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield {"type": "reasoning", "content": event.get("content", "")}
 
                 elif event["type"] == "tool_calls_detected":

@@ -24,6 +24,8 @@ import json
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 
@@ -67,6 +69,8 @@ class TelegramBot:
         self._mode_data: dict[int, dict] = {}
         # Session to restore after the mode ends.
         self._prev_session: dict[int, str | None] = {}
+        # Pending conversation download (chat_id -> {"kind", "mensajes", "title"}).
+        self._pending_download: dict[int, dict] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -214,6 +218,11 @@ class TelegramBot:
             if chat_id in self._awaiting:
                 self._awaiting.pop(chat_id, None)
                 await self.send_message(chat_id, "Cancelado.")
+                # If a conversation download was pending, finish the exit
+                # (close the window) since the creation already ended.
+                pending = self._pending_download.pop(chat_id, None)
+                if pending:
+                    await self._close_create_window(chat_id, pending["kind"])
             return
 
         # "terminar" closes the current skill/RAG creation window.
@@ -309,6 +318,8 @@ class TelegramBot:
             await self._cmd_agentes(chat_id)
         elif cmd == "/crear":
             await self._cmd_crear(chat_id, arg)
+        elif cmd == "/archivo":
+            await self._cmd_archivo(chat_id, arg)
         elif cmd in ("/ayuda", "/help"):
             await self._cmd_ayuda(chat_id)
         else:
@@ -333,6 +344,12 @@ class TelegramBot:
             await self._cmd_modelo(chat_id, text)
         elif cmd == "crear":
             await self._cmd_crear(chat_id, text)
+        elif cmd == "archivo":
+            await self._cmd_archivo(chat_id, text)
+        elif cmd == "descargar":
+            await self._handle_download_question(chat_id, text)
+        elif cmd == "descargar_path":
+            await self._handle_download_path(chat_id, text)
 
     # ------------------------------------------------------------------
     # Skill / RAG creation modes (Telegram as remote control)
@@ -752,11 +769,17 @@ class TelegramBot:
     async def _exit_mode(self, chat_id: int, message: str | None = None) -> None:
         """Exit a skill/RAG mode and restore the previous session.
 
+        For skill/tool creation with a conversation, it first asks the user
+        (via Telegram) whether they want to download the conversation before
+        closing the window. The window is only closed once the user answers.
+
         Args:
             chat_id: The Telegram chat id.
             message: Optional message to send after exiting.
         """
         kind = self._mode.get(chat_id)
+        data = self._mode_data.get(chat_id, {})
+        mensajes = data.get("mensajes", [])
         self._mode.pop(chat_id, None)
         self._mode_data.pop(chat_id, None)
         prev = self._prev_session.pop(chat_id, None)
@@ -765,10 +788,120 @@ class TelegramBot:
                 self.session_manager.set_config("active_session", prev)
             except Exception as exc:
                 logger.warning("No se pudo restaurar la sesión: %s", exc)
+        # For skill/tool creation with a conversation, ask before closing.
+        if kind in ("skill", "tool") and mensajes:
+            if message:
+                await self.send_message(chat_id, message)
+            self._pending_download[chat_id] = {
+                "kind": kind,
+                "mensajes": mensajes,
+                "title": (
+                    "Conversación - Creador de Skills"
+                    if kind == "skill"
+                    else "Conversación - Creador de Tools"
+                ),
+            }
+            self._awaiting[chat_id] = "descargar"
+            await self.send_message(
+                chat_id, "¿Querés descargar la conversación? (sí/no/cancelar)"
+            )
+            return
         if kind:
             await self._emit_create_window(chat_id, kind, "close")
         if message:
             await self.send_message(chat_id, message)
+
+    async def _handle_download_question(self, chat_id: int, text: str) -> None:
+        """Handle the user's answer to the "download conversation?" question.
+
+        Args:
+            chat_id: The Telegram chat id.
+            text: The user's reply.
+        """
+        pending = self._pending_download.pop(chat_id, None)
+        if not pending:
+            return
+        answer = text.strip().lower()
+        if answer in ("sí", "si", "yes", "y"):
+            self._pending_download[chat_id] = pending
+            self._awaiting[chat_id] = "descargar_path"
+            await self.send_message(
+                chat_id, "¿Dónde querés guardarla? (path, 'default' o 'cancelar')"
+            )
+            return
+        # "no" or anything else → close without downloading.
+        await self._close_create_window(chat_id, pending["kind"])
+        await self.send_message(chat_id, "Listo. Ventana cerrada.")
+
+    async def _handle_download_path(self, chat_id: int, text: str) -> None:
+        """Handle the user's path answer and save the conversation.
+
+        Args:
+            chat_id: The Telegram chat id.
+            text: The user's reply (a path, "default" or "cancelar").
+        """
+        pending = self._pending_download.pop(chat_id, None)
+        if not pending:
+            return
+        kind = pending["kind"]
+        answer = text.strip()
+        if answer.lower() == "default":
+            path = self._default_download_path()
+        else:
+            path = answer
+        try:
+            md = await self._export_conversation(pending["mensajes"], pending["title"])
+            await asyncio.to_thread(self._write_file, path, md)
+            await self.send_message(chat_id, f"Conversación guardada en: {path}")
+        except Exception as exc:
+            logger.warning("No se pudo guardar la conversación: %s", exc)
+            await self.send_message(
+                chat_id, f"No se pudo guardar la conversación: {exc}"
+            )
+        await self._close_create_window(chat_id, kind)
+
+    async def _close_create_window(self, chat_id: int, kind: str) -> None:
+        """Close the create window for a chat (used after the download flow)."""
+        if kind:
+            await self._emit_create_window(chat_id, kind, "close")
+
+    def _default_download_path(self) -> str:
+        """Return the default Windows Downloads folder path for the file."""
+        return str(Path.home() / "Downloads" / "conversacion.md")
+
+    async def _export_conversation(self, mensajes: list, title: str) -> str:
+        """Generate the Markdown for a conversation via the export endpoint.
+
+        Args:
+            mensajes: The conversation messages (list of role/content dicts).
+            title: The document title.
+
+        Returns:
+            The generated Markdown string.
+        """
+        from backend.routes.conversation import (
+            ExportRequest,
+            Message,
+            conversation_to_markdown,
+        )
+
+        msgs = [
+            Message(
+                id=str(i),
+                type=m.get("role", "assistant"),
+                content=m.get("content", ""),
+            )
+            for i, m in enumerate(mensajes)
+        ]
+        return conversation_to_markdown(msgs, title)
+
+    def _write_file(self, path: str, content: str) -> None:
+        """Write content to a file, creating parent directories if needed."""
+        target = Path(path)
+        if target.suffix.lower() != ".md":
+            target = target.with_suffix(".md")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
 
     async def _emit_create_window(self, chat_id: int, kind: str, action: str) -> None:
         """Emit an event to the frontend to open/close the create window.
@@ -1139,9 +1272,59 @@ class TelegramBot:
             "/tools - Ver tools (dev)\n"
             "/agentes - Ver agentes (dev)\n"
             "/crear - Crear skill o colección RAG (dev)\n"
+            "/archivo - Enviar un archivo por path\n"
             "/ayuda - Mostrar ayuda"
         )
         await self.send_message(chat_id, help_text)
+
+    async def _cmd_archivo(self, chat_id: int, path: str | None = None) -> None:
+        """Send a file from the local filesystem to the chat.
+
+        If no path is given, asks the user for one (or "cancelar"). Otherwise
+        validates the path and sends the file as a Telegram document.
+
+        Args:
+            chat_id: The Telegram chat id.
+            path: The file path to send, or ``None`` to ask for it.
+        """
+        if not path:
+            self._awaiting[chat_id] = "archivo"
+            await self.send_message(
+                chat_id, "¿Qué archivo querés? (path o 'cancelar')"
+            )
+            return
+        path = path.strip()
+        if not os.path.isfile(path):
+            await self.send_message(
+                chat_id, f"No encontré el archivo: {path}"
+            )
+            return
+        try:
+            await self._send_document(chat_id, path)
+        except Exception as exc:
+            logger.warning("No se pudo enviar el archivo: %s", exc)
+            await self.send_message(
+                chat_id, f"No se pudo enviar el archivo: {exc}"
+            )
+
+    async def _send_document(self, chat_id: int, path: str) -> None:
+        """Send a local file to a chat as a Telegram document.
+
+        Args:
+            chat_id: The Telegram chat id.
+            path: The absolute path of the file to send.
+        """
+        url = _TELEGRAM_API.format(token=self.token) + "/sendDocument"
+        filename = os.path.basename(path)
+        with open(path, "rb") as fh:
+            resp = await self._client.post(
+                url,
+                data={"chat_id": chat_id},
+                files={"document": (filename, fh)},
+            )
+        payload = resp.json()
+        if not payload.get("ok"):
+            raise RuntimeError(payload.get("description", "sendDocument failed"))
 
     # ------------------------------------------------------------------
     # Attachments

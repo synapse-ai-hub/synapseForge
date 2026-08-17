@@ -8,9 +8,10 @@ import {
   type FormEvent,
 } from "react";
 import { flushSync } from "react-dom";
-import { Send, Square, Plus, Trash2 } from "lucide-react";
+import { Send, Square, Plus, Trash2, Download } from "lucide-react";
 import { MessageRow } from "../components/chatBlocks";
 import type { Message, ContentBlock } from "../../App";
+import { saveFileWithPicker, fetchConversationMarkdown } from "../utils/conversationExport";
 
 const API = (import.meta.env.VITE_URL_BASE || "http://localhost:8000") + "/api";
 
@@ -59,6 +60,7 @@ export function ToolInterface() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [resultType, setResultType] = useState<"success" | "error" | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   /* ---- refs ---- */
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -401,7 +403,6 @@ export function ToolInterface() {
                   if (data.status === "success") {
                     setResultType("success");
                     setResultMsg(data.message || "Tool creada exitosamente.");
-                    setTimeout(() => window.close(), 1500);
                   } else {
                     setResultType("error");
                     setResultMsg("Error: " + (data.message || "Error desconocido"));
@@ -776,13 +777,33 @@ export function ToolInterface() {
                       </svg>
                     )}
                   </div>
-                  <p className="text-sm text-app-text">{resultMsg}</p>
-                  <button
-                    onClick={() => window.close()}
-                    className="bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
-                  >
-                    Aceptar
-                  </button>
+                   <p className="text-sm text-app-text">{resultMsg}</p>
+                   {downloadError && (
+                     <p className="text-sm text-red-600">{downloadError}</p>
+                   )}
+                   <div className="flex gap-2">
+                     <button
+                       onClick={async () => {
+                         try {
+                           setDownloadError(null);
+                           const md = await fetchConversationMarkdown(messages, "Conversación - Creador de Tools");
+                           await saveFileWithPicker(md, "conversacion-tool", ".md");
+                         } catch (err) {
+                           setDownloadError(err instanceof Error ? err.message : "No se pudo descargar la conversación.");
+                         }
+                       }}
+                       className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
+                     >
+                       <Download size={14} />
+                       Descargar conversación
+                     </button>
+                     <button
+                       onClick={() => window.close()}
+                       className="bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
+                     >
+                       Aceptar
+                     </button>
+                   </div>
                 </div>
               ) : (
                 <>

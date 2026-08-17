@@ -250,8 +250,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     yield _sse({"type": "chunk", "content": event.get("content", "")})
 
                 elif event["type"] == "reasoning":
-                    print(f"[CREATE-SKILL] {datetime.now().strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
-                    logger.info("[CREATE-SKILL] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield _sse({"type": "reasoning", "content": event.get("content", "")})
 
                 elif event["type"] == "tool_calls_detected":
@@ -259,9 +257,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                     if tcs:
                         tc = tcs[0]
                         tool_calls_data = tc.get("args", {})
-                        # print(">>> CREATE SKILL - Tool call interview:")
-                        # print(f"  name: {tc.get('name')}")
-                        # print(f"  args: {json.dumps(tool_calls_data, ensure_ascii=False)}")
                     break
 
                 elif event["type"] == "aborted":
@@ -270,7 +265,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
 
         except Exception as e:
             logger.exception("Error en streaming interview: %s", e)
-            # print(f">>> CREATE SKILL - Error técnico (interview): {e}")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
@@ -284,7 +278,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
                 # El LLM respondió en texto natural sin llamar a la tool: esa es la
                 # respuesta de la entrevista (el front ya la mostró). No se envía nada
                 # extra al front; finaliza al terminar el stream.
-                # print(">>> CREATE SKILL - Sin tool call: el texto plano es la respuesta de la entrevista.")
                 return
             else:
                 yield _sse({"type": "error", "content": "El LLM no devolvió una respuesta válida."})
@@ -295,8 +288,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         # ── QUESTION ──
         if action == "question":
             question_text = tool_calls_data.get("question", "")
-            # print(">>> CREATE SKILL - Acción: question")
-            # print(f"  Pregunta: {question_text}")
             yield _sse({"type": "skill_action", "content": {"action": "question", "question": question_text}})
             return
 
@@ -306,12 +297,9 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
-        # print(">>> CREATE SKILL - Acción: create")
         task = tool_calls_data.get("task", descripcion)
         name = nombre or tool_calls_data.get("name")
         refs = tool_calls_data.get("refs")
-        # print(f"  Task: {task}")
-        # print(f"  Name: {name}")
 
         # ════════════════════════════════════════════════════════════════
         # FASE 2: EVALUAR si ya existe una skill que cubra la tarea
@@ -322,7 +310,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
 
         if decision and decision.get("exist") == "Sí":
             skill_name = decision.get("skill")
-            # print(f">>> CREATE SKILL - Ya existe: {skill_name}")
             yield _sse({"type": "skill_result", "content": {
                 "status": "success",
                 "message": f"Ya existe la skill '{skill_name}' que cubre esta tarea.",
@@ -333,7 +320,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         # ════════════════════════════════════════════════════════════════
         # FASE 3: CREAR — ejecutar agente con tools, stremeando events
         # ════════════════════════════════════════════════════════════════
-        # print(">>> CREATE SKILL - No existe. Lanzando agente creador...")
         yield _sse({"type": "skill_action", "content": {"action": "creating"}})
 
         # Build the generate prompt
@@ -359,12 +345,10 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             tools = list(agent.tools.tools_registry(_AGENT_TOOLS_PERMS))
         except AttributeError as e:
             logger.exception("Error obteniendo tools: %s", e)
-            # print(f">>> CREATE SKILL - Error técnico (tools): {e}")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
         tool_names = [t.get("function", {}).get("name", "?") for t in tools]
-        # print(f">>> CREATE SKILL - Tools: {tool_names}")
 
         # ── 3b. Loop de tool calling EXACTO ChatInterface (loop.py) ──
         msgs: list[dict[str, Any]] = [
@@ -400,7 +384,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             _copiar_referencias(skill_dir, mensajes, refs)
 
         if skill_name_creado and skill_dir:
-            # print(f">>> CREATE SKILL - Skill creada: {skill_name_creado}")
             yield _sse({"type": "skill_result", "content": {
                 "status": "success",
                 "message": f"Skill '{skill_name_creado}' creada exitosamente.",
@@ -409,7 +392,6 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         else:
             # El agente terminó la creación (escribió los archivos). Mostrar el cartel de éxito.
             nombre_creado = skill_name_creado or name or "skill"
-            # print(f">>> CREATE SKILL - Skill creada: {nombre_creado}")
             yield _sse({"type": "skill_result", "content": {
                 "status": "success",
                 "message": f"Skill '{nombre_creado}' creada exitosamente.",
@@ -610,8 +592,6 @@ async def post_create_tool_stream(req: CreateToolRequest):
                     yield _sse({"type": "chunk", "content": event.get("content", "")})
 
                 elif event["type"] == "reasoning":
-                    print(f"[CREATE-TOOL] {datetime.now().strftime('%H:%M:%S.%f')} reenviando reasoning: {event.get('content', '')[:200]!r}")
-                    logger.info("[CREATE-TOOL] reenviando reasoning: %r", event.get("content", "")[:200])
                     yield _sse({"type": "reasoning", "content": event.get("content", "")})
 
                 elif event["type"] == "tool_calls_detected":

@@ -134,6 +134,31 @@ _last_heartbeat: float = 0.0
 _HEARTBEAT_TIMEOUT: float = 180.0  # 3 minutes
 
 
+async def _liberar_modelo_al_cerrar() -> None:
+    """Libera el modelo de Ollama si el proveedor actual es LOCAL.
+
+    Solo aplica cuando el proveedor activo es ``LOCAL`` (Ollama): si el
+    proveedor es ``GROQ`` no hay modelo local cargado que descargar (ya se
+    liberó al cambiar de proveedor). Se ejecuta en un thread para no bloquear
+    el event loop.
+    """
+    try:
+        if agent is None:
+            return
+        if agent.provider.upper() != "LOCAL":
+            return
+        modelo = agent._resolved_model
+        if not modelo:
+            return
+        from backend.agent.utils.clean_memory import liberar_modelo
+
+        await asyncio.to_thread(liberar_modelo, modelo)
+        logger.info("Modelo liberado al cerrar: %s", modelo)
+    except Exception as exc:
+        log_error(str(exc), source="main.py:_liberar_modelo_al_cerrar")
+        logger.warning("No se pudo liberar modelo al cerrar: %s", exc)
+
+
 async def _heartbeat_watchdog() -> None:
     """Background task: exit process if no heartbeat received within timeout."""
     global _last_heartbeat
@@ -141,6 +166,8 @@ async def _heartbeat_watchdog() -> None:
         await asyncio.sleep(30)
         if _last_heartbeat and (time.time() - _last_heartbeat) > _HEARTBEAT_TIMEOUT:
             logger.info("Sin heartbeat %.0fs -> suicidio", _HEARTBEAT_TIMEOUT)
+            # Liberar el modelo local antes del hard exit
+            await _liberar_modelo_al_cerrar()
             os._exit(0)
 
 # ---------------------------------------------------------------------------
@@ -264,6 +291,8 @@ async def lifespan(app: FastAPI):
         await telegram_bot.stop()
     except Exception as exc:
         log_error(str(exc), source="main.py:lifespan(telegram_stop)")
+    # Liberar el modelo local (si el proveedor actual es LOCAL) al cerrar
+    await _liberar_modelo_al_cerrar()
     logger.info("<descripcion>Nombre del proyecto</descripcion> API shutting down.")
 
 

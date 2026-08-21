@@ -167,7 +167,7 @@ export const configService = {
   },
 
   /** Force rebuild of the tools registry and return updated list. */
-  async refreshTools(): Promise<ToolInfo[]> {
+  async refresh(): Promise<ToolInfo[]> {
     const response = await fetch(`${API_BASE_URL}/api/config/tools/refresh`, {
       method: "POST",
     });

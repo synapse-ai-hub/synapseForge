@@ -27,9 +27,11 @@ export function AgentInfoTab() {
   const refreshAll = async () => {
     setRefreshing(true);
     try {
-      // Refresh tools registry on backend
-      await configService.refreshTools();
-      // Force reload of all panels by triggering window focus event
+      // Refresh tools registry on backend (external + native + MCP)
+      await configService.refresh();
+      // Reload MCP server status
+      await loadMcp();
+      // Force reload of all panels (tools, skills, agents, RAG) via focus event
       window.dispatchEvent(new Event("focus"));
     } catch (err) {
       console.error("Error refrescando:", err);

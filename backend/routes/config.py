@@ -646,18 +646,21 @@ async def list_tools() -> JSONResponse:
 
 
 @router.post("/tools/refresh")
-async def refresh_tools() -> JSONResponse:
-    """Rebuild the tools registry (native + external) and return updated list."""
+async def refresh() -> JSONResponse:
+    """Full refresh: re-scan external tools, rebuild registry (including MCP).
+
+    Triggered by the ``Actualizar`` button in the agent panel.
+    """
     try:
-        # Force rebuild of the tools registry
-        agent.tools._build_tools_registry()
+        agent.tools._external_tools = agent.tools._scan_external_tools()
+        agent.tools._tools_registry = agent.tools._build_tools_registry()
         tools = get_tools_list()
         return JSONResponse(
             status_code=200,
             content={"status": "success", "tools": tools, "message": "Tools registry refreshed"},
         )
     except Exception as exc:
-        log_error(str(exc), source="backend/routes/config.py:refresh_tools")
+        log_error(str(exc), source="backend/routes/config.py:refresh")
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": "Error refreshing tools", "tools": []},

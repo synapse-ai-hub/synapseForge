@@ -253,16 +253,25 @@ def get_agent_parameters(agent_name: str | None) -> dict[str, Any]:
     """Resolve an agent's **model parameters** from frontmatter.
 
     Reads ``agents/<agent_name>.md`` and extracts the ``parameters`` block
-    (temperature, top_p, model). Returns defaults if not specified.
+    (temperature, top_p, model, provider, max_tokens, seed). Returns
+    defaults if not specified.
 
     Args:
         agent_name: Agent name (without ``.md``). ``None``/empty → defaults.
 
     Returns:
         Contract response. On success, ``data`` is a JSON string with
-        ``{"temperature": float, "top_p": float, "model": str | None}``.
+        ``{"temperature": float, "top_p": float, "model": str | None,
+        "provider": str | None, "max_tokens": int, "seed": int | None}``.
     """
-    defaults = {"temperature": 0.0, "top_p": 0.5, "model": None, "seed": None}
+    defaults = {
+        "temperature": 0.0,
+        "top_p": 0.5,
+        "model": None,
+        "provider": None,
+        "max_tokens": 3000,
+        "seed": None,
+    }
 
     if not agent_name:
         return make_success_response(
@@ -277,13 +286,8 @@ def get_agent_parameters(agent_name: str | None) -> dict[str, Any]:
     fm = _parse_frontmatter(content)
     params = fm.get("parameters", {}) or {}
 
-    # Merge with defaults
-    result = {
-        "temperature": params.get("temperature", defaults["temperature"]),
-        "top_p": params.get("top_p", defaults["top_p"]),
-        "model": params.get("model", defaults["model"]),
-        "seed": params.get("seed", defaults["seed"])
-    }
+    # Merge with defaults — all supported keys are passed through
+    result = {key: params.get(key, val) for key, val in defaults.items()}
 
     return make_success_response(
         message=f"Parameters for agent '{agent_name}'.",

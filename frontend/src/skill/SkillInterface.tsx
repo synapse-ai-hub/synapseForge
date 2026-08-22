@@ -10,6 +10,7 @@ import {
 import { flushSync } from "react-dom";
 import { Send, Square, Paperclip, Download } from "lucide-react";
 import { FileChip, FileWarningBanner, MessageRow } from "../components/chatBlocks";
+import { CreateModelSelector } from "../components/CreateModelSelector";
 import type { Message, ContentBlock } from "../../App";
 import { saveFileWithPicker, fetchConversationMarkdown } from "../utils/conversationExport";
 
@@ -54,6 +55,9 @@ export function SkillInterface() {
   const [descripcion, setDescripcion] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
+  /* Selección efímera de modelo cloud para esta tarea (no se persiste) */
+  const [createModel, setCreateModel] = useState<string | null>(null);
+  const [createProvider, setCreateProvider] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const historialRef = useRef<HistorialMsg[]>([]);
@@ -285,6 +289,8 @@ export function SkillInterface() {
             descripcion,
             name: nombre || null,
             mensajes: historialRef.current,
+            model: createModel,
+            provider: createProvider,
           }),
           signal: abort.signal,
         });
@@ -510,7 +516,7 @@ export function SkillInterface() {
         abortRef.current = null;
       }
     },
-    [isStreaming, descripcion, nombre],
+    [isStreaming, descripcion, nombre, createModel, createProvider],
   );
 
   /* ---- enviar desde el chat ---- */
@@ -644,6 +650,12 @@ export function SkillInterface() {
                   placeholder="Ej: Necesito una skill que analice la competencia, compare precios y productos, y genere un informe con fortalezas y debilidades."
                 />
               </div>
+              <CreateModelSelector
+                onApply={(m, p) => {
+                  setCreateModel(m);
+                  setCreateProvider(p);
+                }}
+              />
               <button
                 type="submit"
                 className="w-full bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50"

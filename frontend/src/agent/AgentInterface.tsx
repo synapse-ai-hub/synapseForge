@@ -9,6 +9,7 @@ import {
 import { flushSync } from "react-dom";
 import { Send, Square, Download } from "lucide-react";
 import { MessageRow } from "../components/chatBlocks";
+import { CreateModelSelector } from "../components/CreateModelSelector";
 import type { Message, ContentBlock } from "../../App";
 import { saveFileWithPicker, fetchConversationMarkdown } from "../utils/conversationExport";
 
@@ -35,6 +36,9 @@ export function AgentInterface() {
   const [descripcion, setDescripcion] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
+  /* Selección efímera de modelo cloud para esta tarea (no se persiste) */
+  const [createModel, setCreateModel] = useState<string | null>(null);
+  const [createProvider, setCreateProvider] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const historialRef = useRef<HistorialMsg[]>([]);
@@ -194,6 +198,8 @@ export function AgentInterface() {
             descripcion,
             name: nombre || null,
             mensajes: historialRef.current,
+            model: createModel,
+            provider: createProvider,
           }),
           signal: abort.signal,
         });
@@ -405,7 +411,7 @@ export function AgentInterface() {
         abortRef.current = null;
       }
     },
-    [isStreaming, descripcion, nombre],
+    [isStreaming, descripcion, nombre, createModel, createProvider],
   );
 
   /* ---- enviar desde el chat ---- */
@@ -540,6 +546,13 @@ export function AgentInterface() {
                   Describí el rol, qué debe hacer y qué NO debe hacer. El LLM va a inferir qué tools y skills necesita.
                 </p>
               </div>
+
+              <CreateModelSelector
+                onApply={(m, p) => {
+                  setCreateModel(m);
+                  setCreateProvider(p);
+                }}
+              />
 
               <button
                 type="submit"

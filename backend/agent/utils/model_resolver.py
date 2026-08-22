@@ -237,26 +237,221 @@ def resolve_model() -> str:
             logger.info("Using legacy MODEL_NAME_4: %s", legacy)
             return legacy
 
-        # Listar modelos de Google (Gemini)
-        from google import genai
-        api_key = os.getenv("GOOGLE_API_KEY", "").strip()
-        if not api_key:
-            logger.error("No GOOGLE_API_KEY found in env")
-            return ""
-        
-        try:
-            client = genai.Client(api_key=api_key)
-            models = [m.name for m in client.models.list() if 'gemini' in m.name]
-            selected = _prompt_user_selection(models, "Google Gemini (API)")
-            return selected or ""
-        except Exception as e:
-            log_error(str(e), source="model_resolver.py:resolve_model(google)")
-            logger.error("Google API request failed: %s", e)
-            return ""
+        models = get_google_models()
+        selected = _prompt_user_selection(models, "Google Gemini (API)")
+        return selected or ""
+
+    elif provider.upper() == 'OPENROUTER':
+        models = get_openrouter_models()
+        selected = _prompt_user_selection(models, "OpenRouter")
+        return selected or ""
 
     else:
         logger.error("Unknown PROVIDER: %s", provider)
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Google Gemini model listing / context window
+# ---------------------------------------------------------------------------
+
+def get_google_models(api_key: str | None = None) -> List[str]:
+    """List chat-capable Gemini models via the Google GenAI API.
+
+    Filters the full model list to models that support ``generateContent``
+    and excludes non-chat variants (TTS, image, embedding, live/audio,
+    robotics, computer-use) so only text-generation chat models are shown.
+
+    Args:
+        api_key: Google API key. If ``None``, reads ``GOOGLE_API_KEY`` env var.
+
+    Returns:
+        A list of model name strings (with the ``models/`` prefix).
+        Empty if the API call fails or no key is available.
+    """
+    key = api_key or os.getenv("GOOGLE_API_KEY", "").strip()
+    if not key:
+        logger.error("No GOOGLE_API_KEY found in env")
+        return []
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=key)
+        models: List[str] = []
+        for m in client.models.list():
+            name = m.name or ""
+            actions = getattr(m, "supported_actions", None) or []
+            if "generateContent" not in actions:
+                continue
+            # Exclude non-text-generation variants (TTS, image gen, embeddings,
+            # live audio, robotics, computer use) — they are listed by the API
+            # but are not usable as chat models.
+            lowered = name.lower()
+            if any(tag in lowered for tag in (
+                "-tts", "image", "embedding", "native-audio",
+                "live", "robotics", "computer-use",
+            )):
+                continue
+            models.append(name)
+        return models
+    except Exception as e:
+        log_error(str(e), source="model_resolver.py:get_google_models")
+        logger.error("Google API request failed: %s", e)
+        return []
+
+
+def get_google_context_window(model: str, api_key: str | None = None) -> int | None:
+    """Return the context window (tokens) for a Gemini model.
+
+    Calls ``client.models.get(model=...)`` and reads the
+    ``input_token_limit`` field.
+
+    Args:
+        model: The Gemini model name (e.g. ``models/gemini-3.5-flash``).
+        api_key: Google API key. If ``None``, reads ``GOOGLE_API_KEY`` env var.
+
+    Returns:
+        The context window in tokens, or ``None`` if it cannot be resolved.
+    """
+    key = api_key or os.getenv("GOOGLE_API_KEY", "").strip()
+    if not key:
+        return None
+
+    try:
+        from google import genai
+        client = genai.Client(api_key=key)
+        m = client.models.get(model=model)
+        limit = getattr(m, "input_token_limit", None)
+        return int(limit) if limit else None
+    except Exception as e:
+        log_error(str(e), source="model_resolver.py:get_google_context_window")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter model listing / details
+# ---------------------------------------------------------------------------
+
+_OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+"""Public OpenRouter catalog endpoint (no API key required)."""
+
+_NON_CHAT_ID_TAGS = (
+    "embedding", "whisper", "tts", "moderation", "guard",
+    "rerank", "voice", "transcri", "speech", "video", "image-gen",
+)
+"""Catalog ID substrings that identify non-chat models."""
+
+
+def _fetch_openrouter_catalog() -> list[dict]:
+    """Fetch and return the raw OpenRouter model catalog entries.
+
+    Returns:
+        List of catalog entry dicts, or an empty list on failure.
+    """
+    import requests
+
+    try:
+        resp = requests.get(_OPENROUTER_MODELS_URL, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        log_error(str(e), source="model_resolver.py:_fetch_openrouter_catalog(request)")
+        logger.error("OpenRouter catalog request failed: %s", e)
+        return []
+    except json.JSONDecodeError as e:
+        log_error(str(e), source="model_resolver.py:_fetch_openrouter_catalog(json)")
+        logger.error("OpenRouter catalog returned invalid JSON: %s", e)
+        return []
+
+    entries = data.get("data", []) if isinstance(data, dict) else []
+    return [m for m in entries if isinstance(m, dict) and m.get("id")]
+
+
+def _is_chat_model(entry: dict) -> bool:
+    """Return whether a catalog entry is a text-generation chat model.
+
+    Prefers the ``architecture.output_modalities`` field when present;
+    otherwise falls back to excluding known non-chat ID tags.
+
+    Args:
+        entry: A raw OpenRouter catalog entry.
+
+    Returns:
+        ``True`` if the model can be used for chat completions.
+    """
+    arch = entry.get("architecture") or {}
+    modalities = arch.get("output_modalities")
+    if isinstance(modalities, list) and modalities:
+        return "text" in modalities
+    model_id = str(entry.get("id", "")).lower()
+    return not any(tag in model_id for tag in _NON_CHAT_ID_TAGS)
+
+
+def get_openrouter_models(api_key: str | None = None) -> List[str]:
+    """List chat-capable models from the public OpenRouter catalog.
+
+    Args:
+        api_key: Unused (the catalog is public); kept for signature
+            consistency with the other provider resolvers.
+
+    Returns:
+        Sorted list of model ID strings (e.g. ``openai/gpt-4o``).
+        Empty if the catalog cannot be fetched.
+    """
+    entries = _fetch_openrouter_catalog()
+    models = sorted(
+        entry["id"] for entry in entries if _is_chat_model(entry)
+    )
+    return models
+
+
+def get_openrouter_model_details(model: str) -> dict | None:
+    """Return catalog details for an OpenRouter model.
+
+    Args:
+        model: The OpenRouter model ID (e.g. ``openai/gpt-4o``).
+
+    Returns:
+        Dict with ``context_length``, ``reasoning`` (bool),
+        ``reasoning_levels`` (list or None) and ``pricing`` (dict or None),
+        or ``None`` if the model is not found.
+    """
+    for entry in _fetch_openrouter_catalog():
+        if entry.get("id") == model:
+            supported = entry.get("supported_parameters") or []
+            has_reasoning = "reasoning" in supported
+            levels = None
+            if has_reasoning:
+                # Some models expose enabled_reasoning_levels in the catalog.
+                levels = entry.get("enabled_reasoning_levels") or None
+            return {
+                "context_length": entry.get("context_length"),
+                "reasoning": has_reasoning,
+                "reasoning_levels": levels,
+                "pricing": entry.get("pricing"),
+            }
+    return None
+
+
+def get_openrouter_context_window(model: str, api_key: str | None = None) -> int | None:
+    """Return the context window (tokens) for an OpenRouter model.
+
+    Reads ``context_length`` from the public catalog.
+
+    Args:
+        model: The OpenRouter model ID.
+        api_key: Unused (the catalog is public).
+
+    Returns:
+        The context window in tokens, or ``None`` if it cannot be resolved.
+    """
+    try:
+        details = get_openrouter_model_details(model)
+        cw = (details or {}).get("context_length")
+        return int(cw) if cw else None
+    except Exception as e:
+        log_error(str(e), source="model_resolver.py:get_openrouter_context_window")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -365,8 +560,9 @@ def ensure_context_window(agent, model: str) -> int | None:
         if provider.upper() == "LOCAL":
             cw = get_ollama_context_window(model)
         elif provider.upper() == "GOOGLE":
-            # Gemini context window is usually large, default to 1M for now
-            cw = 1000000
+            cw = get_google_context_window(model)
+        elif provider.upper() == "OPENROUTER":
+            cw = get_openrouter_context_window(model)
         else:
             cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
     except Exception as e:

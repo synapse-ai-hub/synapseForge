@@ -3,6 +3,7 @@ import os
 import json
 import time
 import uuid
+import base64
 import functools
 import logging
 from datetime import datetime
@@ -13,6 +14,7 @@ from groq import AsyncGroq
 from ollama import AsyncClient
 from google import genai
 from google.genai import types
+from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from backend.agent.utils.error_logger import log_error
+from backend.agent.utils import provider_keys
 from backend.agent.utils.contract import (
     ContractResponse,
     UsageReport,
@@ -51,6 +54,43 @@ from backend.agent.tools import Tools
 
 load_dotenv()  
 
+def _signature_to_str(signature: Any) -> str | None:
+    """Encode a Gemini thought signature (bytes) to a JSON-safe string.
+
+    Args:
+        signature: Raw signature from ``part.thought_signature`` (bytes or str).
+
+    Returns:
+        Base64 string, the original value if already a string, or ``None``.
+    """
+    if isinstance(signature, (bytes, bytearray)):
+        try:
+            return base64.b64encode(bytes(signature)).decode("ascii")
+        except Exception as e:
+            log_error(str(e), source="agent.py:_signature_to_str")
+            return None
+    return signature if isinstance(signature, str) else None
+
+
+def _signature_from_str(value: Any) -> Any:
+    """Decode a thought signature previously encoded with
+    :func:`_signature_to_str`.
+
+    Args:
+        value: Base64 string, raw bytes or ``None``.
+
+    Returns:
+        Bytes ready to be sent to the Gemini API, or ``None``.
+    """
+    if isinstance(value, str):
+        try:
+            return base64.b64decode(value)
+        except Exception as e:
+            log_error(str(e), source="agent.py:_signature_from_str")
+            return None
+    return value if isinstance(value, (bytes, bytearray)) else None
+
+
 class Agent():
     '''
     Core class for interacting with LLMs (Groq API or local Ollama) with
@@ -62,19 +102,27 @@ class Agent():
     The provider and model are resolved at runtime (see
     ``backend/agent/utils/model_resolver.py``) and set through the
     ``POST /api/config/models/select`` endpoint; they are not read from
-    environment variables. The only environment variable consumed here is
-    ``GROQ_API_KEY``, used to build the Groq client.
+    environment variables. API keys are resolved from the encrypted DB
+    storage first (see ``provider_keys``), falling back to their
+    environment variables, and are used to build the cloud clients.
 
     ## Attributes:
         - __api_key (str): API key used to authenticate with the Groq client
-          (loaded from the ``GROQ_API_KEY`` env var).
-        - provider (str | None): ``GROQ`` or ``LOCAL``; set at runtime by the
-          model selection endpoint.
+          (DB storage first, ``GROQ_API_KEY`` env var fallback).
+        - __google_api_key (str): API key for the Google GenAI client.
+        - __openrouter_api_key (str): API key for the OpenRouter client.
+        - provider (str | None): ``GROQ``, ``LOCAL``, ``GOOGLE`` or
+          ``OPENROUTER``; set at runtime by the model selection endpoint.
         - _resolved_model (str | None): Currently resolved model identifier.
         - _context_window (int | None): Context window (tokens) of the
           resolved model.
         - groq_client (AsyncGroq | None): Instantiated Groq client (only if
-          ``GROQ_API_KEY`` is present).
+          a Groq API key is available).
+        - google_client (genai.Client | None): Instantiated Google GenAI
+          client (only if a Google API key is available).
+        - openrouter_client (AsyncOpenAI | None): Instantiated OpenRouter
+          client (OpenAI-compatible base URL; only if an OpenRouter API key
+          is available).
         - ollama_client (AsyncClient | None): Instantiated Ollama client
           (only if the local service is reachable).
         - usage (tuple | None): Last request usage metrics in the form
@@ -82,7 +130,10 @@ class Agent():
           completion_time, total_time).
 
     ## Notes:
-        - For provider ``GROQ``: requires ``GROQ_API_KEY`` in ``.env``.
+        - For provider ``GROQ``: requires a Groq API key (DB or env).
+        - For provider ``GOOGLE``: requires a Google API key (DB or env).
+        - For provider ``OPENROUTER``: requires an OpenRouter API key
+          (DB or env).
         - For provider ``LOCAL``: requires ``ollama`` installed
           (``pip install ollama``) and the service running.
         - Methods that call the API catch exceptions and print errors rather
@@ -117,8 +168,10 @@ class Agent():
         '''
         super().__init__()
 
-        self.__api_key = os.getenv('GROQ_API_KEY')
-        self.__google_api_key = os.getenv('GOOGLE_API_KEY')
+        # Resolve API keys: encrypted DB storage first, env var fallback.
+        self.__api_key = provider_keys.resolve_api_key('GROQ')
+        self.__google_api_key = provider_keys.resolve_api_key('GOOGLE')
+        self.__openrouter_api_key = provider_keys.resolve_api_key('OPENROUTER')
         self.provider: str | None = None
         self._resolved_model: str | None = None
         self._context_window: int | None = None
@@ -143,6 +196,19 @@ class Agent():
             log_error(str(e), source="agent.py:__init__(google)")
             self.google_client = None
 
+        try:
+            self.openrouter_client = (
+                AsyncOpenAI(
+                    base_url='https://openrouter.ai/api/v1',
+                    api_key=self.__openrouter_api_key,
+                )
+                if self.__openrouter_api_key
+                else None
+            )
+        except Exception as e:
+            log_error(str(e), source="agent.py:__init__(openrouter)")
+            self.openrouter_client = None
+
         self.usage = None
 
         # Cache de prompts cargados desde archivos (evita lecturas repetitivas)
@@ -157,6 +223,47 @@ class Agent():
             _base = _project_root
 
         self.tools = Tools()
+
+    def rebuild_provider_client(self, provider: str) -> dict:
+        """Rebuild the LLM client for a provider with the current API key.
+
+        Resolves the key from the encrypted DB storage first, falling back
+        to the corresponding environment variable, then re-instantiates the
+        client so a key saved at runtime takes effect without restarting
+        the app.
+
+        Args:
+            provider: ``GROQ``, ``GOOGLE`` or ``OPENROUTER``.
+
+        Returns:
+            Contract response ``{"status": "success"|"error", "message": ...}``.
+        """
+        provider_u = (provider or "").upper()
+        try:
+            if provider_u == 'GROQ':
+                key = provider_keys.resolve_api_key('GROQ')
+                self.__api_key = key
+                self.groq_client = AsyncGroq(api_key=key) if key else None
+            elif provider_u == 'GOOGLE':
+                key = provider_keys.resolve_api_key('GOOGLE')
+                self.__google_api_key = key
+                self.google_client = genai.Client(api_key=key) if key else None
+            elif provider_u == 'OPENROUTER':
+                key = provider_keys.resolve_api_key('OPENROUTER')
+                self.__openrouter_api_key = key
+                self.openrouter_client = (
+                    AsyncOpenAI(
+                        base_url='https://openrouter.ai/api/v1', api_key=key
+                    )
+                    if key
+                    else None
+                )
+            else:
+                return {"status": "error", "message": f"Provider inválido: '{provider}'."}
+            return {"status": "success", "message": f"Cliente de {provider_u} actualizado."}
+        except Exception as e:
+            log_error(str(e), source="agent.py:rebuild_provider_client")
+            return {"status": "error", "message": f"Error reconstruyendo el cliente: {e}"}
 
     @property
     def default_model(self) -> str:
@@ -188,6 +295,30 @@ class Agent():
         normalized = []
         for tc in tool_calls:
             entry: dict[str, Any] = {}
+            # Gemini style dict built in the GOOGLE branch:
+            # {"name", "args", "signature"}.
+            if isinstance(tc, dict):
+                entry["id"] = f"call_{uuid.uuid4().hex}"
+                entry["name"] = tc.get("name") or ""
+                args = tc.get("args")
+                entry["args"] = args if isinstance(args, dict) else {}
+                if tc.get("signature"):
+                    entry["thought_signature"] = tc["signature"]
+                normalized.append(entry)
+                continue
+            # Gemini FunctionCall style: name/args directly on the object,
+            # no id and no nested function attribute.
+            if not hasattr(tc, "function"):
+                try:
+                    entry["id"] = f"call_{uuid.uuid4().hex}"
+                    entry["name"] = tc.name
+                except AttributeError as e:
+                    log_error(str(e), source="agent.py:_normalize_tool_calls(gemini)")
+                    continue
+                args = getattr(tc, "args", None)
+                entry["args"] = args if isinstance(args, dict) else {}
+                normalized.append(entry)
+                continue
             try:
                 entry["id"] = tc.id
             except AttributeError as e:
@@ -283,6 +414,161 @@ class Agent():
             )
         return out
 
+    def _sanitize_gemini_schema(self, schema: Any) -> Any:
+        """Recursively strip JSON-Schema keys not supported by Gemini.
+
+        Gemini's ``Schema`` only accepts a subset of JSON Schema
+        (``type``, ``description``, ``properties``, ``required``, ``items``,
+        ``enum``, ``format``). Keys like ``additionalProperties`` or
+        ``$schema`` cause 400 errors, so they are removed here.
+
+        Args:
+            schema: A JSON Schema dict (or any value).
+
+        Returns:
+            The sanitized schema.
+        """
+        if not isinstance(schema, dict):
+            return schema
+        allowed = ("type", "description", "properties", "required",
+                   "items", "enum", "format")
+        out: dict[str, Any] = {}
+        for k, v in schema.items():
+            if k not in allowed:
+                continue
+            if k == "properties" and isinstance(v, dict):
+                out[k] = {pk: self._sanitize_gemini_schema(pv) for pk, pv in v.items()}
+            elif k == "items":
+                out[k] = self._sanitize_gemini_schema(v)
+            else:
+                out[k] = v
+        return out
+
+    def _to_gemini_tools(self, tools: list[dict[str, Any]] | None) -> list[Any]:
+        """Convert OpenAI-format tool schemas to Gemini ``Tool`` declarations.
+
+        Args:
+            tools: Tool definitions in OpenAI format
+                (``{"type": "function", "function": {...}}``).
+
+        Returns:
+            List with a single ``types.Tool`` holding all function
+            declarations, or an empty list when no tools are given.
+        """
+        if not tools:
+            return []
+        declarations: list[types.FunctionDeclaration] = []
+        for t in tools:
+            fn = t.get("function", t)
+            params = fn.get("parameters")
+            declarations.append(types.FunctionDeclaration(
+                name=fn.get("name"),
+                description=fn.get("description") or "",
+                parameters=self._sanitize_gemini_schema(params) if params else None,
+            ))
+        return [types.Tool(function_declarations=declarations)]
+
+    def _to_gemini_contents(
+        self, msgs: list[dict[str, Any]]
+    ) -> tuple[list[types.Content], str | None]:
+        """Convert OpenAI-style messages to Gemini ``Content`` objects.
+
+        Mapping rules:
+
+        - ``system`` → accumulated into the returned system instruction.
+        - ``user`` → ``role="user"`` with a text part.
+        - ``assistant`` with ``tool_calls`` → ``role="model"`` with one
+          ``function_call`` part per call (plus its text, if any).
+        - ``tool`` → ``role="user"`` with a ``function_response`` part whose
+          payload is the parsed JSON of the tool result (or a string wrapper).
+        - ``assistant`` plain → ``role="model"`` with a text part.
+
+        Consecutive messages with the same role are merged into a single
+        ``Content`` so the history always alternates roles as Gemini requires.
+
+        Args:
+            msgs: Messages array in OpenAI format.
+
+        Returns:
+            Tuple ``(contents, system_instruction)`` where ``contents`` is
+            the list of ``types.Content`` and ``system_instruction`` is the
+            concatenated system prompt (or ``None``).
+        """
+        contents: list[types.Content] = []
+        system_instruction: str | None = None
+        # Map tool_call_id -> function name so role:"tool" messages without
+        # an explicit tool_name can still be linked to their functionCall.
+        id_to_name: dict[str, str] = {}
+
+        def _append(role: str, part: types.Part) -> None:
+            if contents and contents[-1].role == role:
+                contents[-1].parts.append(part)
+            else:
+                contents.append(types.Content(role=role, parts=[part]))
+
+        for m in msgs:
+            role = m.get("role")
+            if role == "system":
+                text = str(m.get("content") or "")
+                system_instruction = (
+                    f"{system_instruction}\n\n{text}" if system_instruction else text
+                )
+                continue
+
+            if role == "tool":
+                fn_name = m.get("tool_name") or id_to_name.get(m.get("tool_call_id", ""), "")
+                raw = m.get("content")
+                try:
+                    payload = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError):
+                    payload = {"result": str(raw)}
+                if not isinstance(payload, dict):
+                    payload = {"result": payload}
+                _append("user", types.Part(function_response=types.FunctionResponse(
+                    name=fn_name,
+                    response=payload,
+                )))
+                continue
+
+            tcs = m.get("tool_calls")
+            if tcs:
+                text = m.get("content")
+                if text:
+                    _append("model", types.Part(text=str(text)))
+                for tc in tcs:
+                    # Accept both normalized {"id","name","args"} and SDK
+                    # wrapped {"id","type","function":{"name","arguments"}}.
+                    fn = tc.get("function") if isinstance(tc.get("function"), dict) else tc
+                    tc_id = tc.get("id") or ""
+                    name = fn.get("name") or ""
+                    if tc_id:
+                        id_to_name[tc_id] = name
+                    args = fn.get("args", fn.get("arguments")) or {}
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            args = {}
+                    if not isinstance(args, dict):
+                        args = {}
+                    fc_part = types.Part(function_call=types.FunctionCall(
+                        name=name,
+                        args=args,
+                    ))
+                    # Gemini 3.x requires the thought_signature captured from
+                    # the original response to be sent back with each
+                    # functionCall part when replaying history.
+                    sig = _signature_from_str(tc.get("thought_signature"))
+                    if sig:
+                        fc_part.thought_signature = sig
+                    _append("model", fc_part)
+                continue
+
+            g_role = "user" if role == "user" else "model"
+            _append(g_role, types.Part(text=str(m.get("content") or "")))
+
+        return contents, system_instruction
+
     async def llm_process(self, model: str, prompt: str | None = None,
                           system_content: str | None = None,
                           messages: list[dict[str, Any]] | None = None,
@@ -335,13 +621,19 @@ class Agent():
         try:
             # --- Build messages ---
             if messages is not None:
-                is_groq = effective_provider.upper() == 'GROQ'
+                # GROQ/OPENROUTER/LOCAL need SDK-wrapped tool_calls; GOOGLE
+                # keeps the normalized form (its converter reads it directly
+                # and must preserve extra keys like ``thought_signature``).
+                needs_sdk_tc = effective_provider.upper() in ('GROQ', 'LOCAL', 'OPENROUTER')
                 msgs = []
                 for m in messages:
                     m_copy = dict(m)
                     tcs = m_copy.get("tool_calls")
-                    if tcs and isinstance(tcs, list):
-                        m_copy["tool_calls"] = self._to_provider_tool_calls(tcs, is_groq)
+                    if tcs and isinstance(tcs, list) and needs_sdk_tc:
+                        m_copy["tool_calls"] = self._to_provider_tool_calls(
+                            tcs,
+                            effective_provider.upper() in ('GROQ', 'OPENROUTER'),
+                        )
                     msgs.append(m_copy)
             else:
                 msgs = []
@@ -357,33 +649,35 @@ class Agent():
             if max_tokens is not None:
                 api_kwargs['max_tokens'] = max_tokens
 
-            if effective_provider.upper() == 'GROQ':
-                # ── Groq (OpenAI-compatible) ──
-                groq_kwargs = dict(api_kwargs)
+            if effective_provider.upper() in ('GROQ', 'OPENROUTER'):
+                # ── Groq / OpenRouter (OpenAI-compatible) ──
+                is_groq = effective_provider.upper() == 'GROQ'
+                client = self.groq_client if is_groq else self.openrouter_client
+                oa_kwargs = dict(api_kwargs)
                 if tools:
-                    groq_kwargs["tools"] = tools
-                    groq_kwargs["tool_choice"] = "auto"
+                    oa_kwargs["tools"] = tools
+                    oa_kwargs["tool_choice"] = "auto"
                 if json_format:
-                    groq_kwargs["response_format"] = {"type": "json_object"}
-                if not reasoning:
+                    oa_kwargs["response_format"] = {"type": "json_object"}
+                if is_groq and not reasoning:
                     # Disable reasoning. Only some Groq models accept this field
                     # (Qwen: "none"; GPT-OSS: low/medium/high). If the model
                     # rejects it, fall back to a request without the field.
-                    groq_kwargs["reasoning_effort"] = "none"
+                    oa_kwargs["reasoning_effort"] = "none"
                 try:
-                    response = await self.groq_client.chat.completions.create(
+                    response = await client.chat.completions.create(
                         model=model,
                         messages=msgs,
-                        **groq_kwargs,
+                        **oa_kwargs,
                         **kwargs,
                     )
                 except Exception as _ex:
-                    if not reasoning and "reasoning_effort" in str(_ex):
-                        groq_kwargs.pop("reasoning_effort", None)
-                        response = await self.groq_client.chat.completions.create(
+                    if is_groq and not reasoning and "reasoning_effort" in str(_ex):
+                        oa_kwargs.pop("reasoning_effort", None)
+                        response = await client.chat.completions.create(
                             model=model,
                             messages=msgs,
-                            **groq_kwargs,
+                            **oa_kwargs,
                             **kwargs,
                         )
                     else:
@@ -446,22 +740,54 @@ class Agent():
                 total_time = round((response.total_duration or 0) / 1_000_000_000, 2)
             elif effective_provider.upper() == 'GOOGLE':
                 # ── Google Gemini ──
-                # Convert messages to Gemini format
-                gemini_msgs = []
-                for m in msgs:
-                    role = "user" if m["role"] == "user" else "model"
-                    gemini_msgs.append({"role": role, "parts": [{"text": m["content"]}]})
-                
-                # Create chat
-                chat = self.google_client.chats.create(model=model, history=gemini_msgs[:-1])
-                response = await chat.send_message_async(gemini_msgs[-1]["parts"][0]["text"])
-                
-                output = response.text or ""
-                raw_tc = None # TODO: Implement tool calling for Gemini
-                completion_tokens = response.usage_metadata.candidates_token_count or 0
-                prompt_tokens = response.usage_metadata.prompt_token_count or 0
-                total_tokens = response.usage_metadata.total_token_count or 0
-                total_time = 0.0 # TODO: Get time
+                contents, system_instruction = self._to_gemini_contents(msgs)
+                config_kwargs: dict[str, Any] = {}
+                if temperature is not None:
+                    config_kwargs['temperature'] = temperature
+                if top_p is not None:
+                    config_kwargs['top_p'] = top_p
+                if max_tokens is not None:
+                    config_kwargs['max_output_tokens'] = max_tokens
+                if system_instruction:
+                    config_kwargs['system_instruction'] = system_instruction
+                gemini_tools = self._to_gemini_tools(tools)
+                if gemini_tools:
+                    config_kwargs['tools'] = gemini_tools
+                _google_start = time.time()
+                response = await self.google_client.aio.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+
+                output = ""
+                try:
+                    output = response.text or ""
+                except ValueError:
+                    # No text part (e.g. function-call-only response)
+                    output = ""
+                raw_tc = []
+                candidate = (response.candidates or [None])[0]
+                for part in ((candidate.content.parts if candidate and candidate.content else None) or []):
+                    fc = getattr(part, "function_call", None)
+                    if fc is not None and fc.name:
+                        raw_tc.append({
+                            "name": fc.name,
+                            "args": dict(fc.args or {}),
+                            # Gemini 3.x thought signature (lives on the Part);
+                            # must be replayed with the functionCall on the
+                            # next request. Base64-encoded so it survives JSON
+                            # persistence in the session store.
+                            "signature": _signature_to_str(getattr(part, "thought_signature", None)),
+                        })
+                completion_tokens = 0
+                prompt_tokens = 0
+                total_tokens = 0
+                if response.usage_metadata:
+                    completion_tokens = response.usage_metadata.candidates_token_count or 0
+                    prompt_tokens = response.usage_metadata.prompt_token_count or 0
+                    total_tokens = response.usage_metadata.total_token_count or 0
+                total_time = round(time.time() - _google_start, 2)
             else:
                 return validate_response(make_error_response(message=f"PROVIDER inválido: '{effective_provider}'"))
 
@@ -538,13 +864,19 @@ class Agent():
         """
         effective_provider = provider if provider is not None else self.provider
         if messages is not None:
-            is_groq = effective_provider.upper() == 'GROQ'
+            # GROQ/OPENROUTER/LOCAL need SDK-wrapped tool_calls; GOOGLE
+            # keeps the normalized form (its converter reads it directly
+            # and must preserve extra keys like ``thought_signature``).
+            needs_sdk_tc = effective_provider.upper() in ('GROQ', 'LOCAL', 'OPENROUTER')
             msgs = []
             for m in messages:
                 m_copy = dict(m)
                 tcs = m_copy.get("tool_calls")
-                if tcs and isinstance(tcs, list):
-                    m_copy["tool_calls"] = self._to_provider_tool_calls(tcs, is_groq)
+                if tcs and isinstance(tcs, list) and needs_sdk_tc:
+                    m_copy["tool_calls"] = self._to_provider_tool_calls(
+                        tcs,
+                        effective_provider.upper() in ('GROQ', 'OPENROUTER'),
+                    )
                 msgs.append(m_copy)
         else:
             msgs = []
@@ -552,8 +884,10 @@ class Agent():
                 msgs.append({'role': 'system', 'content': system_content})
             msgs.append({'role': 'user', 'content': prompt or ''})
 
-        if effective_provider.upper() == 'GROQ':
-            groq_kwargs: dict[str, Any] = {
+        if effective_provider.upper() in ('GROQ', 'OPENROUTER'):
+            is_groq = effective_provider.upper() == 'GROQ'
+            client = self.groq_client if is_groq else self.openrouter_client
+            oa_kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": msgs,
                 "stream": True,
@@ -563,18 +897,22 @@ class Agent():
                 **kwargs,
             }
             if tools:
-                groq_kwargs["tools"] = tools
-                groq_kwargs["tool_choice"] = "auto"
-            # Groq: pedir reasoning como campo separado (delta.reasoning_content).
-            # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
-            # lo rechaza, reintentar sin el campo (igual que en llm_process).
-            groq_kwargs["reasoning_format"] = "parsed"
+                oa_kwargs["tools"] = tools
+                oa_kwargs["tool_choice"] = "auto"
+            if is_groq:
+                # Groq: pedir reasoning como campo separado (delta.reasoning_content).
+                # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
+                # lo rechaza, reintentar sin el campo (igual que en llm_process).
+                oa_kwargs["reasoning_format"] = "parsed"
+            else:
+                # OpenRouter: pedir el usage en el último chunk del stream.
+                oa_kwargs["stream_options"] = {"include_usage": True}
             try:
-                stream = await self.groq_client.chat.completions.create(**groq_kwargs)
+                stream = await client.chat.completions.create(**oa_kwargs)
             except Exception as _ex:
-                if "reasoning_format" in str(_ex):
-                    groq_kwargs.pop("reasoning_format", None)
-                    stream = await self.groq_client.chat.completions.create(**groq_kwargs)
+                if is_groq and "reasoning_format" in str(_ex):
+                    oa_kwargs.pop("reasoning_format", None)
+                    stream = await client.chat.completions.create(**oa_kwargs)
                 else:
                     raise
             # Groq: el usage llega en el campo x_groq.usage del último chunk
@@ -670,7 +1008,7 @@ class Agent():
                         "args": args,
                     })
                 yield {'type': 'tool_calls_detected', 'content': normalized}
-        else:
+        elif effective_provider.upper() == 'LOCAL':
             options = {}
             if temperature is not None:
                 options['temperature'] = temperature
@@ -696,7 +1034,8 @@ class Agent():
                 return self.ollama_client.chat(**chat_kwargs)
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
-            in_think_tag = False  # |◊|            has_dedicated_thinking = False  # si vimos thinking field, no parseamos 
+            in_think_tag = False
+            has_dedicated_thinking = False  # si vimos thinking field, no parseamos <think> tags
             stream = None
             usage_data: dict[str, Any] | None = None
             try:
@@ -825,6 +1164,78 @@ class Agent():
                         "args": args,
                     })
                 yield {'type': 'tool_calls_detected', 'content': normalized}
+
+        elif effective_provider.upper() == 'GOOGLE':
+            # ── Google Gemini ──
+            contents, system_instruction = self._to_gemini_contents(msgs)
+            config_kwargs: dict[str, Any] = {}
+            if temperature is not None:
+                config_kwargs['temperature'] = temperature
+            if top_p is not None:
+                config_kwargs['top_p'] = top_p
+            if max_tokens:
+                config_kwargs['max_output_tokens'] = max_tokens
+            if system_instruction:
+                config_kwargs['system_instruction'] = system_instruction
+            gemini_tools = self._to_gemini_tools(tools)
+            if gemini_tools:
+                config_kwargs['tools'] = gemini_tools
+
+            stream = await self.google_client.aio.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(**config_kwargs),
+            )
+
+            accumulated_tool_calls: list[dict[str, Any]] = []
+            usage_data: dict[str, Any] | None = None
+
+            async for chunk in stream:
+                if stream_cancel_event and stream_cancel_event.is_set():
+                    yield {'type': 'aborted'}
+                    return
+
+                # Capture usage from the final chunk
+                if chunk.usage_metadata:
+                    usage_data = {
+                        'prompt_tokens': chunk.usage_metadata.prompt_token_count or 0,
+                        'completion_tokens': chunk.usage_metadata.candidates_token_count or 0,
+                        'total_tokens': chunk.usage_metadata.total_token_count or 0,
+                        'total_time': 0.0,
+                    }
+
+                candidate = (chunk.candidates or [None])[0]
+                for part in ((candidate.content.parts if candidate and candidate.content else None) or []):
+                    # Streaming function calls (Gemini sends them as parts)
+                    fc = getattr(part, "function_call", None)
+                    if fc is not None and fc.name:
+                        args = fc.args if isinstance(fc.args, dict) else {}
+                        accumulated_tool_calls.append({
+                            "id": f"call_{uuid.uuid4().hex}",
+                            "name": fc.name,
+                            "args": args,
+                            # Gemini 3.x thought signature (lives on the Part);
+                            # must be replayed with the functionCall on the
+                            # next request. Base64-encoded so it survives JSON
+                            # persistence in the session store.
+                            "thought_signature": _signature_to_str(getattr(part, "thought_signature", None)),
+                        })
+                        continue
+                    # Stream text content
+                    text = getattr(part, "text", None)
+                    if text:
+                        if cleaned_output:
+                            text = self.clean(text)
+                        yield {'type': 'chunk', 'content': text}
+                        await asyncio.sleep(0.01)
+
+            # After stream finishes, yield usage (if captured) and tool_calls_detected
+            if usage_data is not None:
+                yield {'type': 'usage', 'content': usage_data}
+            if accumulated_tool_calls:
+                yield {'type': 'tool_calls_detected', 'content': accumulated_tool_calls}
+        else:
+            yield {'type': 'error', 'content': f"PROVIDER inválido: '{effective_provider}'"}
 
     
     def _process_think_tags(self, text: str, in_think: bool) -> tuple[str, str, bool]:

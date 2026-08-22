@@ -493,6 +493,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li><strong>Crear Skill</strong>: formulario con nombre, tarea, cuándo usarla, cuándo NO, y material de referencia. El LLM busca skills existentes que coincidan; si no encuentra, genera una nueva.</li>
             <li><strong>Gestionar RAG</strong>: página para crear colecciones RAG, subir archivos y agregar URLs, procesada con ChromaDB.</li>
           </ul>
+          <p>En las pantallas iniciales de creación (skill, tool y agente) podés elegir con qué modelo cloud se genera el elemento: seleccionás proveedor y modelo y pulsás <strong>Aplicar</strong>. La selección es efímera (solo vale para esa tarea mientras la pestaña está abierta); si no aplicás ninguna, se usa el modelo por defecto.</p>
           <p>Cada página muestra un indicador de trabajo mientras el backend procesa. Al finalizar, muestra un mensaje de éxito.</p>
           <h3>Panel de agentes (modo desarrollador)</h3>
           <p>La pestaña <strong>Agente</strong> (modo dev) muestra el estado de los elementos del agente, con opción de eliminarlos:</p>
@@ -506,7 +507,9 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>Panel de configuración</h3>
           <p>En el panel lateral, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
           <h4>Proveedor y modelo</h4>
-          <p>Podés seleccionar el proveedor de modelos (Ollama local o Groq API) y el modelo específico a utilizar. La selección se persiste entre sesiones.</p>
+          <p>Podés seleccionar el proveedor de modelos (Ollama local, Groq, Google Gemini u OpenRouter) y el modelo específico a utilizar. La selección se persiste entre sesiones.</p>
+          <h4>Providers (API keys)</h4>
+          <p>En la sección <strong>Providers</strong> podés cargar la API key de cada proveedor cloud (Groq, Google Gemini, OpenRouter). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Si además existe la variable de entorno correspondiente (<code>GROQ_API_KEY</code>, <code>GOOGLE_API_KEY</code>, <code>OPENROUTER_API_KEY</code>), se usa como fallback cuando no hay key guardada en la base.</p>
           <h4>Contexto (turnos)</h4>
           <p>Controla cuántos turnos de conversación se mantienen en el contexto del modelo. <code>-1</code> significa todo el historial. Reducir este número ayuda a controlar el uso de tokens y el costo.</p>
           <h4>Modo verbose</h4>
@@ -562,7 +565,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>/contexto</code></td><td>Muestra la ventana de contexto actual.</td></tr>
               <tr><td><code>/borrar</code></td><td>Borra un chat (pregunta y espera respuesta).</td></tr>
               <tr><td><code>/detener</code></td><td>Detiene la tarea en curso.</td></tr>
-              <tr><td><code>/proveedor</code></td><td>Cambia el proveedor (LOCAL/API, pregunta y espera respuesta).</td></tr>
+              <tr><td><code>/proveedor</code></td><td>Cambia el proveedor (LOCAL, GROQ u OPENROUTER; pregunta y espera respuesta).</td></tr>
               <tr><td><code>/modelo</code></td><td>Cambia el modelo (lista y espera respuesta).</td></tr>
               <tr><td><code>/skills</code></td><td>Lista skills (solo dev).</td></tr>
               <tr><td><code>/tools</code></td><td>Lista tools (solo dev).</td></tr>
@@ -688,9 +691,9 @@ synapseForge run .</code></pre>
 # Editar .env con PROVIDER, MODEL y API_KEY</code></pre>
           <p>Las variables mínimas que necesitás configurar son:</p>
           <ul>
-            <li><strong>Proveedor</strong> — El servicio que usás para los modelos (Ollama local o Groq API).</li>
+            <li><strong>Proveedor</strong> — El servicio que usás para los modelos (Ollama local, Groq, Google Gemini u OpenRouter).</li>
             <li><strong>Modelo</strong> — Qué modelo específico querés usar.</li>
-            <li><strong>API Key</strong> — Tu clave del proveedor (solo para Groq).</li>
+            <li><strong>API Key</strong> — Tu clave del proveedor (para Groq, Google u OpenRouter). También podés cargarlas desde el panel de Configuración, sección <strong>Providers</strong>: se guardan cifradas en la base de datos interna y tienen prioridad sobre las variables de entorno.</li>
             <li><strong>URL del backend</strong> — Dónde está corriendo el backend (por defecto <code>http://localhost:8000</code>).</li>
           </ul>
           <h3>Probar en otra máquina de la red</h3>

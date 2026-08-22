@@ -62,6 +62,44 @@ def _resolve_create_model_provider() -> tuple[str, str]:
     )
 
 
+_CLOUD_CLIENT_ATTRS: dict[str, str] = {
+    "GROQ": "groq_client",
+    "GOOGLE": "google_client",
+    "OPENROUTER": "openrouter_client",
+}
+"""Cloud providers mapped to their Agent client attribute name."""
+
+
+def resolve_create_model_provider(
+    model: str | None = None, provider: str | None = None
+) -> tuple[str, str]:
+    """Resolve the (model, provider) honoring the user's per-task selection.
+
+    The creation interfaces let the user pick a cloud provider and model for
+    a single creation task (ephemeral, never persisted). Only cloud providers
+    with an instantiated client are accepted; anything else falls back to the
+    default resolution (``_resolve_create_model_provider``).
+
+    Args:
+        model: Model identifier chosen by the user.
+        provider: Provider name chosen by the user (``GROQ``, ``GOOGLE`` or
+            ``OPENROUTER``).
+
+    Returns:
+        Tuple of ``(model, provider)``.
+    """
+    prov_u = (provider or "").strip().upper()
+    model_clean = (model or "").strip()
+    client_attr = _CLOUD_CLIENT_ATTRS.get(prov_u)
+    if (
+        model_clean
+        and client_attr is not None
+        and getattr(agent, client_attr, None) is not None
+    ):
+        return model_clean, prov_u
+    return _resolve_create_model_provider()
+
+
 async def stream_tool_calling_loop(
     msgs: list[dict[str, Any]],
     tools: list[dict[str, Any]],

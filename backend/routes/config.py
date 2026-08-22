@@ -31,8 +31,12 @@ from backend.instances import agent, session_manager
 from backend.agent.utils.model_resolver import (
     get_groq_models,
     get_ollama_models,
+    get_google_models,
+    get_openrouter_models,
     get_groq_context_window,
     get_ollama_context_window,
+    get_google_context_window,
+    get_openrouter_context_window,
     get_vram_gb,
     ollama_default_context,
 )
@@ -114,6 +118,10 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
     try:
         if provider.upper() == "LOCAL":
             cw = get_ollama_context_window(model)
+        elif provider.upper() == "GOOGLE":
+            cw = get_google_context_window(model)
+        elif provider.upper() == "OPENROUTER":
+            cw = get_openrouter_context_window(model)
         else:
             cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
     except Exception as exc:
@@ -285,6 +293,8 @@ def refresh_providers_cache() -> None:
     """
     cached: list[dict[str, Any]] = []
 
+    from backend.agent.utils import provider_keys
+
     # Ollama — try ``ollama list``
     try:
         ollama_models = get_ollama_models()
@@ -298,7 +308,7 @@ def refresh_providers_cache() -> None:
 
     # Groq — try the API
     try:
-        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        api_key = provider_keys.resolve_api_key("GROQ")
         if api_key:
             groq_models = get_groq_models(api_key)
             if groq_models:
@@ -306,6 +316,27 @@ def refresh_providers_cache() -> None:
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(groq)")
         logger.warning("No se pudieron listar modelos de Groq: %s", exc)
+
+    # Google Gemini — try the API
+    try:
+        api_key = provider_keys.resolve_api_key("GOOGLE")
+        if api_key:
+            models = get_google_models(api_key)
+            if models:
+                cached.append({"provider": "GOOGLE", "label": "Google Gemini", "models": models})
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(google)")
+        logger.warning("No se pudieron listar modelos de Google: %s", exc)
+
+    # OpenRouter — public catalog, listed when a key is available
+    try:
+        if provider_keys.resolve_api_key("OPENROUTER"):
+            models = get_openrouter_models()
+            if models:
+                cached.append({"provider": "OPENROUTER", "label": "OpenRouter", "models": models})
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(openrouter)")
+        logger.warning("No se pudieron listar modelos de OpenRouter: %s", exc)
 
     if session_manager is not None:
         session_manager.save_providers(cached)
@@ -329,6 +360,73 @@ async def list_providers() -> JSONResponse:
             "providers": available,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Provider API keys (encrypted storage in SQLite)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/providers/keys")
+async def list_provider_keys() -> JSONResponse:
+    """Return which providers have an API key configured.
+
+    Only availability status is exposed — the key material never leaves
+    the backend.
+    """
+    from backend.agent.utils import provider_keys
+
+    try:
+        keys = provider_keys.list_configured()
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "keys": keys},
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:list_provider_keys")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Error consultando API keys: {exc}"},
+        )
+
+
+@router.put("/providers/{provider}/key")
+async def save_provider_key(provider: str, data: dict[str, Any]) -> JSONResponse:
+    """Store (encrypted) the API key for a provider and rebuild its client.
+
+    Body: ``{"api_key": "..."}``. The key is encrypted with Fernet before
+    being persisted in the ``provider_api_keys`` table.
+    """
+    from backend.agent.utils import provider_keys
+
+    api_key = (data or {}).get("api_key", "")
+    result = await asyncio.to_thread(provider_keys.save_key, provider, api_key)
+    if result.get("status") != "success":
+        return JSONResponse(status_code=400, content=result)
+    if agent is not None:
+        rebuild = await asyncio.to_thread(agent.rebuild_provider_client, provider)
+        if rebuild.get("status") != "success":
+            return JSONResponse(status_code=500, content=rebuild)
+    return JSONResponse(status_code=200, content=result)
+
+
+@router.delete("/providers/{provider}/key")
+async def delete_provider_key(provider: str) -> JSONResponse:
+    """Remove the stored API key for a provider and rebuild its client.
+
+    After deletion the client falls back to the environment variable or
+    becomes unavailable.
+    """
+    from backend.agent.utils import provider_keys
+
+    result = await asyncio.to_thread(provider_keys.delete_key, provider)
+    if result.get("status") != "success":
+        return JSONResponse(status_code=400, content=result)
+    if agent is not None:
+        rebuild = await asyncio.to_thread(agent.rebuild_provider_client, provider)
+        if rebuild.get("status") != "success":
+            return JSONResponse(status_code=500, content=rebuild)
+    return JSONResponse(status_code=200, content=result)
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +486,7 @@ async def list_models(provider: str | None = None) -> JSONResponse:
             status_code=400,
             content={
                 "status": "error",
-                "message": f"Unknown PROVIDER: '{provider}'. Use 'GROQ' or 'LOCAL'.",
+                "message": f"Unknown PROVIDER: '{provider}'. Use 'GROQ', 'LOCAL', 'GOOGLE' or 'OPENROUTER'.",
             },
         )
 
@@ -462,12 +560,12 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             },
         )
 
-    if provider not in {"LOCAL", "GROQ"}:
+    if provider not in {"LOCAL", "GROQ", "GOOGLE", "OPENROUTER"}:
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
-                "message": "provider must be 'LOCAL' or 'GROQ'.",
+                "message": "provider must be 'LOCAL', 'GROQ', 'GOOGLE' or 'OPENROUTER'.",
             },
         )
 

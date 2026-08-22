@@ -115,13 +115,31 @@ Las skills son conjuntos de instrucciones y material de referencia que se cargan
 
 El modelo y proveedor se configuran desde el panel de Configuración en la interfaz:
 
-1. **Proveedor**: seleccionar entre los disponibles (Groq para API, Ollama para local).
+1. **Proveedor**: seleccionar entre los disponibles (Groq, Google Gemini, OpenRouter para nube; Ollama para local).
 2. **Modelo**: elegir entre los modelos disponibles para ese proveedor.
 3. Los cambios persisten en la base de datos SQLite y se aplican al siguiente mensaje.
 
 Soportados:
-- **Groq**: modelos de API (Mixtral, Llama, etc.).
+- **Groq**: modelos de API (Llama, Qwen, etc.).
+- **Google Gemini**: modelos de la API de Google (Gemini).
+- **OpenRouter**: acceso unificado a múltiples proveedores de modelos.
 - **Ollama**: modelos locales.
+
+### API keys de los providers
+
+Las API keys de los providers cloud (Groq, Google, OpenRouter) se configuran en el panel de Configuración, sección **Providers**. Cada key es opcional: si no se carga una key para un provider, ese provider no aparece como disponible. Las keys se guardan cifradas en la base de datos SQLite interna y nunca se muestran nuevamente en la interfaz después de guardarlas. Si existe además una variable de entorno (`GROQ_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`), tiene prioridad como fallback cuando no hay key guardada en la base.
+
+---
+
+## Creación de skills, tools y agentes
+
+Las interfaces de creación (skills, tools y agentes) permiten elegir, en su pantalla inicial, con qué modelo cloud se genera el elemento:
+
+1. Seleccionar proveedor (solo providers cloud con key configurada).
+2. Seleccionar modelo.
+3. Pulsar **Aplicar**.
+
+La selección es efímera: vive mientras la pestaña está abierta y se usa para esa tarea de creación. No se persiste. Si no se aplica ninguna selección, se usa el modelo por defecto.
 
 ---
 
@@ -194,7 +212,7 @@ El sistema incluye un **bot de Telegram** que actúa como puente hacia el agente
 | `/actual` | Muestra la sesión actual (solo el título). |
 | `/borrar` | Borra un chat (pregunta y espera respuesta). |
 | `/detener` | Detiene la tarea en curso. |
-| `/proveedor` | Cambia el proveedor (LOCAL/API, pregunta y espera respuesta). |
+| `/proveedor` | Cambia el proveedor (LOCAL, GROQ u OPENROUTER; pregunta y espera respuesta). |
 | `/modelo` | Cambia el modelo (lista y espera respuesta). |
 | `/skills` | Lista skills (solo dev). |
 | `/tools` | Lista tools (solo dev). |

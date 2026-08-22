@@ -773,7 +773,7 @@ class AgentLoop:
                             if isinstance(llm_payload, (dict, list))
                             else str(llm_payload)
                         )
-                        is_groq = effective_provider.upper() == 'GROQ'
+                        is_groq = effective_provider.upper() in ('GROQ', 'OPENROUTER')
                         if is_groq:
                             tool_msg = {
                                 "role": "tool",

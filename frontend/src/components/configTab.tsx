@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Settings, Server, Cpu, Database, Globe, Trash2, Upload } from "lucide-react";
+import { Settings, Server, Cpu, Database, Globe, Trash2, Upload, KeyRound } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import configService from "../services/configService";
+import type { ProviderKeyStatus } from "../services/configService";
 import contextFilesService, { type ContextFile } from "../services/contextFilesService";
 
 interface ConfigTabProps {
@@ -25,6 +26,63 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const [uploadingContext, setUploadingContext] = useState(false);
   const contextFileInputRef = useRef<HTMLInputElement>(null);
   const isFirstLoadRef = useRef(true);
+
+  /* ---- provider API keys ---- */
+  const KEY_PROVIDERS: Array<{ provider: string; label: string }> = [
+    { provider: "GROQ", label: "Groq" },
+    { provider: "GOOGLE", label: "Google Gemini" },
+    { provider: "OPENROUTER", label: "OpenRouter" },
+  ];
+  const [providerKeys, setProviderKeys] = useState<ProviderKeyStatus[]>([]);
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [savingKeyProvider, setSavingKeyProvider] = useState<string | null>(null);
+  const [keysError, setKeysError] = useState<string | null>(null);
+
+  const loadProviderKeys = useCallback(async () => {
+    try {
+      const resp = await configService.getProviderKeys();
+      setProviderKeys(resp.keys || []);
+    } catch (err) {
+      console.error("Error cargando API keys:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProviderKeys();
+  }, [loadProviderKeys]);
+
+  const isKeyConfigured = (provider: string) =>
+    providerKeys.find((k) => k.provider === provider)?.configured ?? false;
+
+  const handleSaveKey = async (provider: string) => {
+    const apiKey = (keyInputs[provider] || "").trim();
+    if (!apiKey || savingKeyProvider) return;
+    try {
+      setKeysError(null);
+      setSavingKeyProvider(provider);
+      await configService.saveProviderKey(provider, apiKey);
+      setKeyInputs((prev) => ({ ...prev, [provider]: "" }));
+      await loadProviderKeys();
+    } catch (err) {
+      setKeysError(err instanceof Error ? err.message : "Error guardando la API key.");
+    } finally {
+      setSavingKeyProvider(null);
+    }
+  };
+
+  const handleDeleteKey = async (provider: string) => {
+    if (savingKeyProvider) return;
+    try {
+      setKeysError(null);
+      setSavingKeyProvider(provider);
+      await configService.deleteProviderKey(provider);
+      await loadProviderKeys();
+    } catch (err) {
+      setKeysError(err instanceof Error ? err.message : "Error eliminando la API key.");
+    } finally {
+      setSavingKeyProvider(null);
+    }
+  };
 
   const load = useCallback(async (prov?: string) => {
     let label: string | undefined;
@@ -249,6 +307,67 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             "Aplicar"
           )}
         </Button>
+      </div>
+
+      {/* API keys de providers */}
+      <div>
+        <div className="text-xs font-medium text-app-text-secondary flex items-center gap-1.5">
+          <KeyRound size={12} />
+          API keys de proveedores
+        </div>
+        <p className="text-[11px] text-app-text-secondary mt-1">
+          Opcional: guardá una API key por proveedor (queda cifrada en la base local). Si no hay key guardada se usa la variable de entorno.
+        </p>
+        {keysError && (
+          <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {keysError}
+          </div>
+        )}
+        <div className="mt-2 space-y-2.5">
+          {KEY_PROVIDERS.map(({ provider, label }) => (
+            <div key={provider} className="rounded-lg border border-app-border bg-white p-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-app-text">{label}</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isKeyConfigured(provider) ? "bg-green-500" : "bg-app-bg-tertiary"
+                  }`}
+                  title={isKeyConfigured(provider) ? "API key configurada" : "Sin API key"}
+                />
+              </div>
+              <div className="flex gap-1.5">
+                <Input
+                  type="password"
+                  value={keyInputs[provider] || ""}
+                  onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider]: e.target.value }))}
+                  placeholder={isKeyConfigured(provider) ? "••••••••" : "sk-..."}
+                  className="flex-1 text-xs"
+                  autoComplete="off"
+                />
+                <Button
+                  onClick={() => handleSaveKey(provider)}
+                  disabled={savingKeyProvider !== null || !(keyInputs[provider] || "").trim()}
+                  variant="gradient"
+                  className="px-3 text-xs shrink-0"
+                >
+                  {savingKeyProvider === provider ? "..." : "Guardar"}
+                </Button>
+                {isKeyConfigured(provider) && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteKey(provider)}
+                    disabled={savingKeyProvider !== null}
+                    className="shrink-0 rounded-lg px-2 text-app-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                    aria-label={`Eliminar API key de ${label}`}
+                    title="Eliminar API key guardada"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div>

@@ -44,7 +44,10 @@ from backend.agent.utils.skills_helpers import (
     _listar_skills_locales,
 )
 from backend.agent.utils.tools_helpers import _listar_tools_locales
-from backend.agent.utils.create_helpers import stream_tool_calling_loop, _resolve_create_model_provider
+from backend.agent.utils.create_helpers import (
+    stream_tool_calling_loop,
+    resolve_create_model_provider,
+)
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -70,6 +73,8 @@ class CreateSkillRequest(BaseModel):
     descripcion: str
     name: str | None = None
     mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
+    model: str | None = None  # Modelo cloud elegido para esta tarea (efímero)
+    provider: str | None = None  # Provider cloud elegido para esta tarea (efímero)
 
 
 class CreateToolRequest(BaseModel):
@@ -80,6 +85,8 @@ class CreateToolRequest(BaseModel):
     mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
     parametros: list[dict] | None = None  # [{"name", "type", "description", "required"}]
     datos: list[str] | None = None  # Lista de env vars / datos externos
+    model: str | None = None  # Modelo cloud elegido para esta tarea (efímero)
+    provider: str | None = None  # Provider cloud elegido para esta tarea (efímero)
 
 
 class CreateAgentRequest(BaseModel):
@@ -88,6 +95,8 @@ class CreateAgentRequest(BaseModel):
     descripcion: str
     name: str | None = None
     mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
+    model: str | None = None  # Modelo cloud elegido para esta tarea (efímero)
+    provider: str | None = None  # Provider cloud elegido para esta tarea (efímero)
 
 
 # ── Tool definition for interview ─────────────────────────────────────
@@ -244,7 +253,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         tool_calls_data = None
 
         try:
-            _create_model, _create_provider = _resolve_create_model_provider()
+            _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
             async for event in agent.llm_streaming(
                 model=_create_model,
                 provider=_create_provider,
@@ -366,7 +375,9 @@ async def post_create_skill_stream(req: CreateSkillRequest):
             {"role": "user", "content": user_msg},
         ]
 
-        async for event in stream_tool_calling_loop(msgs, tools, _FRIENDLY_ERROR):
+        async for event in stream_tool_calling_loop(
+            msgs, tools, _FRIENDLY_ERROR, model=_create_model, provider=_create_provider
+        ):
             yield _sse(event)
             if event["type"] == "error":
                 return
@@ -586,7 +597,7 @@ async def post_create_tool_stream(req: CreateToolRequest):
         tool_calls_data = None
 
         try:
-            _create_model, _create_provider = _resolve_create_model_provider()
+            _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
             async for event in agent.llm_streaming(
                 model=_create_model,
                 provider=_create_provider,
@@ -713,7 +724,9 @@ async def post_create_tool_stream(req: CreateToolRequest):
             {"role": "user", "content": user_msg},
         ]
 
-        async for event in stream_tool_calling_loop(msgs, tools, _FRIENDLY_ERROR_TOOL):
+        async for event in stream_tool_calling_loop(
+            msgs, tools, _FRIENDLY_ERROR_TOOL, model=_create_model, provider=_create_provider
+        ):
             yield _sse(event)
             if event["type"] == "error":
                 return
@@ -960,7 +973,7 @@ async def post_create_agent_stream(req: CreateAgentRequest):
         tool_calls_data = None
 
         try:
-            _create_model, _create_provider = _resolve_create_model_provider()
+            _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
             async for event in agent.llm_streaming(
                 model=_create_model,
                 provider=_create_provider,
@@ -1073,7 +1086,9 @@ async def post_create_agent_stream(req: CreateAgentRequest):
             {"role": "user", "content": user_msg},
         ]
 
-        async for event in stream_tool_calling_loop(msgs, tools, _FRIENDLY_ERROR_AGENT):
+        async for event in stream_tool_calling_loop(
+            msgs, tools, _FRIENDLY_ERROR_AGENT, model=_create_model, provider=_create_provider
+        ):
             yield _sse(event)
             if event["type"] == "error":
                 return

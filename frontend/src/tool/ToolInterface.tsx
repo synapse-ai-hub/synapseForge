@@ -10,6 +10,7 @@ import {
 import { flushSync } from "react-dom";
 import { Send, Square, Plus, Trash2, Download } from "lucide-react";
 import { MessageRow } from "../components/chatBlocks";
+import { CreateModelSelector } from "../components/CreateModelSelector";
 import type { Message, ContentBlock } from "../../App";
 import { saveFileWithPicker, fetchConversationMarkdown } from "../utils/conversationExport";
 
@@ -46,6 +47,9 @@ export function ToolInterface() {
   const [descripcion, setDescripcion] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
+  /* Selección efímera de modelo cloud para esta tarea (no se persiste) */
+  const [createModel, setCreateModel] = useState<string | null>(null);
+  const [createProvider, setCreateProvider] = useState<string | null>(null);
 
   // Parámetros y datos externos son opcionales: el LLM los puede inferir.
   const [parametros, setParametros] = useState<CampoDeclarado[]>([]);
@@ -237,6 +241,8 @@ export function ToolInterface() {
             mensajes: historialRef.current,
             parametros: parametros.filter((p) => p.name.trim()),
             datos: datos.filter((d) => d.name.trim()),
+            model: createModel,
+            provider: createProvider,
           }),
           signal: abort.signal,
         });
@@ -450,7 +456,7 @@ export function ToolInterface() {
         abortRef.current = null;
       }
     },
-    [isStreaming, descripcion, nombre, parametros, datos],
+    [isStreaming, descripcion, nombre, parametros, datos, createModel, createProvider],
   );
 
   /* ---- enviar desde el chat ---- */
@@ -704,6 +710,13 @@ export function ToolInterface() {
                 datosAbierto,
                 setDatosAbierto,
               )}
+
+              <CreateModelSelector
+                onApply={(m, p) => {
+                  setCreateModel(m);
+                  setCreateProvider(p);
+                }}
+              />
 
               <button
                 type="submit"

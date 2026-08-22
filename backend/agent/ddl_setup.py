@@ -73,6 +73,12 @@ def setup_database(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS provider_api_keys (
+            provider TEXT PRIMARY KEY,
+            api_key_encrypted TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS error_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT,

@@ -1111,11 +1111,11 @@ class TelegramBot:
     async def _cmd_proveedor(self, chat_id: int, provider: str | None = None) -> None:
         if not provider:
             self._awaiting[chat_id] = "proveedor"
-            await self.send_message(chat_id, "¿Qué proveedor? (LOCAL o GROQ, o 'cancelar')")
+            await self.send_message(chat_id, "¿Qué proveedor? (LOCAL, GROQ u OPENROUTER, o 'cancelar')")
             return
         provider = provider.strip().upper()
-        if provider not in ("LOCAL", "GROQ"):
-            await self.send_message(chat_id, "Proveedor inválido. Usá LOCAL o GROQ.")
+        if provider not in ("LOCAL", "GROQ", "OPENROUTER"):
+            await self.send_message(chat_id, "Proveedor inválido. Usá LOCAL, GROQ u OPENROUTER.")
             return
         try:
             from backend.instances import agent
@@ -1128,7 +1128,11 @@ class TelegramBot:
         await self.send_message(chat_id, f"Proveedor cambiado a {provider}.")
 
     async def _cmd_modelo(self, chat_id: int, model: str | None = None) -> None:
-        from backend.agent.utils.model_resolver import get_ollama_models, get_groq_models
+        from backend.agent.utils.model_resolver import (
+            get_ollama_models,
+            get_groq_models,
+            get_openrouter_models,
+        )
         try:
             from backend.instances import agent
             provider = (agent.provider or "LOCAL").strip().upper()
@@ -1137,6 +1141,8 @@ class TelegramBot:
         if provider.upper() == 'GROQ':
             import os as _os
             models = get_groq_models(_os.getenv("GROQ_API_KEY", "").strip())
+        elif provider.upper() == 'OPENROUTER':
+            models = get_openrouter_models()
         else:
             models = get_ollama_models()
         if not models:

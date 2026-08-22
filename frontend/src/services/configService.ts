@@ -45,6 +45,16 @@ export interface McpServerStatus {
   error?: string;
 }
 
+export interface ProviderKeyStatus {
+  provider: string;
+  configured: boolean;
+}
+
+export interface ProviderKeysResponse {
+  status: string;
+  keys: ProviderKeyStatus[];
+}
+
 export const configService = {
   /** List available models and the currently selected one. */
   async getModels(provider?: string): Promise<ModelsResponse> {
@@ -140,6 +150,45 @@ export const configService = {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return response.json();
+  },
+
+  /** List which providers have an API key configured (no key material). */
+  async getProviderKeys(): Promise<ProviderKeysResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/config/providers/keys`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  /** Store (encrypted) the API key for a provider. */
+  async saveProviderKey(provider: string, apiKey: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/config/providers/${encodeURIComponent(provider)}/key`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok || result.status === "error") {
+      throw new Error(result.message || `HTTP ${response.status}`);
+    }
+  },
+
+  /** Remove the stored API key for a provider. */
+  async deleteProviderKey(provider: string): Promise<void> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/config/providers/${encodeURIComponent(provider)}/key`,
+      { method: "DELETE" }
+    );
+    const result = await response.json();
+    if (!response.ok || result.status === "error") {
+      throw new Error(result.message || `HTTP ${response.status}`);
+    }
   },
 
   /** List available skills (name + description). */

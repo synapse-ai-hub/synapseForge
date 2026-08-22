@@ -166,6 +166,18 @@ export const configService = {
     return data.tools || [];
   },
 
+  /** Force rebuild of the tools registry and return updated list. */
+  async refreshTools(): Promise<ToolInfo[]> {
+    const response = await fetch(`${API_BASE_URL}/api/config/tools/refresh`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.tools || [];
+  },
+
   /** List available sub-agents. */
   async getAgents(): Promise<AgentInfo[]> {
     const response = await fetch(`${API_BASE_URL}/api/config/agents`, {

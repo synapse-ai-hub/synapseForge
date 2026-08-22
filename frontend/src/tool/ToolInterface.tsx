@@ -8,28 +8,12 @@ import {
   type FormEvent,
 } from "react";
 import { flushSync } from "react-dom";
-import { Send, Square, Paperclip } from "lucide-react";
-import { FileChip, FileWarningBanner, MessageRow } from "./chatBlocks";
-import type { Message, ContentBlock } from "../App";
+import { Send, Square, Plus, Trash2, Download } from "lucide-react";
+import { MessageRow } from "../components/chatBlocks";
+import type { Message, ContentBlock } from "../../App";
+import { saveFileWithPicker, fetchConversationMarkdown } from "../utils/conversationExport";
 
 const API = (import.meta.env.VITE_URL_BASE || "http://localhost:8000") + "/api";
-
-const ALLOWED_FILE_TYPES = [
-  "text/csv",
-  "text/plain",
-  "text/markdown",
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "application/json",
-  "application/xml",
-  "text/xml",
-];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB per file
-const MAX_FILES = 3;
-const MAX_TOTAL_SIZE = 25 * 1024 * 1024; // 25 MB total
 
 /** Generate a unique ID with safe fallback when crypto is unavailable. */
 function generateId(): string {
@@ -39,14 +23,23 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 }
 
-/** Mensaje de la entrevista enviado al backend (/api/create/skill). */
+/** Mensaje de la entrevista enviado al backend (/api/create/tool). */
 interface HistorialMsg {
   role: "user" | "assistant";
   content: string;
-  files?: Array<{ name: string; content: string }>;
 }
 
-export function SkillInterface() {
+/** Campo declarado por el usuario en el setup (parámetro o dato externo). */
+interface CampoDeclarado {
+  name: string;
+  type: string;
+  description: string;
+  required: boolean;
+}
+
+const TIPOS_CAMPO = ["string", "number", "boolean", "object", "array"] as const;
+
+export function ToolInterface() {
   /* ---- state ---- */
   const [setupDone, setSetupDone] = useState(false);
   const [nombre, setNombre] = useState("");
@@ -54,20 +47,24 @@ export function SkillInterface() {
   const [nameError, setNameError] = useState<string | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
 
+  // Parámetros y datos externos son opcionales: el LLM los puede inferir.
+  const [parametros, setParametros] = useState<CampoDeclarado[]>([]);
+  const [datos, setDatos] = useState<CampoDeclarado[]>([]);
+  const [parametrosAbierto, setParametrosAbierto] = useState(false);
+  const [datosAbierto, setDatosAbierto] = useState(false);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const historialRef = useRef<HistorialMsg[]>([]);
   const [input, setInput] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [fileWarning, setFileWarning] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [resultType, setResultType] = useState<"success" | "error" | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   /* ---- refs ---- */
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   /* ---- auto scroll ---- */
@@ -106,32 +103,25 @@ export function SkillInterface() {
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
     setShowScrollButton(!nearBottom);
-    // Scroll de usuario (rueda): manda aunque haya un scroll programático en curso.
     if (userInteractionRef.current) {
-      // Subiendo con la rueda: el autoscroll queda apagado aunque sea mínimo.
-      // Bajando: se reactiva recién al llegar al umbral del fondo.
       setAutoScrollEnabled(wheelUpRef.current ? false : nearBottom);
       return;
     }
-    // Solo cambiar autoScroll si NO es scroll programático.
     if (!isProgrammaticScrollRef.current) {
       setAutoScrollEnabled(nearBottom);
     }
   }, []);
 
   const handleMessagesWheel = useCallback((e: { deltaY: number }) => {
-    // Marcar interacción de usuario (sincrónico) para que el scroll handler mande.
     userInteractionRef.current = true;
     setTimeout(() => {
       userInteractionRef.current = false;
     }, 300);
 
-    // Subir con la rueda desactiva el autoscroll SIEMPRE (aunque sea mínimo).
     if (e.deltaY < 0) {
       wheelUpRef.current = true;
       setAutoScrollEnabled(false);
     } else {
-      // Bajando: el autoscroll se reactiva recién al llegar al fondo.
       wheelUpRef.current = false;
     }
   }, []);
@@ -154,53 +144,7 @@ export function SkillInterface() {
     }
   }, [input]);
 
-  /* ---- file validation ---- */
-  const handleFilesSelected = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
-      const selected = Array.from(e.target.files || []);
-      const valid: File[] = [];
-      let warning: string | null = null;
-      let currentTotalSize = files.reduce((sum, f) => sum + f.size, 0);
-
-      for (const f of selected) {
-        if (!ALLOWED_FILE_TYPES.includes(f.type) && !f.name.match(/\.(csv|xlsx|xls)$/i)) {
-          warning = `Tipo de archivo no soportado: ${f.name}. Permitidos: PDF, DOCX, XLSX, TXT, CSV, JSON, XML.`;
-          continue;
-        }
-        if (f.size > MAX_FILE_SIZE) {
-          warning = `Archivo demasiado grande: ${f.name} (máx 10 MB).`;
-          continue;
-        }
-        if (valid.length + files.length >= MAX_FILES) {
-          warning = `Máximo ${MAX_FILES} archivos permitidos.`;
-          break;
-        }
-        if (currentTotalSize + f.size > MAX_TOTAL_SIZE) {
-          warning = `Tamaño total excede ${MAX_TOTAL_SIZE / (1024 * 1024)} MB.`;
-          break;
-        }
-        valid.push(f);
-        currentTotalSize += f.size;
-      }
-      if (warning) setFileWarning(warning);
-      setFiles((prev) => [...prev, ...valid]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    },
-    [files],
-  );
-
-  const removeFile = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  /* ---- auto-dismiss file warning after 6 seconds ---- */
-  useEffect(() => {
-    if (!fileWarning) return;
-    const timer = setTimeout(() => setFileWarning(null), 6000);
-    return () => clearTimeout(timer);
-  }, [fileWarning]);
-
-  /* ---- validación del nombre (exacto skill.html) ---- */
+  /* ---- validación del nombre (igual que skill) ---- */
   const validarNombre = useCallback((val: string): boolean => {
     if (!val) { setNameError(null); return true; }
     if (val.includes(" ")) { setNameError("No debe contener espacios."); return false; }
@@ -210,19 +154,41 @@ export function SkillInterface() {
     return true;
   }, []);
 
-  /* ---- envío al backend (streaming SSE /api/create/skill) ---- */
+  /* ---- edición de parámetros / datos ---- */
+  const actualizarCampo = (
+    lista: CampoDeclarado[],
+    setLista: (v: CampoDeclarado[]) => void,
+    index: number,
+    campo: keyof CampoDeclarado,
+    valor: string | boolean,
+  ): void => {
+    const nuevo = lista.map((c, i) => (i === index ? { ...c, [campo]: valor } : c));
+    setLista(nuevo);
+  };
+
+  const agregarCampo = (lista: CampoDeclarado[], setLista: (v: CampoDeclarado[]) => void): void => {
+    setLista([...lista, { name: "", type: "string", description: "", required: false }]);
+  };
+
+  const quitarCampo = (
+    lista: CampoDeclarado[],
+    setLista: (v: CampoDeclarado[]) => void,
+    index: number,
+  ): void => {
+    setLista(lista.filter((_, i) => i !== index));
+  };
+
+  /* ---- envío al backend (streaming SSE /api/create/tool) ---- */
   const enviar = useCallback(
-    async (texto: string, archivos: File[]) => {
+    async (texto: string) => {
       if (isStreaming) return;
       setInput("");
-      setFiles([]);
       setChatError(null);
 
       const userMessage: Message = {
         id: generateId(),
         type: "user",
         content: texto,
-        files: archivos.map((f) => ({ name: f.name, size: f.size })),
       };
       const assistantId = generateId();
       const assistantMessage: Message = {
@@ -238,29 +204,15 @@ export function SkillInterface() {
       setAutoScrollEnabled(true);
       setIsStreaming(true);
 
-      // Leer contenido de archivos adjuntos
-      let fileContents: Array<{ name: string; content: string }> = [];
-      if (archivos.length > 0) {
-        try {
-          fileContents = await Promise.all(
-            archivos.map(async (f) => ({ name: f.name, content: await f.text() })),
-          );
-        } catch {
-          setMessages((prev) => prev.slice(0, -2));
-          setIsStreaming(false);
-          return;
-        }
-      }
       historialRef.current = [
         ...historialRef.current,
-        { role: "user", content: texto, files: fileContents.length ? fileContents : undefined },
+        { role: "user", content: texto },
       ];
 
       let accumulatedContent = "";
       let accumulatedReasoning = "";
       let accumulatedBlocks: ContentBlock[] = [];
 
-      /** Helper: agrega/actualiza el último bloque reasoning con el contenido acumulado */
       const updateReasoningBlock = (): void => {
         const reasonText = accumulatedReasoning.trim();
         if (!reasonText) return;
@@ -276,13 +228,15 @@ export function SkillInterface() {
       abortRef.current = abort;
 
       try {
-        const resp = await fetch(`${API}/create/skill`, {
+        const resp = await fetch(`${API}/create/tool`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             descripcion,
             name: nombre || null,
             mensajes: historialRef.current,
+            parametros: parametros.filter((p) => p.name.trim()),
+            datos: datos.filter((d) => d.name.trim()),
           }),
           signal: abort.signal,
         });
@@ -331,7 +285,7 @@ export function SkillInterface() {
                 }
 
                 case "reasoning": {
-                  // Normalizar \n en los chunks de reasoning
+                  console.log(`[REASONING-FRONT] ${new Date().toISOString()}`, event.content);
                   accumulatedReasoning += (event.content || "").replace(/\n+/g, " ");
                   updateReasoningBlock();
                   setMessages((prev) =>
@@ -373,10 +327,7 @@ export function SkillInterface() {
                     args: validated.parameters,
                     result: undefined,
                   });
-                  // Un nuevo step: el razonamiento siguiente empieza de cero (no acumulado).
                   accumulatedReasoning = "";
-                  // flushSync: fuerza el render del bloque con spinner ANTES de que
-                  // llegue el resultado (los tools locales son rápidos y React los batch-ea)
                   flushSync(() => {
                     setMessages((prev) =>
                       prev.map((m) => {
@@ -386,7 +337,6 @@ export function SkillInterface() {
                       }),
                     );
                   });
-                  // Brief delay para que el spinner de la tool sea visible
                   await new Promise((resolve) => setTimeout(resolve, 0));
                   break;
                 }
@@ -424,10 +374,9 @@ export function SkillInterface() {
                   break;
                 }
 
-                case "skill_action": {
+                case "tool_action": {
                   const action = event.content?.action;
                   if (action === "question") {
-                    // La entrevista devuelve el control al usuario: finalizar el mensaje y habilitar input
                     historialRef.current = [
                       ...historialRef.current,
                       { role: "assistant", content: accumulatedContent },
@@ -437,7 +386,6 @@ export function SkillInterface() {
                     );
                     setIsStreaming(false);
                   } else if (action === "creating") {
-                    // Sigue el stream (FASE 2/3): el typing aparece en los lapsos muertos
                     historialRef.current = [
                       ...historialRef.current,
                       { role: "assistant", content: accumulatedContent },
@@ -446,19 +394,15 @@ export function SkillInterface() {
                   break;
                 }
 
-                case "skill_result": {
+                case "tool_result_final": {
                   const data = event.content || {};
                   setMessages((prev) =>
                     prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
                   );
                   setIsStreaming(false);
                   if (data.status === "success") {
-                    let msg = data.message || "";
-                    if (data.data && data.data.exist === "Sí" && data.data.skill) {
-                      msg = "Ya existe la skill \u00ab" + data.data.skill + "\u00bb. " + (data.data.explicacion || data.message);
-                    }
                     setResultType("success");
-                    setResultMsg(msg);
+                    setResultMsg(data.message || "Tool creada exitosamente.");
                   } else {
                     setResultType("error");
                     setResultMsg("Error: " + (data.message || "Error desconocido"));
@@ -486,15 +430,15 @@ export function SkillInterface() {
           }
         }
 
-        // Stream terminado: finalizar el mensaje del asistente (el texto ya se mostró).
         setMessages((prev) =>
           prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
         );
       } catch (err: unknown) {
         if ((err as Error)?.name === "AbortError") {
-          // Cancelado por el usuario: quitar el mensaje del usuario y el placeholder
-          historialRef.current = historialRef.current.slice(0, -1);
-          setMessages((prev) => prev.slice(0, -2));
+          // Cancelado por el usuario: conservar lo generado hasta acá (como ChatInterface).
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
+          );
         } else {
           setMessages((prev) =>
             prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m)),
@@ -506,15 +450,15 @@ export function SkillInterface() {
         abortRef.current = null;
       }
     },
-    [isStreaming, descripcion, nombre],
+    [isStreaming, descripcion, nombre, parametros, datos],
   );
 
   /* ---- enviar desde el chat ---- */
   const handleSend = useCallback(() => {
     const text = input.trim();
     if (!text || isStreaming) return;
-    enviar(text, files);
-  }, [input, files, isStreaming, enviar]);
+    enviar(text);
+  }, [input, isStreaming, enviar]);
 
   /* ---- detener streaming ---- */
   const handleCancel = useCallback(() => {
@@ -541,37 +485,140 @@ export function SkillInterface() {
       const nameVal = nombre.trim();
       const desc = descripcion.trim();
       if (!desc) { setSetupError("Completá la descripción."); return; }
-      if (!nameVal) { setSetupError("El nombre es obligatorio."); return; }
-      if (!validarNombre(nameVal)) { setSetupError("Corregí el campo Nombre."); return; }
+      // El nombre es opcional: si lo declara, debe cumplir el formato.
+      if (nameVal && !validarNombre(nameVal)) { setSetupError("Corregí el campo Nombre."); return; }
+      // Validar campos: si tienen texto en name, deben tener descripción.
+      for (const p of parametros) {
+        if (p.name.trim() && !p.description.trim()) {
+          setSetupError(`El parámetro "${p.name}" necesita una descripción.`);
+          return;
+        }
+      }
+      for (const d of datos) {
+        if (d.name.trim() && !d.description.trim()) {
+          setSetupError(`El dato "${d.name}" necesita una descripción.`);
+          return;
+        }
+      }
       setSetupDone(true);
-      enviar(desc, []);
+      enviar(desc);
     },
-    [nombre, descripcion, enviar, validarNombre],
+    [nombre, descripcion, enviar, validarNombre, parametros, datos],
   );
 
   const setupKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === "TEXTAREA") return;
         e.preventDefault();
-        const form = (e.target as HTMLElement).closest("form");
+        const form = target.closest("form");
         form?.requestSubmit();
       }
     },
     [],
   );
 
+  /* ---- editor de campos reutilizable (colapsable, opcional) ---- */
+  const renderEditor = (
+    titulo: string,
+    ayuda: string,
+    lista: CampoDeclarado[],
+    setLista: (v: CampoDeclarado[]) => void,
+    abierto: boolean,
+    setAbierto: (v: boolean) => void,
+  ): JSX.Element => (
+    <div className="border border-app-border rounded-lg">
+      <button
+        type="button"
+        onClick={() => setAbierto(!abierto)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left"
+        aria-expanded={abierto}
+      >
+        <div className="flex items-center gap-2">
+          <Plus
+            size={14}
+            className={`text-app-primary transition-transform ${abierto ? "rotate-45" : ""}`}
+          />
+          <span className="text-sm font-medium text-app-text">{titulo}</span>
+          <span className="text-xs text-app-text-secondary">(opcional)</span>
+        </div>
+        <span className="text-xs text-app-text-secondary">
+          {lista.length > 0 ? `${lista.length} declarado${lista.length === 1 ? "" : "s"}` : "inferir por el LLM"}
+        </span>
+      </button>
+      {abierto && (
+        <div className="px-3 pb-3 space-y-2 border-t border-app-border pt-3">
+          <p className="text-xs text-app-text-secondary">{ayuda}</p>
+          <div className="space-y-2">
+            {lista.map((campo, i) => (
+              <div key={i} className="flex flex-wrap gap-2 items-start">
+                <input
+                  type="text"
+                  value={campo.name}
+                  onChange={(e) => actualizarCampo(lista, setLista, i, "name", e.target.value)}
+                  placeholder="nombre"
+                  className="flex-1 min-w-[120px] border border-app-border rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+                />
+                <select
+                  value={campo.type}
+                  onChange={(e) => actualizarCampo(lista, setLista, i, "type", e.target.value)}
+                  className="border border-app-border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+                >
+                  {TIPOS_CAMPO.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={campo.description}
+                  onChange={(e) => actualizarCampo(lista, setLista, i, "description", e.target.value)}
+                  placeholder="descripción"
+                  className="flex-[2] min-w-[180px] border border-app-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+                />
+                <label className="flex items-center gap-1 text-xs text-app-text-secondary px-1 py-1.5 select-none">
+                  <input
+                    type="checkbox"
+                    checked={campo.required}
+                    onChange={(e) => actualizarCampo(lista, setLista, i, "required", e.target.checked)}
+                    className="rounded text-app-primary focus:ring-app-primary-light"
+                  />
+                  req
+                </label>
+                <button
+                  type="button"
+                  onClick={() => quitarCampo(lista, setLista, i)}
+                  className="p-1.5 text-app-text-secondary hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                  aria-label="Quitar campo"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => agregarCampo(lista, setLista)}
+            className="inline-flex items-center gap-1 text-xs text-app-primary hover:text-app-primary-light font-medium"
+          >
+            <Plus size={12} />
+            Agregar campo
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   /* ---- render ---- */
   return (
     <div className="h-screen bg-app-bg flex flex-col overflow-hidden">
-      {/* ========== HEADER skill (95px, hardcodeado — no tocar) ========== */}
+      {/* ========== HEADER (95px, hardcodeado — no tocar) ========== */}
       <header
         className="flex items-center shrink-0 bg-white px-4 border-b border-gray-200"
         style={{ height: "95px" }}
       >
-        {/* Left: empty to balance center */}
         <div className="sm:w-44"></div>
 
-        {/* Center: logo + title */}
         <div className="flex-1 flex items-center justify-center gap-2 sm:gap-3">
           <img
             src="https://github.com/synapse-ai-hub/sources/raw/main/logo_transparente.png"
@@ -582,20 +629,19 @@ export function SkillInterface() {
             }}
           />
           <span className="text-lg sm:text-2xl font-semibold" style={{ color: "#111827" }}>
-            synapseForge — Creador de skills
+            synapseForge — Creador de tools
           </span>
         </div>
 
-        {/* Right: empty to balance center */}
         <div className="sm:w-44"></div>
       </header>
 
       {!setupDone ? (
         /* ========== SETUP FORM ========== */
-        <div className="flex-1 flex items-center justify-center p-6 bg-app-bg">
-          <div className="w-full max-w-lg bg-white rounded-xl border border-app-border shadow-sm p-6 space-y-5">
+        <div className="flex-1 flex items-start justify-center p-6 bg-app-bg overflow-y-auto">
+          <div className="w-full max-w-2xl bg-white rounded-xl border border-app-border shadow-sm p-6 space-y-5 my-6">
             <div className="text-sm text-gray-600">
-              Una <strong>skill</strong> es un conjunto de instrucciones que el asistente usa para resolver una tarea específica. Es como un manual de experto: le dice cómo pensar, qué pasos seguir y qué tener en cuenta.
+              Una <strong>tool externa</strong> es una función que el asistente puede invocar para hacer algo concreto: consultar una API, leer un archivo, mandar un mensaje. Acá la armás paso a paso: le decís qué hace, qué parámetros recibe del LLM y qué datos externos necesita (env vars, secrets, endpoints).
             </div>
 
             {setupError && (
@@ -606,11 +652,11 @@ export function SkillInterface() {
 
             <form onSubmit={handleSetupSubmit} className="space-y-4">
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre <span className="text-red-500">*</span>
+                <label htmlFor="tool-name" className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre <span className="text-xs text-app-text-secondary">(opcional)</span>
                 </label>
                 <input
-                  id="name"
+                  id="tool-name"
                   type="text"
                   value={nombre}
                   onChange={(e) => {
@@ -618,31 +664,50 @@ export function SkillInterface() {
                     validarNombre(e.target.value);
                   }}
                   onKeyDown={setupKeyDown}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
-                  placeholder="Ej: analisis-competencia"
+                  className="w-full border border-app-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+                  placeholder="Ej: consultar-clima"
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                  Solo min&uacute;sculas, n&uacute;meros y guiones. Sin espacios ni may&uacute;sculas.
+                <p className="text-xs text-app-text-secondary mt-1">
+                  Si lo dejás vacío, el LLM infiere un nombre. Si lo escribís, debe tener solo minúsculas, números y guiones.
                 </p>
                 {nameError && <p className="text-xs text-red-500 mt-1">{nameError}</p>}
               </div>
+
               <div>
-                <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700 mb-1">
-                  Describ&iacute; qu&eacute; necesit&aacute;s <span className="text-red-500">*</span>
+                <label htmlFor="tool-descripcion" className="block text-sm font-medium text-gray-700 mb-1">
+                  ¿Qué tiene que hacer la tool? <span className="text-red-500">*</span>
                 </label>
                 <textarea
-                  id="descripcion"
+                  id="tool-descripcion"
                   rows={4}
                   value={descripcion}
                   onChange={(e) => setDescripcion(e.target.value)}
-                  onKeyDown={setupKeyDown}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent resize-y"
-                  placeholder="Ej: Necesito una skill que analice la competencia, compare precios y productos, y genere un informe con fortalezas y debilidades."
+                  className="w-full border border-app-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary resize-y"
+                  placeholder="Ej: Una tool que reciba una ciudad y devuelva el clima actual usando la API de OpenWeather."
                 />
               </div>
+
+              {renderEditor(
+                "Parámetros (lo que el LLM le pasa al invocarla)",
+                "Cada parámetro es un dato que el modelo completa cuando llama a la tool. Describilo bien para que el LLM sepa qué mandar.",
+                parametros,
+                setParametros,
+                parametrosAbierto,
+                setParametrosAbierto,
+              )}
+
+              {renderEditor(
+                "Datos externos (env vars, secrets, endpoints)",
+                "Cosas que la tool lee del entorno: API keys, URLs, configuración fija. NO los valores: solo declaralos para que el agente sepa qué necesita.",
+                datos,
+                setDatos,
+                datosAbierto,
+                setDatosAbierto,
+              )}
+
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50"
+                className="w-full bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90"
               >
                 Comenzar
               </button>
@@ -652,7 +717,6 @@ export function SkillInterface() {
       ) : (
         /* ========== CHAT ========== */
         <div className="flex-1 flex flex-col min-h-0">
-          {/* ========== MESSAGES AREA ========== */}
           <div className="flex-1 min-h-0 relative">
             {showScrollButton && (
               <div className="absolute left-1/2 transform -translate-x-1/2 z-10" style={{ bottom: "30px" }}>
@@ -691,14 +755,12 @@ export function SkillInterface() {
             </div>
           </div>
 
-          {/* ========== INPUT AREA ========== */}
           <div
             className="shrink-0 border-t border-app-border bg-white
                        px-3 sm:px-4 py-3 sm:py-4"
           >
             <div className="max-w-full sm:max-w-3xl lg:max-w-4xl mx-auto">
               {resultMsg ? (
-                /* Resultado: reemplaza el textarea. El chat sigue scrolleable arriba. */
                 <div className="relative rounded-2xl border border-app-border bg-white p-4 sm:p-5 flex flex-col items-center gap-3 text-center">
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center ${
@@ -715,124 +777,99 @@ export function SkillInterface() {
                       </svg>
                     )}
                   </div>
-                  <p className="text-sm text-app-text">{resultMsg}</p>
-                  <button
-                    onClick={() => window.close()}
-                    className="bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
-                  >
-                    Aceptar
-                  </button>
+                   <p className="text-sm text-app-text">{resultMsg}</p>
+                   {downloadError && (
+                     <p className="text-sm text-red-600">{downloadError}</p>
+                   )}
+                   <div className="flex gap-2">
+                     <button
+                       onClick={async () => {
+                         try {
+                           setDownloadError(null);
+                           const md = await fetchConversationMarkdown(messages, "Conversación - Creador de Tools");
+                           await saveFileWithPicker(md, "conversacion-tool", ".md");
+                         } catch (err) {
+                           setDownloadError(err instanceof Error ? err.message : "No se pudo descargar la conversación.");
+                         }
+                       }}
+                       className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
+                     >
+                       <Download size={14} />
+                       Descargar conversación
+                     </button>
+                     <button
+                       onClick={() => window.close()}
+                       className="bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
+                     >
+                       Aceptar
+                     </button>
+                   </div>
                 </div>
               ) : (
                 <>
-              {chatError && (
-                <div className="mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
-                  {chatError}
-                </div>
-              )}
+                  {chatError && (
+                    <div className="mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
+                      {chatError}
+                    </div>
+                  )}
 
-              {fileWarning && (
-                <FileWarningBanner
-                  message={fileWarning}
-                  onDismiss={() => setFileWarning(null)}
-                />
-              )}
+                  <div className="relative">
+                    <textarea
+                      ref={textareaRef}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Escribí tu consulta..."
+                      rows={1}
+                      className="w-full resize-none rounded-2xl border border-app-border
+                                 bg-white
+                                 text-app-text placeholder:text-app-text-secondary
+                                 focus:outline-none focus:ring-2 focus:ring-app-primary/30 focus:border-app-primary
+                                 transition-colors
+                                 pt-3 sm:pt-4 pb-[44px] sm:pb-[44px] pr-12 sm:pr-12 pl-4 sm:pl-4
+                                 min-h-[80px] sm:min-h-[100px]"
+                      style={{ maxHeight: "220px" }}
+                    />
 
-              {files.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {files.map((f, i) => (
-                    <FileChip key={`${f.name}-${i}`} file={f} onRemove={() => removeFile(i)} />
-                  ))}
-                </div>
-              )}
+                    {isStreaming ? (
+                      <button
+                        type="button"
+                        onClick={handleCancel}
+                        className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
+                                   flex items-center justify-center
+                                   bg-app-primary/20 hover:bg-app-primary/30
+                                   text-app-primary
+                                   hover:opacity-90 active:scale-95
+                                   transition-all duration-150 shadow-sm"
+                        aria-label="Detener generación"
+                      >
+                        <Square size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSend}
+                        disabled={!input.trim()}
+                        className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
+                                   flex items-center justify-center
+                                   bg-gradient-to-r from-app-primary to-app-gradient-secondary
+                                   hover:opacity-90 active:scale-95
+                                   transition-all duration-150 shadow-sm
+                                   disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label="Enviar mensaje"
+                      >
+                        <Send size={14} className="text-app-primary-text" />
+                      </button>
+                    )}
 
-              <p className="text-xs text-gray-400 mb-2">
-                Podés adjuntar archivos <strong>.md</strong>, <strong>.txt</strong>, <strong>.json</strong>, <strong>.csv</strong>, <strong>.yaml</strong> o <strong>.xml</strong> como material de referencia para la skill.
-              </p>
-
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".md,.txt,.json,.csv,.yaml,.yml,.xml"
-                className="hidden"
-                onChange={handleFilesSelected}
-              />
-
-              {/* Textarea wrapper with buttons inside */}
-              <div className="relative">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Escribí tu consulta..."
-                  rows={1}
-                  className="w-full resize-none rounded-2xl border border-app-border
-                             bg-white
-                             text-app-text placeholder:text-app-text-secondary
-                             focus:outline-none focus:ring-2 focus:ring-app-primary/30 focus:border-app-primary
-                             transition-colors
-                             pt-3 sm:pt-4 pb-[52px] sm:pb-[64px] pr-12 sm:pr-12 pl-12 sm:pl-12
-                             min-h-[80px] sm:min-h-[100px]"
-                  style={{ maxHeight: "220px" }}
-                />
-
-                {/* Attach button - bottom left */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="absolute bottom-3 left-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
-                             flex items-center justify-center
-                             bg-app-primary/10 hover:bg-app-primary/20
-                             text-app-primary transition-all duration-150"
-                  aria-label="Adjuntar archivos"
-                >
-                  <Paperclip size={16} />
-                </button>
-
-                {/* Send / Stop button - bottom right */}
-                {isStreaming ? (
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
-                               flex items-center justify-center
-                               bg-app-primary/20 hover:bg-app-primary/30
-                               text-app-primary
-                               hover:opacity-90 active:scale-95
-                               transition-all duration-150 shadow-sm"
-                    aria-label="Detener generación"
-                  >
-                    <Square size={14} />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={!input.trim()}
-                    className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
-                               flex items-center justify-center
-                               bg-gradient-to-r from-app-primary to-app-gradient-secondary
-                               hover:opacity-90 active:scale-95
-                               transition-all duration-150 shadow-sm
-                               disabled:opacity-40 disabled:cursor-not-allowed"
-                    aria-label="Enviar mensaje"
-                  >
-                    <Send size={14} className="text-app-primary-text" />
-                  </button>
-                )}
-
-                {/* Línea de actividad — misma condición que el botón de detener */}
-                {isStreaming && (
-                  <div
-                    className="activity-bar absolute left-0 right-0 pointer-events-none"
-                    style={{ bottom: "-4px" }}
-                    aria-hidden="true"
-                  />
-                )}
-              </div>
+                    {isStreaming && (
+                      <div
+                        className="activity-bar absolute left-0 right-0 pointer-events-none"
+                        style={{ bottom: "-4px" }}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -843,4 +880,4 @@ export function SkillInterface() {
   );
 }
 
-export default SkillInterface;
+export default ToolInterface;

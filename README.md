@@ -31,7 +31,7 @@
 **synapseForge** es un paquete PyPI que provee un CLI para scaffoldear y distribuir proyectos de agentes IA desde cero. Incluye:
 
 1. **CLI** (`synapseforge init`, `synapseforge launch`, `synapseforge colors`, `synapseforge run`) — scaffolding con GUI tkinter + build de distribución + editor de colores en vivo + servidor de desarrollo.
-2. **Framework de agentes** (`backend/agent/`) — AgentLoop, Tools Registry (nativas + externas + MCP), Sessions (SQLite WAL), Permissions, Skills, MCP integration.
+2. **Framework de agentes** (`backend/agent/`) — AgentLoop, Tools Registry (nativas + externas + MCP), Sessions (SQLite WAL), Permissions, Skills, RAG, MCP integration.
 3. **Template de proyecto** embebido (`pipeline/template.zip`) — backend FastAPI + frontend React/Vite/TypeScript + estructura completa.
 4. **Docker** — `Dockerfile` multi-stage + `docker-compose.yml` para despliegue en contenedor.
 
@@ -45,14 +45,17 @@ El usuario instala el paquete, ejecuta `synapseforge init`, completa los datos e
 - **`synapseforge launch`**: Build de distribución autocontenido con PyInstaller + frontend compilado + Python embebido + launcher nativo → `.zip` listo para entregar.
 - **`synapseforge colors`**: Editor GUI para modificar `frontend/public/colors.json` en caliente — recarga el navegador y ves los cambios sin rebuild.
 - **`synapseforge run`**: Levanta `uvicorn --reload` (backend) + `npm run dev` (frontend) + abre el navegador. Ctrl+C mata ambos.
-- **Pipeline de 11 pasos**: Input GUI → verificación de modelos Ollama (instala `qwen3.5:4b` si falta) → template → venv → pip install → npm install → logos → `.ico` → colores (extracción automática con colorthief si no se ingresan) → config → placeholders XML en todo el proyecto.
+- **Pipeline de 11 pasos**: Input GUI → verificación de modelos Ollama (instala `qwen3.5:4b` si falta) → template → venv → pip install → npm install → logos → `.ico` → colores → config → placeholders XML en todo el proyecto.
 - **Sistema de colores dual**: Build-time (placeholders XML en `config/replace.json`) + Runtime (`frontend/public/colors.json` cargado en `main.tsx`). 4 variables configurables, el resto fijas.
 - **Framework de agentes completo**: AgentLoop (while True → LLM → tools → continue), Tools Registry (nativas + externas dinámicas + MCP), SessionManager (SQLite WAL), Permissions (allow/deny/ask + wildcards + `config.yaml` para el router), Skills (SKILL.md + references), MCP (SDK oficial `mcp`, stdio/HTTP + timeout + health check).
-- **Archivos de contexto**: Subida de PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY → extracción de texto (pdfminer + OCR fallback) → inyección en system prompt del agente.
-- **Métricas de uso**: Endpoints para sesiones, tokens por modelo/proveedor, estadísticas agregadas. Dashboard en frontend (`MetricsModal` con tabs: Overview, Sessions, Tools, Errors).
+- **RAG (base de conocimiento)**: Colecciones vectoriales en ChromaDB con modelo de embeddings local (SentenceTransformer). Subida de archivos (PDF, Word, TXT, MD, CSV, XLSX, JSON, XML, YAML, PY) y páginas web (fetch + chunk + guardado de URL/HTML). Chunking con overlap inteligente y búsqueda por similitud coseno. Tool nativa `rag` con permisos por colección en el frontmatter del agente.
+- **Creación de skills vía LLM**: Interfaz standalone (`skill.html`) y control remoto por Telegram. Entrevista iterativa + agente creador con tools → genera `SKILL.md` + referencias.
+- **Archivos de contexto**: Subida de PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY → extracción de texto → inyección en system prompt del agente (instrucciones y documentos).
+- **Métricas de uso**: Endpoints para sesiones, tools, errores y overview. Dashboard en frontend (`MetricsModal`).
 - **Extracción de texto robusta**: Módulo compartido `file_text_extractor.py` soporta texto plano, Markdown, CSV, JSON, XML, YAML, Python, DOCX, DOC, XLSX, XLS, PDF. OCR **best-effort**: si falla por deps faltantes, devuelve lo que extrajo pdfminer.
 - **Modo desktop app**: Heartbeat cada 10s desde frontend → watchdog en backend (3 min sin heartbeat = exit). Endpoint `/api/shutdown` para botón "Salir".
-- **Configuración de usuario** (`~/.config/synapseForge/`): tools personalizadas, skills, agentes con permisos, `AGENT.md` (comportamiento general → `## Behavior`), `config.yaml` (permisos del router), servidores MCP (`mcp.json`).
+- **Configuración de usuario** (`~/.config/synapseForge/`): tools personalizadas, skills, agentes con permisos, `AGENT.md` (comportamiento general → `## Behavior`), `config.yaml` (permisos del router), servidores MCP (`mcp.json`), colecciones RAG (`knowledge/`).
+- **Telegram como control remoto**: Bot que emite eventos al event bus; el frontend ejecuta el mismo flujo de chat. Comandos de sesión, modelo/proveedor, y creación de skills/RAG (abre la ventana correspondiente en el frontend).
 - **Docker**: `Dockerfile` multi-stage (Node 20 build → Python 3.12 slim runtime) + `docker-compose.yml` con `VITE_MODE=prod`.
 
 ---
@@ -61,7 +64,7 @@ El usuario instala el paquete, ejecuta `synapseforge init`, completa los datos e
 
 - **Scaffolding repetitivo**: Un solo comando crea el proyecto completo con la estructura estándar de todos los proyectos SYNAPSE.
 - **Configuración centralizada**: GUI interactiva que reemplaza todos los placeholders XML del proyecto (empresa, cliente, colores, logo, etc.).
-- **Branding automatizado**: Copia de logos + generación de `.ico` (16×16 a 256×256) + extracción de paleta de colores desde la imagen (colorthief).
+- **Branding automatizado**: Copia de logos + generación de `.ico` (16×16 a 256×256) + extracción de paleta de colores desde la imagen.
 - **Distribución sin dependencias**: Build autocontenido listo para entregar al cliente — incluye Python embebido, frontend estático, launcher nativo.
 
 ---
@@ -80,7 +83,9 @@ synapseForge/
 │  └─ tk/                        #   GUIs tkinter
 │     ├─ __init__.py
 │     ├─ init_app.py             #   GUI 3 tabs para synapseforge init
-│     └─ colors_app.py           #   GUI editor colors.json para synapseforge colors
+│     ├─ colors_app.py           #   GUI editor colors.json para synapseforge colors
+│     ├─ logo.ico
+│     └─ logo.png
 │
 ├─ pipeline/                     # Pipeline — código fuente de init y launch
 │  ├─ __init__.py
@@ -94,8 +99,7 @@ synapseForge/
 │  │  ├─ venv_handler.py         #   Crea venv .{repo}/
 │  │  ├─ config_handler.py       #   Guarda config/replace.json + frontend/public/colors.json
 │  │  ├─ logo_handler.py         #   Copia logos + genera .ico con Pillow
-│  │  ├─ placeholder_handler.py  #   Reemplaza tags XML en todo el proyecto
-│  │  └─ color_utils.py          #   Extracción paleta (colorthief) + mapeo 4 vars
+│  │  └─ placeholder_handler.py  #   Reemplaza tags XML en todo el proyecto
 │  └─ launch/                    #   Launch: PyInstaller, npm build, zip
 │     ├─ __init__.py
 │     ├─ forge.py                #   Orquestador 7 pasos
@@ -109,86 +113,107 @@ synapseForge/
 │  ├─ __init__.py
 │  ├─ main.py                    #   FastAPI app, CORS, lifespan, routers, health, shutdown, heartbeat, SPA static
 │  ├─ instances.py               #   Singletons: agent, session_manager
+│  ├─ event_bus.py               #   Event bus (SSE) para Telegram ↔ Frontend
 │  ├─ routes/
 │  │  ├─ __init__.py
 │  │  ├─ chat.py                 #   POST /api/chat → SSE stream (AgentLoop)
-│  │  ├─ create.py               #   POST /api/create/{type} (skill, tool, agent, rag)
-│  │  ├─ config.py               #   Providers, models, MCP health, context window
+│  │  ├─ create.py               #   POST /api/create/skill → SSE (creación de skills vía LLM)
+│  │  ├─ config.py               #   Providers, models, context window, verbose, skills/tools/agents/mcp
 │  │  ├─ sessions.py             #   CRUD sesiones, mensajes, títulos
 │  │  ├─ context_files.py        #   CRUD archivos de contexto (instrucciones/documentos)
-│  │  ├─ metrics.py              #   Métricas: agregadas, por sesión, tokens por modelo/proveedor
+│  │  ├─ metrics.py              #   Métricas: overview, sessions, tools, errors
+│  │  ├─ rag.py                  #   Colecciones RAG: create/list/delete, upload files, add URL
+│  │  ├─ agent_items.py          #   Listar/eliminar skills, tools, agents, MCP, colecciones RAG
+│  │  ├─ events.py               #   GET /api/events → SSE del event bus
+│  │  ├─ telegram.py             #   Status/toggle del bot + active-session
 │  │  ├─ file_text_extractor.py  #   Extracción texto: PDF, DOCX, XLSX, TXT + OCR fallback
 │  │  └─ README.md
 │  └─ agent/                     #   Framework de agentes
 │     ├─ __init__.py
 │     ├─ agent.py                #   Agent class (Groq/Ollama, streaming SSE, tool calling)
 │     ├─ tools.py                #   Registry: nativas + externas (~/.config/synapseForge/tools/) + MCP
-│  ├─ loop.py                 #   AgentLoop: while True → LLM → tool_calls → execute → continue (permisos del router desde config.yaml)
-│  ├─ loop_helpers.py         #   build_system_prompt (base + agentes + contexto + AGENT.md → ## Behavior + ## MANDATORY: + fecha), fetch_context_window, execute_tool
-│  ├─ session.py              #   SessionManager (SQLite WAL, historial, config_kv, error_log)
-│  ├─ permissions.py          #   Permisos por agente (tool/skill/task allow/deny/ask + wildcards)
-│     ├─ config_dir.py           #   Descubrimiento ~/.config/synapseForge/
-│     ├─ contract.py             #   ContractResponse, UsageReport, StreamingResponse
+│     ├─ loop.py                 #   AgentLoop: while True → LLM → tool_calls → execute → continue
+│     ├─ loop_helpers.py         #   build_system_prompt, fetch_context_window_turns, execute_tool
+│     ├─ session.py              #   SessionManager (SQLite WAL, historial, config_kv, error_log)
+│     ├─ permissions.py          #   Permisos por agente (tool/skill/task/rag allow/deny/ask + wildcards)
 │     ├─ ddl_setup.py            #   Inicialización tablas SQLite
 │     ├─ agent_db/               #   SQLite runtime (se crea al iniciar)
-│  ├─ prompts/
-│  │  ├─ system_prompt.md     #   Prompt base del router
-│  │  ├─ help.md              #   Documentación interna para tool `help`
-│  │  ├─ title.md             #   Prompt para generar títulos de sesión
-│  │  ├─ generar_skill.md     #   Prompt para crear skills con LLM
-│  │  ├─ evaluar_skills.md    #   Prompt para evaluar skills existentes
-│  │  └─ mandatory.md         #   Reglas `## MANDATORY:` inyectadas a todos los agentes
-│     ├─ utils/
-│  │  ├─ __init__.py
-│  │  ├─ clean_memory.py      #   Liberación modelos GPU/CPU
-│  │  ├─ model_resolver.py    #   Resolución y validación modelo activo
-│  │  ├─ skill_loader.py      #   Carga y formateo SKILL.md para system prompt
-│  │  ├─ skill_creator.py     #   Creación de skills vía LLM (evaluación + generación)
-│  │  ├─ email_parser.py      #   Parseo emails (headers, body, adjuntos)
-│  │  ├─ mcp_helper.py        #   MCP con SDK oficial (mcp), stdio/HTTP, timeout, tool discovery, health check
-│  │  ├─ subagent_logger.py   #   Logger custom nivel SUBAGENT
-│  │  └─ error_logger.py      #   Log de errores a SQLite (error_log table)
-│  └─ README.md
+│     ├─ prompts/
+│     │  ├─ system_prompt.md     #   Prompt base del router
+│     │  ├─ help.md              #   Documentación interna para tool `help`
+│     │  ├─ title.md             #   Prompt para generar títulos de sesión
+│     │  ├─ generar_skill.md     #   Prompt para crear skills con LLM
+│     │  ├─ evaluar_skills.md    #   Prompt para evaluar skills existentes
+│     │  ├─ explicar_skill.md    #   Prompt para explicar una skill
+│     │  ├─ iterar_skill.md      #   Prompt para la entrevista de creación de skills
+│     │  └─ mandatory.md         #   Reglas `## MANDATORY:` inyectadas a todos los agentes
+│     └─ utils/
+│        ├─ __init__.py
+│        ├─ agent_helpers.py     #   Listados de skills, tools, agents, MCP
+│        ├─ chunking.py          #   Chunking con overlap inteligente (RAG)
+│        ├─ clean_memory.py      #   Liberación modelos GPU/CPU
+│        ├─ config.py            #   Config de runtime
+│        ├─ config_dir.py        #   Descubrimiento ~/.config/synapseForge/
+│        ├─ contract.py          #   ContractResponse, UsageReport, StreamingResponse
+│        ├─ email_parser.py      #   Parseo emails (headers, body, adjuntos)
+│        ├─ error_logger.py      #   Log de errores a SQLite (error_log table)
+│        ├─ loop_helpers.py      #   Helpers del loop (system prompt, contexto, tools)
+│        ├─ mcp_helper.py        #   MCP con SDK oficial (mcp), stdio/HTTP, timeout, health check
+│        ├─ model_resolver.py    #   Resolución y validación modelo activo
+│        ├─ skill_loader.py      #   Carga y formateo SKILL.md para system prompt
+│        ├─ skill_creator/       #   Creación de skills vía LLM (evaluación + generación)
+│        ├─ subagent_logger.py   #   Logger custom nivel SUBAGENT
+│        └─ vector_db.py         #   Wrapper ChromaDB (colecciones, embeddings, query)
 │
 ├─ frontend/                     # Fuente del template — frontend React/Vite/TS
 │  ├─ public/
-│  │  ├─ docs.html               # Documentación completa del producto
-│  │  ├─ tool.html               # Formulario standalone para crear tools
-│  │  ├─ agent.html              # Formulario standalone para crear agentes
-│  │  └─ rag.html                # Formulario standalone para crear RAG
+│  │  └─ docs.html               # Documentación del producto (usuario)
+│  ├─ index.html                 # Entry SPA principal (App)
+│  ├─ skill.html                 # Entry de la página de creación de skills (multi-page)
+│  ├─ rag.html                   # Entry de la página de gestión de RAG (multi-page)
 │  ├─ package.json
 │  ├─ package-lock.json
 │  ├─ tsconfig.json
 │  ├─ tsconfig.app.json
 │  ├─ tsconfig.node.json
-│  ├─ tsconfig.app.tsbuildinfo
-│  ├─ tsconfig.node.tsbuildinfo
 │  ├─ vite.config.ts
-│  ├─ index.html
-│  ├─ skill.html                 # Entry HTML de la skill page (multi-page)
 │  └─ src/
 │     ├─ main.tsx                #   Entry: carga colors.json → setea CSS vars → render App
-│     ├─ App.tsx                 #   Root + providers
+│     ├─ App.tsx                 #   Root + providers + manejo de eventos SSE (Telegram)
+│     ├─ ragMain.tsx             #   Entry de rag.html → RagInterface
+│     ├─ skillMain.tsx           #   Entry de skill.html → SkillInterface
 │     ├─ index.css               #   @theme Tailwind v4: 4 vars configurables + fijas
+│     ├─ skillColors.css         #   Colores de las páginas standalone
 │     ├─ vite-env.d.ts
 │     ├─ assets/
-│     │  └─ logo_cliente.png
+│     │  ├─ logo_cliente.png
+│     │  └─ logo_empresa.png
 │     ├─ services/
 │     │  ├─ chatService.ts       #   SSE parsing: chunk, tool_call, done
-│     │  ├─ configService.ts     #   Providers, models, MCP health
+│     │  ├─ configService.ts     #   Providers, models, MCP, skills/tools/agents, delete
 │     │  ├─ sessionService.ts    #   Sesiones CRUD
 │     │  ├─ contextFilesService.ts  #   CRUD archivos de contexto
-│     │  ├─ metricsService.ts    #   Métricas: overview, sessions, tokens
+│     │  ├─ metricsService.ts    #   Métricas: overview, sessions, tools, errors
+│     │  ├─ telegramService.ts   #   Status/toggle/active-session de Telegram
 │     │  └─ quoteHistoryService.ts
 │     ├─ components/
-│     │  ├─ ChatInterface.tsx
-│     │  ├─ Sidebar.tsx          #   Sessions + Config tabs
-│     │  ├─ MessageBubble.tsx
-│     │  ├─ MetricsModal.tsx     #   Dashboard métricas
+│     │  ├─ ChatInterface.tsx    #   Chat SSE + gauge de contexto + toggle Telegram
+│     │  ├─ Sidebar.tsx          #   Tabs: Conversaciones, Configuración, Agente, Crear
+│     │  ├─ configTab.tsx        #   Proveedor, modelo, contexto, verbose, instrucciones/documentos
+│     │  ├─ agentInfoTab.tsx     #   Panel: Tools, Skills, Agentes, MCP, RAG (con delete)
+│     │  ├─ createTab.tsx        #   Accesos a las páginas de creación (skill, rag)
+│     │  ├─ RagInterface.tsx     #   Gestión de colecciones RAG (archivos + URLs)
+│     │  ├─ SkillInterface.tsx   #   Creación de skills vía LLM (entrevista + agente)
+│     │  ├─ ContextGauge.tsx     #   Velocímetro de ventana de contexto
+│     │  ├─ MetricsModal.tsx     #   Dashboard de métricas
 │     │  ├─ HistoryModal.tsx
+│     │  ├─ MessageBubble.tsx
+│     │  ├─ chatBlocks.tsx       #   MessageRow, MarkdownRenderer, ToolCallBlock, FileChip
+│     │  ├─ sessionsTab.tsx
 │     │  ├─ Logo.tsx
 │     │  └─ ui/                  #   shadcn/ui: avatar, button, dialog, input, separator, textarea, utils
-│     └─ README.md
+│     └─ utils/
+│        └─ mermaid.ts
 │
 ├─ config/                       # Fuente del template — replace.json con placeholders XML
 │  └─ replace.json
@@ -198,7 +223,6 @@ synapseForge/
 │  └─ skills_store/
 │
 ├─ src/                          # Recursos adicionales
-│  ├─ logo.ico                   #   Ícono de la app (generado por pipeline)
 │  ├─ logo_empresa.png           #   Logo empresa para README (copiado por pipeline)
 │  └─ template_readme.md         #   README.md para el proyecto generado
 │
@@ -219,9 +243,14 @@ synapseForge/
 │  └─ commands/
 │     ├─ list_cmds.py
 │     ├─ quick_push.py
-│     └─ quick_sync.py
+│     ├─ quick_sync.py
+│     └─ template.py
 │
 ├─ .github/                      # Workflows y PR template
+│
+├─ docs/                         # Documentación (no trackeada)
+├─ template/                     # Template de proyecto (no trackeado)
+├─ dist/                         # Builds de distribución (no trackeado)
 │
 ├─ Dockerfile                    # Multi-stage: Node 20 build → Python 3.12 slim runtime
 ├─ docker-compose.yml            # Servicio app: build ., puerto 8000, VITE_MODE=prod
@@ -233,7 +262,9 @@ synapseForge/
 ├─ LICENSE
 ├─ README.md                     # Este archivo (repo root)
 ├─ README_PYPI.md                # README para PyPI (package description)
-└─ tareas-pendientes.md          # Tracking interno
+├─ BUGS.md                       # Bugs conocidos
+├─ refactor_agentes.md           # Notas de refactor de agentes
+└─ tareas_pendientes.md          # Tracking interno
 ```
 
 ---
@@ -282,7 +313,7 @@ pip install synapseforge
 | Comando | Descripción |
 |---------|-------------|
 | `synapseforge init [dir]` | Crea proyecto desde template con GUI interactiva |
-| `synapseforge launch <path> <exe>` | Build de distribución autocontenida (zip) |
+| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed]` | Build de distribución autocontenida (zip) |
 | `synapseforge colors [dir]` | Editor GUI para `frontend/public/colors.json` (cambios en vivo) |
 | `synapseforge run [dir]` | Levanta uvicorn --reload + npm run dev + abre browser |
 | `synapseforge --help` | Ayuda global |
@@ -318,6 +349,8 @@ La GUI tiene 3 pestañas de entrada: **Proyecto** (empresa, owner, legal, repo, 
 6. **Zip** — Empaqueta: `exe_name.exe`, `backend/`, `frontend/dist/`, `python/`, `.env`, `LICENSE`, `README.md`.
 7. **Cleanup** — Mueve zip a raíz del repo, borra `__forge_build__/`, limpia `.pyc` del backend original.
 
+Opciones: `--skip-frontend` (usa `frontend/dist/` existente) y `--no-embed` (usa el venv del proyecto en vez de descargar Python embebido).
+
 ### `synapseforge colors` — Editor de colores en vivo
 
 - Abre GUI tkinter con los 4 campos de color + toggle de degradé + preview cuadrado + color picker nativo.
@@ -326,9 +359,10 @@ La GUI tiene 3 pestañas de entrada: **Proyecto** (empresa, owner, legal, repo, 
 
 ### `synapseforge run` — Servidor de desarrollo
 
-- Levanta `uvicorn backend.main:app --reload --port 8000` (backend).
+- Requiere el **venv activado** (variable `VIRTUAL_ENV`).
+- Levanta `uvicorn backend.main:app --reload --port 8000` (backend) y espera a que responda `/health`.
 - Levanta `npm run dev` en `frontend/` (frontend, puerto 5173 por defecto Vite).
-- Espera 3s y abre `http://localhost:5173` en el browser.
+- Abre `http://localhost:5173` en el browser.
 - **Ctrl+C** mata ambos procesos.
 
 ---
@@ -342,32 +376,73 @@ El template incluye un framework completo de agentes en `backend/agent/`:
 | `agent.py` | Agent class: conexión Groq/Ollama, streaming SSE, tool calling nativo |
 | `loop.py` | AgentLoop: while True → LLM → tool_calls → execute → continue (max 25 iteraciones, max 3 profundidad sub-agentes) |
 | `loop_helpers.py` | `build_system_prompt` (base + agentes + contexto + AGENT.md → `## Behavior` + `## MANDATORY:` + fecha), `fetch_context_window_turns`, `execute_tool` |
-| `tools.py` | Tools Registry: nativas (read, write, websearch, webfetch, parser, email, reference, task, help) + externas dinámicas (`~/.config/synapseForge/tools/`) + MCP (`execute_mcp_tool`) |
+| `tools.py` | Tools Registry: nativas + externas dinámicas (`~/.config/synapseForge/tools/`) + MCP (`execute_mcp_tool`) |
 | `session.py` | SessionManager: SQLite WAL, historial, config_kv (modelo, proveedor, context_window), error_log |
-| `permissions.py` | Permisos por agente (tool/skill/task allow/deny/ask + wildcards), filtrado en runtime |
+| `permissions.py` | Permisos por agente (tool/skill/task/rag allow/deny/ask + wildcards), filtrado en runtime |
 | `config_dir.py` | Descubrimiento `~/.config/synapseForge/` (dev/prod) |
 | `contract.py` | ContractResponse, UsageReport, StreamingResponse — tipado estricto |
 | `instances.py` | Singletons: `agent`, `session_manager` |
-| `ddl_setup.py` | Inicialización tablas SQLite (sessions, messages, config_kv, context_files, error_log) |
+| `ddl_setup.py` | Inicialización tablas SQLite (sessions, messages, config_kv, context_files, error_log, attachments) |
 | `utils/clean_memory.py` | Liberación modelos GPU/CPU |
 | `utils/model_resolver.py` | Resolución y validación modelo activo |
 | `utils/skill_loader.py` | Carga y formateo SKILL.md para system prompt |
+| `utils/skill_creator/` | Creación de skills vía LLM (evaluación + generación) |
 | `utils/email_parser.py` | Parseo emails (headers, body, adjuntos) |
 | `utils/mcp_helper.py` | MCP con SDK oficial (`mcp`), stdio/HTTP, timeout por servidor, tool discovery, health check |
+| `utils/vector_db.py` | Wrapper ChromaDB: colecciones, embeddings, query por similitud coseno |
+| `utils/chunking.py` | Chunking con overlap inteligente para RAG |
 | `utils/subagent_logger.py` | Logger custom nivel SUBAGENT |
 | `utils/error_logger.py` | Log de errores a SQLite (session_id, turn_number, exception, source) |
+
+### Tools nativas
+
+El registry expone las siguientes tools nativas (además de las externas y las MCP):
+
+| Tool | Qué hace |
+|------|----------|
+| `read` | Lee un archivo o directorio del sistema de archivos local |
+| `write` | Escribe contenido a un archivo (crea directorios padre) |
+| `edit` | Reemplazos exactos de texto en un archivo |
+| `glob` | Búsqueda de archivos por patrón |
+| `grep` | Búsqueda de contenido en archivos con regex |
+| `webfetch` | Descarga el contenido de una URL (markdown/text/html) |
+| `websearch` | Busca en la web (DuckDuckGo) |
+| `shell` | Ejecuta un comando en la terminal (async, con timeout y cancelación) |
+| `list_dir` | Lista un directorio |
+| `task` | Delega una tarea a un sub-agente especializado |
+| `skill` | Carga el contenido de una skill por nombre |
+| `reference` | Carga un archivo de referencia de una skill |
+| `rag` | Consulta una colección RAG (solo las permitidas en `permission.rag`) |
+| `check_email` | Verifica correos no leídos en un buzón IMAP |
+| `send_email` | Envía un email |
+| `help` | Documentación interna de las tools |
 
 ### Rutas API (`backend/routes/`)
 
 | Archivo | Endpoints | Descripción |
 |---------|-----------|-------------|
-| `chat.py` | `POST /api/chat` | SSE stream: chunk, tool_call, tool_result, subagent_call, subagent_result, session_title, done, error |
-| `create.py` | `POST /api/create/skill`, `POST /api/create/tool`, `POST /api/create/agent`, `POST /api/create/rag` | Creación programática de skills, tools, agentes y RAG vía LLM. Cada endpoint recibe los datos del formulario y delega en un helper especializado. |
-| `config.py` | `GET /api/config/providers`, `GET /api/config/models?provider=`, `POST /api/config/models/select`, `GET /api/config/context-window`, `POST /api/config/context-window`, `GET /api/config/mcp/servers`, `GET /api/config/mcp/health` | Configuración proveedores, modelos, ventana de contexto, MCP |
-| `sessions.py` | `GET /api/sessions`, `GET /api/sessions/{id}`, `DELETE /api/sessions/{id}`, `GET /api/sessions/{id}/messages`, `POST /api/sessions/{id}/title` | CRUD sesiones y mensajes |
-| `context_files.py` | `GET /api/context-files`, `POST /api/context-files`, `DELETE /api/context-files/{id}` | CRUD archivos de contexto (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY). Extracción texto → inyección en system prompt |
-| `metrics.py` | `GET /api/metrics?days=7`, `GET /api/metrics/sessions?days=7&limit=50`, `GET /api/metrics/tokens?days=7` | Métricas agregadas, por sesión, tokens por modelo/proveedor |
+| `chat.py` | `POST /api/chat` | SSE stream: chunk, tool_call, tool_result, subagent_event, session_title, done, error. Adjuntos: máx 3 archivos, 25 MB total. Entrega la respuesta final a Telegram si corresponde. |
+| `create.py` | `POST /api/create/skill` | Creación de skills vía LLM (SSE): entrevista iterativa + agente creador con tools. Eventos: chunk, reasoning, tool_call, tool_result, skill_action, skill_result, error, aborted. |
+| `config.py` | `GET/POST /api/config/context-window`, `GET/POST /api/config/verbose-mode`, `GET /api/config/providers`, `GET /api/config/models`, `POST /api/config/models/select`, `GET /api/config/skills`, `GET /api/config/tools`, `GET /api/config/agents`, `GET /api/config/mcp` | Configuración de proveedores, modelos, ventana de contexto, modo verbose, y listados de skills/tools/agentes/MCP |
+| `sessions.py` | `GET /api/sessions/titles`, `GET /api/sessions`, `GET /api/sessions/{id}`, `DELETE /api/sessions/{id}` | CRUD sesiones y mensajes (incluye contexto del gauge) |
+| `context_files.py` | `GET/POST /api/context-files`, `DELETE /api/context-files/{id}` | CRUD archivos de contexto (instrucciones/documentos). Extracción texto → inyección en system prompt |
+| `metrics.py` | `GET /api/metrics/overview`, `GET /api/metrics/sessions`, `GET /api/metrics/tools`, `GET /api/metrics/errors` | Métricas agregadas, por sesión, uso de tools, errores |
+| `rag.py` | `POST/GET /api/rag/collections`, `DELETE /api/rag/collections/{name}`, `POST /api/rag/collections/{name}/files`, `POST /api/rag/collections/{name}/urls` | Gestión de colecciones RAG: crear/listar/eliminar, subir archivos, agregar páginas web |
+| `agent_items.py` | `GET /api/agent/knowledge`, `DELETE /api/agent/skills/{name}`, `DELETE /api/agent/tools/{name}`, `DELETE /api/agent/agents/{name}`, `DELETE /api/agent/mcp/{label}`, `DELETE /api/agent/knowledge/{collection}` | Listar y eliminar skills, tools, agentes, servidores MCP y colecciones RAG |
+| `events.py` | `GET /api/events` | SSE del event bus (Telegram → Frontend) |
+| `telegram.py` | `GET /api/telegram/status`, `POST /api/telegram/toggle`, `GET/POST /api/telegram/active-session` | Estado/toggle del bot y sesión activa compartida |
 | `file_text_extractor.py` | — | Módulo compartido extracción texto. Soporta: texto plano, Markdown, CSV, JSON, XML, YAML, Python, DOCX, DOC (LibreOffice), XLSX, XLS (LibreOffice), PDF (pdfminer + OCR opcional Tesseract). OCR **best-effort**: si falla por deps faltantes, devuelve lo que extrajo pdfminer. |
+
+### RAG (base de conocimiento)
+
+El sistema de RAG usa **ChromaDB** con persistencia en `~/.config/synapseForge/knowledge/` y un modelo de embeddings local (SentenceTransformer `all-MiniLM-L6-v2`, CPU). El modelo se precarga al iniciar la app y se comparte entre todos los consumidores.
+
+- **Colecciones**: se crean desde la interfaz (`rag.html`) o por Telegram. El nombre debe estar en minúsculas, sin espacios, solo `[a-z0-9-]`, mínimo 3 caracteres.
+- **Archivos**: se extrae el texto (módulo `file_text_extractor`), se chunkea y se guarda. Máx 20 archivos por request, 50 MB por archivo.
+- **Páginas web**: se fetchea el contenido (con protección SSRF: bloqueo de IPs privadas y DNS pinning), se convierte a texto, se chunkea y se guarda. La URL se guarda en el metadata de cada chunk y el HTML crudo en el primer chunk.
+- **Chunking**: `chunk_file_content` (500 caracteres base, 60 de overlap) con corte inteligente por delimitadores (`.`, `!`, `?`, espacio).
+- **Búsqueda**: similitud coseno (`hnsw:space: cosine`). La tool `rag` devuelve los 5 chunks más similares.
+- **Permisos**: la tool `rag` solo consulta las colecciones permitidas en el frontmatter del agente (`permission.rag`), igual que `task` restringe sub-agentes.
 
 ### Configuración de usuario (`~/.config/synapseForge/`)
 
@@ -394,6 +469,8 @@ permission:
     explorador: allow
   skill:
     mi_skill: allow
+  rag:
+    mi_coleccion: allow
 parameters:
   temperature: 0.0
   top_p: 0.5
@@ -430,7 +507,7 @@ permissions:
 
 ### Manejo de contexto
 
-> **Estado actual**: El contexto se maneja únicamente mediante **ventana de contexto** (`context_window_turns`), que limita cuántos turnos del historial se pasan al LLM (`-1` = todo el historial). No hay compactación automática ni resumen de contexto implementado — es una feature futura planificada.
+> **Estado actual**: El contexto se maneja mediante **ventana de contexto** (`context_window_turns`), que limita cuántos turnos del historial se pasan al LLM (`-1` = todo el historial). Además se detecta la **ventana de contexto en tokens** del modelo seleccionado (Ollama `/api/show` / Groq `/models`) y se persiste. El frontend muestra un **gauge** con el porcentaje de ventana usado. No hay compactación automática ni resumen de contexto implementado.
 
 **Archivos de contexto (Instrucciones y documentos)**: Los archivos subidos vía `POST /api/context-files` se extraen y su contenido se concatena e inyecta en el system prompt del router y sub-agentes (ver `loop_helpers.py:load_context_text()` → `build_system_prompt()`). Sirven para proveer información de referencia permanente: manuales, reglas de negocio, documentación técnica.
 
@@ -442,21 +519,25 @@ En la primera inicialización (cuando aún no hay modelo persistido), el proveed
 
 ## Frontend — Chat SSE
 
-SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui:
+SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui. Es **multi-page**: `index.html` (App principal), `skill.html` (creación de skills) y `rag.html` (gestión de RAG).
 
 | Componente / Servicio | Descripción |
 |----------------------|-------------|
-| `chatService.ts` | Conexión SSE a `POST /api/chat`, parsea eventos: chunk, tool_call, tool_result, subagent_call, subagent_result, session_title, done, error |
-| `configService.ts` | Providers, modelos, selección modelo, ventana de contexto, MCP health |
+| `chatService.ts` | Conexión SSE a `POST /api/chat`, parsea eventos: chunk, tool_call, tool_result, subagent_event, session_title, done, error |
+| `configService.ts` | Providers, modelos, selección modelo, ventana de contexto, verbose, skills/tools/agentes/MCP, delete |
 | `sessionService.ts` | CRUD sesiones y mensajes |
 | `contextFilesService.ts` | CRUD archivos de contexto (list, upload, delete) |
-| `metricsService.ts` | Overview, sessions, tokens |
-| `Sidebar.tsx` | Tabs: Conversaciones (historial + nueva) + Configuración + Agente + Crear |
+| `metricsService.ts` | Overview, sessions, tools, errors |
+| `telegramService.ts` | Status/toggle/active-session de Telegram |
+| `Sidebar.tsx` | Tabs: Conversaciones + Configuración + Agente (dev) + Crear (dev) |
 | `configTab.tsx` | Configuración: proveedor, modelo, ventana de contexto, toggle verbose, **Instrucciones y documentos** (drag-click upload, lista con delete) |
-| `agentInfoTab.tsx` | Panel de agentes: Tools, Skills, Agentes, MCP, RAG |
-| `chatBlocks.tsx` | Componentes compartidos: MessageRow, MarkdownRenderer, ToolCallBlock, ReasoningBlock, FileChip, FileWarningBanner |
+| `agentInfoTab.tsx` | Panel de agentes (dev): Tools, Skills, Agentes, MCP, RAG — con listado y delete |
+| `createTab.tsx` | Accesos (dev) a las páginas de creación: Skill y RAG |
+| `RagInterface.tsx` | Gestión de colecciones RAG: crear/eliminar colecciones, subir archivos, agregar URLs |
+| `SkillInterface.tsx` | Creación de skills vía LLM: entrevista iterativa + agente creador, con streaming |
+| `ContextGauge.tsx` | Velocímetro semicircular de ventana de contexto (verde → amarillo → rojo) |
 | `MetricsModal.tsx` | Dashboard 4 tabs: Overview, Sessions, Tools, Errors |
-| `MessageBubble.tsx` | Renderiza mensajes con tool calls colapsables (legacy) |
+| `chatBlocks.tsx` | Componentes compartidos: MessageRow, MarkdownRenderer, ToolCallBlock, ReasoningBlock, FileChip, FileWarningBanner |
 | `main.tsx` | **Carga `colors.json` ANTES de renderizar React** → setea CSS custom properties en `document.documentElement.style` |
 
 ### Sistema de colores (Tailwind v4 `@theme`)
@@ -479,13 +560,14 @@ Además, `usar_gradiente` (toggle) no es una variable CSS: cuando está apagado,
 
 ## Telegram
 
-El template incluye un **bot de Telegram** que actúa como puente hacia el agente. El bot hace **long-polling** contra la Telegram Bot API, pero **no ejecuta el agent loop**: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía `/api/events` y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.
+El template incluye un **bot de Telegram** que actúa como control remoto del agente. El bot hace **long-polling** contra la Telegram Bot API, pero **no ejecuta el agent loop**: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía `/api/events` y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.
 
 ### Arquitectura
 
-- El bot **solo emite eventos** (`telegram_message`, `telegram_command`) al event bus.
+- El bot **solo emite eventos** (`telegram_message`, `telegram_command`, `telegram_create`) al event bus.
 - El frontend recibe esos eventos y ejecuta el flujo normal (`chatService.sendMessage` → `POST /api/chat`).
 - Al terminar el request, el backend entrega la respuesta final a Telegram.
+- Para la creación de skills/RAG, el bot emite `telegram_create` con `open`/`close` para abrir/cerrar la ventana correspondiente (`skill.html` / `rag.html`) en el frontend.
 
 ### Variables de entorno
 
@@ -500,9 +582,10 @@ El template incluye un **bot de Telegram** que actúa como puente hacia el agent
 |---------|-------------|
 | `/sesiones` | Lista las sesiones (títulos). |
 | `/usar` | Cambia a una sesión por título (pregunta y espera respuesta). |
-| `/cancelar` | Cancela cualquier comando en espera. |
+| `/cancelar` | Cancela cualquier comando en espera o sale del modo de creación. |
 | `/nueva` | Crea un chat nuevo. |
 | `/actual` | Muestra la sesión actual (solo el título). |
+| `/contexto` | Muestra la ventana de contexto actual. |
 | `/borrar` | Borra un chat (pregunta y espera respuesta). |
 | `/detener` | Detiene la tarea en curso. |
 | `/proveedor` | Cambia el proveedor (LOCAL/API, pregunta y espera respuesta). |
@@ -510,10 +593,17 @@ El template incluye un **bot de Telegram** que actúa como puente hacia el agent
 | `/skills` | Lista skills (solo dev). |
 | `/tools` | Lista tools (solo dev). |
 | `/agentes` | Lista agentes (solo dev). |
-| `/crear` | Crea skill/tool/agente (solo dev, no implementado). |
+| `/crear` | Crea skill o RAG (solo dev). Pregunta qué crear y guía el flujo. |
 | `/ayuda` | Muestra la ayuda. |
 
-Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
+Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`, `/crear`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
+
+### Creación de skills y RAG por Telegram
+
+El bot detecta la intención de crear una skill o un RAG (por ejemplo, "crear skill" o "crear rag") y entra en un **modo de creación**:
+
+- **Skill**: abre `skill.html` en el frontend y guía la entrevista. Al crear la skill, la ventana se cierra.
+- **RAG**: abre `rag.html` en el frontend. Tras cada acción (crear colección, subir archivo, agregar URL) pregunta en Telegram si querés terminar; respondé "sí" para cerrar la ventana o "no" para seguir. El comando `terminar` también cierra la ventana.
 
 ### Funcionalidades
 
@@ -596,12 +686,8 @@ Esto permitiría ampliar el repositorio de skills sin tener que crearlas manualm
 
 | Documento | Descripción |
 |-----------|-------------|
-| `docs/tools/guia-creacion-tools.md` | Cómo crear tools personalizadas para el agente |
-| `docs/agents/guia-creacion-agentes.md` | Cómo crear y configurar agentes con permisos |
-| `docs/producto/` | Análisis de producto, arquitectura técnica, documentación general |
-| `docs/dev/` | Plan de desarrollo y roadmap |
-| `docs/ejemplos/` | Ejemplos de configuraciones (agentes, tools, DB, etc.) |
 | `on_boarding/` | Guía de onboarding, contribución y flujo Git |
+| `docs/` | Documentación del proyecto (no trackeada) |
 
 ---
 
@@ -610,6 +696,7 @@ Esto permitiría ampliar el repositorio de skills sin tener que crearlas manualm
 ![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003b57?logo=sqlite&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-000000?logo=chroma&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)

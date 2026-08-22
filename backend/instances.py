@@ -51,5 +51,5 @@ tools = Tools()
 session_manager = SessionManager()
 
 _logger.info("Agent and Tools initialized successfully")
-_logger.info("  Provider: %s", os.getenv("PROVIDER", "API").strip().upper())
+_logger.info("  Provider: %s", os.getenv("PROVIDER", "GROQ").strip().upper())
 

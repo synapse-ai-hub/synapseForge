@@ -110,6 +110,13 @@ except ImportError as e:
     rag_router = None
     logging.warning("backend.routes.rag could not be imported.")
 
+try:
+    from backend.routes.conversation import router as conversation_router
+except ImportError as e:
+    log_error(str(e), source="main.py:conversation_import")
+    conversation_router = None
+    logging.warning("backend.routes.conversation could not be imported.")
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -127,6 +134,31 @@ _last_heartbeat: float = 0.0
 _HEARTBEAT_TIMEOUT: float = 180.0  # 3 minutes
 
 
+async def _liberar_modelo_al_cerrar() -> None:
+    """Libera el modelo de Ollama si el proveedor actual es LOCAL.
+
+    Solo aplica cuando el proveedor activo es ``LOCAL`` (Ollama): si el
+    proveedor es ``GROQ`` no hay modelo local cargado que descargar (ya se
+    liberó al cambiar de proveedor). Se ejecuta en un thread para no bloquear
+    el event loop.
+    """
+    try:
+        if agent is None:
+            return
+        if agent.provider.upper() != "LOCAL":
+            return
+        modelo = agent._resolved_model
+        if not modelo:
+            return
+        from backend.agent.utils.clean_memory import liberar_modelo
+
+        await asyncio.to_thread(liberar_modelo, modelo)
+        logger.info("Modelo liberado al cerrar: %s", modelo)
+    except Exception as exc:
+        log_error(str(exc), source="main.py:_liberar_modelo_al_cerrar")
+        logger.warning("No se pudo liberar modelo al cerrar: %s", exc)
+
+
 async def _heartbeat_watchdog() -> None:
     """Background task: exit process if no heartbeat received within timeout."""
     global _last_heartbeat
@@ -134,6 +166,8 @@ async def _heartbeat_watchdog() -> None:
         await asyncio.sleep(30)
         if _last_heartbeat and (time.time() - _last_heartbeat) > _HEARTBEAT_TIMEOUT:
             logger.info("Sin heartbeat %.0fs -> suicidio", _HEARTBEAT_TIMEOUT)
+            # Liberar el modelo local antes del hard exit
+            await _liberar_modelo_al_cerrar()
             os._exit(0)
 
 # ---------------------------------------------------------------------------
@@ -198,6 +232,23 @@ async def lifespan(app: FastAPI):
         log_error(str(exc), source="main.py:lifespan(load_persisted_config)")
         logger.warning("Failed to load persisted config: %s", exc)
 
+    # Cache providers + models once at startup (persisted in the providers table)
+    try:
+        await asyncio.to_thread(config_module.refresh_providers_cache)
+        logger.info("Providers cache loaded at startup.")
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(providers_cache)")
+        logger.warning("Failed to load providers cache: %s", exc)
+
+    # Detect the active model's context window once at startup (like VRAM),
+    # in the background so it never blocks a request.
+    try:
+        asyncio.create_task(asyncio.to_thread(config_module.detect_context_window_background))
+        logger.info("Context window detection scheduled at startup.")
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(context_window)")
+        logger.warning("Failed to schedule context window detection: %s", exc)
+
     # Resolve the model via the config endpoint once the server is up (fallback if no persisted model)
     asyncio.create_task(_resolve_model_at_startup())
 
@@ -240,6 +291,8 @@ async def lifespan(app: FastAPI):
         await telegram_bot.stop()
     except Exception as exc:
         log_error(str(exc), source="main.py:lifespan(telegram_stop)")
+    # Liberar el modelo local (si el proveedor actual es LOCAL) al cerrar
+    await _liberar_modelo_al_cerrar()
     logger.info("<descripcion>Nombre del proyecto</descripcion> API shutting down.")
 
 
@@ -296,6 +349,9 @@ if telegram_router is not None:
 
 if rag_router is not None:
     app.include_router(rag_router, prefix="/api")
+
+if conversation_router is not None:
+    app.include_router(conversation_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

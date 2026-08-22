@@ -56,6 +56,9 @@ _context_window_tokens: int | None = None
 selection (Ollama ``/api/show`` / Groq ``/models``) and persisted in
 ``config_kv`` as ``selected_model_context_window``."""
 
+_vram_gb: int | None = None
+"""Total VRAM in GB, detected once at startup and read from ``config_kv``."""
+
 _verbose_mode: bool = False
 """Whether verbose mode (show tool / sub-agent cards) is enabled.
 Set via ``POST /config/verbose-mode``."""
@@ -74,11 +77,11 @@ def _default_model_for_provider(provider: str, models: list[str]) -> str | None:
 
     - ``LOCAL`` (Ollama): ``qwen3.5:4b`` if present in the ``ollama list``
       output (it accepts tools); otherwise falls back to the first model.
-    - ``API`` (Groq): first available model from the Groq model list,
+    - ``GROQ``: first available model from the Groq model list,
       avoiding a hard-coded model if the API returns real choices.
 
     Args:
-        provider: ``"LOCAL"`` or ``"API"``.
+        provider: ``"LOCAL"`` or ``"GROQ"``.
         models: The list of models already resolved for that provider.
 
     Returns:
@@ -86,7 +89,7 @@ def _default_model_for_provider(provider: str, models: list[str]) -> str | None:
     """
     if not models:
         return None
-    if provider == "LOCAL" and _LOCAL_DEFAULT_MODEL in models:
+    if provider.upper() == "LOCAL" and _LOCAL_DEFAULT_MODEL in models:
         return _LOCAL_DEFAULT_MODEL
     return models[0]
 
@@ -101,7 +104,7 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
 
     Args:
         model: The model name/ID.
-        provider: ``"LOCAL"`` or ``"API"``.
+        provider: ``"LOCAL"`` or ``"GROQ"``.
 
     Returns:
         The context window in tokens, or ``None`` if it cannot be resolved.
@@ -109,7 +112,7 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
     global _context_window_tokens
     cw = None
     try:
-        if provider == "LOCAL":
+        if provider.upper() == "LOCAL":
             cw = get_ollama_context_window(model)
         else:
             cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
@@ -129,10 +132,23 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
     return cw
 
 
+def detect_context_window_background() -> None:
+    """Detect and persist the context window for the active model, if missing.
+
+    Called once at application startup (like VRAM detection) so the active
+    model's context window is resolved without blocking any request.
+    """
+    if agent is None or agent._resolved_model is None:
+        return
+    if session_manager is not None and session_manager.get_config("selected_model_context_window"):
+        return
+    _detect_and_persist_context_window(agent._resolved_model, agent.provider)
+
+
 @router.get("/context-window")
 async def get_context_window() -> JSONResponse:
     """Return the current context-window turn limit (``-1`` = all)."""
-    vram = get_vram_gb()
+    vram = _vram_gb
     print(f"[DEBUG] get_context_window: max_turns={_context_window_turns}, context_window_tokens={_context_window_tokens}, vram_gb={vram}")
     return JSONResponse(
         status_code=200,
@@ -260,36 +276,52 @@ async def set_verbose_mode(data: dict[str, Any]) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/providers")
-async def list_providers() -> JSONResponse:
-    """Return the list of available providers.
+def refresh_providers_cache() -> None:
+    """List models for each provider and persist them in the ``providers`` table.
 
-    Checks each provider by attempting to list models via the existing
-    ``get_groq_models`` / ``get_ollama_models`` functions. Providers whose
-    model list returns empty are excluded so the frontend knows not to show
-    them in the dropdown.
-
-    This endpoint is intended to be called **once** when the frontend app
-    starts.  If a provider becomes available later (e.g. Ollama is restarted),
-    the user must restart the app — no live polling is performed.
+    Called once at application startup so the config endpoints can serve
+    providers/models from SQLite without per-request network calls. Providers
+    whose model list returns empty are excluded.
     """
-    from dotenv import load_dotenv
-    load_dotenv()
-
-    available: list[dict[str, str]] = []
+    cached: list[dict[str, Any]] = []
 
     # Ollama — try ``ollama list``
-    ollama_models = await asyncio.to_thread(get_ollama_models)
-    if ollama_models:
-        available.append({"provider": "LOCAL", "label": "Ollama (local)"})
+    try:
+        ollama_models = get_ollama_models()
+        if ollama_models:
+            cached.append(
+                {"provider": "LOCAL", "label": "Ollama (local)", "models": ollama_models}
+            )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(ollama)")
+        logger.warning("No se pudieron listar modelos de Ollama: %s", exc)
 
     # Groq — try the API
-    api_key = os.getenv("GROQ_API_KEY", "").strip()
-    if api_key:
-        groq_models = await asyncio.to_thread(get_groq_models, api_key)
-        if groq_models:
-            available.append({"provider": "API", "label": "Groq (API)"})
+    try:
+        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        if api_key:
+            groq_models = get_groq_models(api_key)
+            if groq_models:
+                cached.append({"provider": "Groq", "label": "Groq", "models": groq_models})
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(groq)")
+        logger.warning("No se pudieron listar modelos de Groq: %s", exc)
 
+    if session_manager is not None:
+        session_manager.save_providers(cached)
+    logger.info("Providers cache refreshed: %s", [p["provider"] for p in cached])
+
+
+@router.get("/providers")
+async def list_providers() -> JSONResponse:
+    """Return the list of available providers from the startup cache.
+
+    Providers and their model lists are resolved once at application startup
+    and persisted in the ``providers`` table, so this endpoint serves them
+    from SQLite without per-request network calls.
+    """
+    providers = session_manager.get_providers() if session_manager is not None else []
+    available = [{"provider": p["provider"], "label": p["label"]} for p in providers]
     return JSONResponse(
         status_code=200,
         content={
@@ -332,8 +364,8 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     the selected provider from persisted config or the ``PROVIDER`` env
     variable.
 
-    - ``LOCAL`` → runs ``ollama list``.
-    - ``API`` → queries the Groq API.
+    - ``LOCAL`` → models from the startup cache (Ollama).
+    - ``GROQ`` → models from the startup cache (Groq).
 
     If no model has been selected yet, resolves and stores the provider-
     appropriate default from the available model list.
@@ -345,21 +377,23 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     provider = _effective_provider(provider)
     load_dotenv()
 
-    if provider == "LOCAL":
-        models = await asyncio.to_thread(get_ollama_models)
-        provider_label = "Ollama (local)"
-    elif provider == "API":
-        api_key = os.getenv("GROQ_API_KEY", "").strip()
-        models = await asyncio.to_thread(get_groq_models, api_key)
-        provider_label = "Groq (API)"
-    else:
+    # Serve models from the startup cache (providers table) — no network calls.
+    cached_providers = session_manager.get_providers() if session_manager is not None else []
+    cached = next(
+        (p for p in cached_providers if p["provider"].upper() == provider.upper()),
+        None,
+    )
+    if cached is None:
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
-                "message": f"Unknown PROVIDER: '{provider}'. Use 'API' or 'LOCAL'.",
+                "message": f"Unknown PROVIDER: '{provider}'. Use 'GROQ' or 'LOCAL'.",
             },
         )
+
+    models = cached["models"]
+    provider_label = cached["label"]
 
     previous_provider = agent.provider if agent is not None else None
     if agent is not None and agent.provider != provider:
@@ -381,9 +415,11 @@ async def list_models(provider: str | None = None) -> JSONResponse:
             except Exception as exc:
                 log_error(str(exc), source="backend/routes/config.py")
                 logger.warning("No se pudo persistir modelo/proveedor por defecto: %s", exc)
-            # Persist the model's context window at the same moment the model is
-            # persisted (first startup with no DB).
-            await asyncio.to_thread(_detect_and_persist_context_window, default, provider)
+            # Detect/persist the default model's context window in the
+            # background so this endpoint never blocks on network calls.
+            asyncio.create_task(
+                asyncio.to_thread(_detect_and_persist_context_window, default, provider)
+            )
 
     if agent is not None and session_manager is not None:
         try:
@@ -426,12 +462,12 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             },
         )
 
-    if provider not in {"LOCAL", "API"}:
+    if provider not in {"LOCAL", "GROQ"}:
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
-                "message": "provider must be 'LOCAL' or 'API'.",
+                "message": "provider must be 'LOCAL' or 'GROQ'.",
             },
         )
 
@@ -446,7 +482,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
 
     # Liberar modelo anterior si es LOCAL (Ollama) y cambió
     modelo_anterior = agent._resolved_model
-    if modelo_anterior and modelo_anterior != model and agent.provider == "LOCAL":
+    if modelo_anterior and modelo_anterior != model and agent.provider.upper() == "LOCAL":
         try:
             from backend.agent.utils.clean_memory import liberar_modelo
             await asyncio.to_thread(liberar_modelo, modelo_anterior)
@@ -560,10 +596,11 @@ def load_persisted_config() -> None:
         logger.warning("No se pudo cargar verbose_mode: %s", exc)
 
 # Detect VRAM once at startup (it does not change while the app runs).
-    # The result is cached in model_resolver, so this is a single query.
+    # The result is cached in model_resolver and persisted in config_kv.
     try:
-        vram = get_vram_gb()
-        print(f"[DEBUG] VRAM detectada al iniciar: {vram} GB")
+        global _vram_gb
+        _vram_gb = get_vram_gb()
+        print(f"[DEBUG] VRAM detectada al iniciar: {_vram_gb} GB")
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:load_persisted_config(vram)")
         print(f"[DEBUG] VRAM no detectada al iniciar: {exc}")
@@ -605,6 +642,25 @@ async def list_tools() -> JSONResponse:
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": "Error listing tools", "tools": []},
+        )
+
+
+@router.post("/tools/refresh")
+async def refresh_tools() -> JSONResponse:
+    """Rebuild the tools registry (native + external) and return updated list."""
+    try:
+        # Force rebuild of the tools registry
+        agent.tools._build_tools_registry()
+        tools = get_tools_list()
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "tools": tools, "message": "Tools registry refreshed"},
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:refresh_tools")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error refreshing tools", "tools": []},
         )
 
 

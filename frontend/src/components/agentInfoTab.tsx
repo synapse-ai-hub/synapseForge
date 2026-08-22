@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Wrench, Puzzle, Brain, Server, Cpu, Globe, Database, Trash2 } from "lucide-react";
+import { Wrench, Puzzle, Brain, Server, Cpu, Globe, Database, Trash2, RefreshCw } from "lucide-react";
 import configService, { type SkillInfo, type ToolInfo, type AgentInfo, type McpServerStatus } from "../services/configService";
 
 type AgentTab = "tools" | "skills" | "agents" | "mcp" | "rag";
@@ -8,6 +8,7 @@ export function AgentInfoTab() {
   const [tab, setTab] = useState<AgentTab>("tools");
   const [mcpServers, setMcpServers] = useState<McpServerStatus[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadMcp = useCallback(async () => {
     try {
@@ -22,6 +23,20 @@ export function AgentInfoTab() {
   }, []);
 
   useEffect(() => { loadMcp(); }, [loadMcp]);
+
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      // Refresh tools registry on backend
+      await configService.refreshTools();
+      // Force reload of all panels by triggering window focus event
+      window.dispatchEvent(new Event("focus"));
+    } catch (err) {
+      console.error("Error refrescando:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -48,15 +63,26 @@ export function AgentInfoTab() {
             <span>{item.label}</span>
           </button>
         ))}
+        {/* Refresh button at bottom of nav */}
+        <button
+          type="button"
+          onClick={refreshAll}
+          disabled={refreshing}
+          className="flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-medium transition-colors border-t border-app-border mt-2 hover:bg-app-bg-tertiary disabled:opacity-50"
+          title="Refrescar todo (tools, skills, agentes, MCP, RAG)"
+        >
+          <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+          <span>Actualizar</span>
+        </button>
       </nav>
 
       {/* Content — below the nav tabs (same as Sidebar layout) */}
       <div className="flex-1 overflow-y-auto p-3">
-        {tab === "tools" && <ToolsPanel />}
-        {tab === "skills" && <SkillsPanel />}
-        {tab === "agents" && <AgentsPanel />}
+        {tab === "tools" && <ToolsPanel onRefresh={refreshAll} />}
+        {tab === "skills" && <SkillsPanel onRefresh={refreshAll} />}
+        {tab === "agents" && <AgentsPanel onRefresh={refreshAll} />}
         {tab === "mcp" && <McpPanel servers={mcpServers} loading={mcpLoading} onRefresh={loadMcp} />}
-        {tab === "rag" && <RagPanel />}
+        {tab === "rag" && <RagPanel onRefresh={refreshAll} />}
       </div>
     </div>
   );
@@ -114,7 +140,7 @@ function DeleteBtn({ label, onDelete }: { label: string; onDelete: () => Promise
 
 // ─── Tools ────────────────────────────────────────────────────────
 
-function ToolsPanel() {
+function ToolsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
@@ -132,6 +158,13 @@ function ToolsPanel() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Also reload when window regains focus (e.g., tool created in another tab)
+  useEffect(() => {
+    const onFocus = () => { setLoading(true); load(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
 
   if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
 
@@ -167,7 +200,7 @@ function ToolsPanel() {
 
 // ─── Skills ───────────────────────────────────────────────────────
 
-function SkillsPanel() {
+function SkillsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
@@ -227,7 +260,7 @@ function SkillsPanel() {
 
 // ─── Agents ───────────────────────────────────────────────────────
 
-function AgentsPanel() {
+function AgentsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
@@ -245,6 +278,12 @@ function AgentsPanel() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const onFocus = () => { setLoading(true); load(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
 
   if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
 
@@ -328,7 +367,7 @@ function McpPanel({ servers, loading, onRefresh }: { servers: McpServerStatus[];
   );
 }
 
-function RagPanel() {
+function RagPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
   const [collections, setCollections] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
@@ -346,6 +385,12 @@ function RagPanel() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const onFocus = () => { setLoading(true); load(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [load]);
 
   if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
 

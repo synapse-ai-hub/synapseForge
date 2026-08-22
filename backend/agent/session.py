@@ -527,6 +527,67 @@ class SessionManager:
         finally:
             conn.close()
 
+    def get_providers(self) -> list[dict]:
+        """Return all cached providers with their model lists.
+
+        Returns:
+            A list of dicts with ``provider``, ``label`` and ``models`` keys.
+            Empty list on failure or if none are cached.
+        """
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT provider, label, models FROM providers ORDER BY provider"
+            ).fetchall()
+            result: list[dict] = []
+            for row in rows:
+                models = json.loads(row["models"]) if row["models"] else []
+                result.append(
+                    {
+                        "provider": row["provider"],
+                        "label": row["label"],
+                        "models": models,
+                    }
+                )
+            return result
+        except Exception as e:
+            log_error(str(e), source="backend/agent/session.py")
+            logger.exception("Failed to load providers cache")
+            return []
+        finally:
+            conn.close()
+
+    def save_providers(self, providers: list[dict]) -> dict:
+        """UPSERT the provider cache (provider, label, models).
+
+        Args:
+            providers: List of dicts with ``provider``, ``label`` and ``models``.
+
+        Returns:
+            A contract response dict indicating success or failure.
+        """
+        conn = self._get_connection()
+        try:
+            with self._lock:
+                now = datetime.now(timezone.utc).isoformat()
+                for p in providers:
+                    conn.execute(
+                        "INSERT INTO providers (provider, label, models, updated_at) "
+                        "VALUES (?, ?, ?, ?) "
+                        "ON CONFLICT(provider) DO UPDATE SET "
+                        "label = excluded.label, models = excluded.models, "
+                        "updated_at = excluded.updated_at",
+                        (p["provider"], p["label"], json.dumps(p.get("models") or []), now),
+                    )
+                conn.commit()
+            return make_success_response(message="Providers cache saved.", usage=zero_usage())
+        except Exception as e:
+            log_error(str(e), source="backend/agent/session.py")
+            logger.exception("Failed to save providers cache")
+            return make_error_response(message="Failed to save providers cache.", usage=zero_usage())
+        finally:
+            conn.close()
+
     def update_session_title(self, session_id: str, title: str) -> dict:
         """Update the title of a session.
 

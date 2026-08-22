@@ -32,13 +32,15 @@
 
 The generated project includes:
 
-- **Agent Framework** (`backend/agent/`): AgentLoop, Tools Registry (native + external + MCP), Sessions (SQLite WAL), Permissions, Skills, MCP integration
-- **Context Files**: Upload PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY — text extraction (pdfminer + OCR fallback) with automatic injection into system prompt
-- **Metrics**: Aggregated usage stats, per-session breakdown, token usage by model/provider
+- **Agent Framework** (`backend/agent/`): AgentLoop, Tools Registry (native + external + MCP), Sessions (SQLite WAL), Permissions, Skills, RAG, MCP integration
+- **RAG (knowledge base)**: ChromaDB vector collections with a local embedding model (SentenceTransformer). Upload files (PDF, Word, TXT, MD, CSV, XLSX, JSON, XML, YAML, PY) and web pages (fetch + chunk + keep URL/HTML). Intelligent-overlap chunking and cosine-similarity search. Native `rag` tool with per-collection permissions in the agent frontmatter
+- **Skill creation via LLM**: standalone interface (`skill.html`) and Telegram remote control. Iterative interview + agent creator with tools → generates `SKILL.md` + references
+- **Context Files**: Upload PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY — text extraction with automatic injection into system prompt
+- **Metrics**: Aggregated usage stats, per-session breakdown, tool usage, errors
 - **File Extraction**: Shared module supporting plain text, Markdown, CSV, JSON, XML, YAML, Python, DOCX, DOC (via LibreOffice), XLSX, XLS (via LibreOffice), PDF (pdfminer + optional Tesseract OCR)
-- **Frontend** (React/Vite/TS): Chat SSE streaming, config panel (provider/model/context), sessions sidebar, context files management, tool calls visualization, metrics dashboard
-- **Telegram Bot**: Long-polling bridge that forwards messages to the agent through the web UI, with commands (sessions, model/provider, stop), voice transcription and file attachments
-- **User Config** (`~/.config/synapseForge/`): Custom tools, skills, agent definitions with permissions, MCP server config
+- **Frontend** (React/Vite/TS): Chat SSE streaming, config panel (provider/model/context), sessions sidebar, context files management, tool calls visualization, metrics dashboard, context-window gauge
+- **Telegram Bot**: Long-polling remote control that forwards messages to the agent through the web UI, with commands (sessions, model/provider, stop), voice transcription, file attachments, and skill/RAG creation
+- **User Config** (`~/.config/synapseForge/`): Custom tools, skills, agent definitions with permissions, MCP server config, RAG collections
 - **Docker**: Multi-stage Dockerfile + docker-compose.yml for single-container deployment
 - **Desktop App Mode**: Heartbeat watchdog (3min timeout → auto-exit), shutdown endpoint, `synapseforge run` for dev
 
@@ -86,7 +88,7 @@ cd my-project
 ### Build a distributable
 
 ```bash
-synapseforge launch ./my-project "MyApp"
+synapseforge launch -p ./my-project -n "MyApp"
 ```
 
 1. **Frontend** — `npm run build` with `VITE_MODE=prod` → `frontend/dist/`
@@ -95,6 +97,8 @@ synapseforge launch ./my-project "MyApp"
 4. **Launcher** — Generates customized `launcher.py` → PyInstaller `--onefile --noconsole` → `MyApp.exe`
 5. **Package** — Bundles `MyApp.exe`, `backend/`, `frontend/dist/`, `python/`, `.env`, `LICENSE`, `README.md` into a timestamped zip
 6. **Cleanup** — Moves zip to project root, removes build artifacts, cleans `.pyc` from original backend
+
+Options: `--skip-frontend` (use existing `frontend/dist/`) and `--no-embed` (use the project venv instead of downloading embedded Python).
 
 ### Edit colors at runtime (no rebuild)
 
@@ -112,7 +116,7 @@ For the **LOCAL** provider (Ollama), the default model on first initialization i
 synapseforge run ./my-project
 ```
 
-Starts `uvicorn backend.main:app --reload --port 8000` + `npm run dev` in `frontend/`, waits 3s, opens `http://localhost:5173`. **Ctrl+C stops both.**
+Requires the project **venv to be activated** (`VIRTUAL_ENV`). Starts `uvicorn backend.main:app --reload --port 8000` (waits for `/health`) + `npm run dev` in `frontend/`, then opens `http://localhost:5173`. **Ctrl+C stops both.**
 
 ### Telegram
 
@@ -123,7 +127,7 @@ The generated project includes a **Telegram bot** that bridges messages to the a
 | `TELEGRAM_BOT_TOKEN` | Bot token from BotFather. If empty, the bot is disabled. |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | Comma-separated list of authorized `chat_id`s. |
 
-The bot supports commands (`/sesiones`, `/usar`, `/nueva`, `/actual`, `/borrar`, `/detener`, `/proveedor`, `/modelo`, `/skills`, `/tools`, `/agentes`, `/ayuda`, `/cancelar`), voice transcription (faster-whisper) and file attachments. Enable/disable it from the frontend header toggle.
+The bot supports commands (`/sesiones`, `/usar`, `/nueva`, `/actual`, `/contexto`, `/borrar`, `/detener`, `/proveedor`, `/modelo`, `/skills`, `/tools`, `/agentes`, `/crear`, `/ayuda`, `/cancelar`), voice transcription (faster-whisper), file attachments, and skill/RAG creation. Enable/disable it from the frontend header toggle.
 
 ---
 
@@ -147,45 +151,56 @@ my-project/
 │   ├── __init__.py
 │   ├── main.py                # FastAPI app (CORS, lifespan, routers, health, shutdown, heartbeat, SPA static)
 │   ├── instances.py           # Singletons: agent, session_manager
+│   ├── event_bus.py           # Event bus (SSE) for Telegram ↔ Frontend
 │   ├── routes/
 │   │   ├── __init__.py
 │   │   ├── chat.py            # POST /api/chat → SSE stream (AgentLoop)
-│   │   ├── config.py          # Providers, models, MCP health, context window
+│   │   ├── create.py          # POST /api/create/skill → SSE (LLM skill creation)
+│   │   ├── config.py          # Providers, models, context window, verbose, skills/tools/agents/mcp
 │   │   ├── sessions.py        # CRUD sessions, messages, titles
-│   │   ├── create.py          # POST /api/create/{type} (skill, tool, agent, rag)
 │   │   ├── context_files.py   # CRUD context files (instructions/documents)
-│   │   ├── metrics.py         # Metrics: aggregated, per-session, tokens by model/provider
+│   │   ├── metrics.py         # Metrics: overview, sessions, tools, errors
+│   │   ├── rag.py             # RAG collections: create/list/delete, upload files, add URL
+│   │   ├── agent_items.py     # List/delete skills, tools, agents, MCP, RAG collections
+│   │   ├── events.py          # GET /api/events → SSE event bus
+│   │   ├── telegram.py        # Bot status/toggle + active-session
 │   │   ├── file_text_extractor.py  # Text extraction: PDF, DOCX, XLSX, TXT + OCR fallback
 │   │   └── README.md
-│   └── agent/                 # Agent framework (Loop, Tools, MCP, Skills, Sessions, Permissions)
+│   └── agent/                 # Agent framework (Loop, Tools, MCP, Skills, Sessions, Permissions, RAG)
 │       ├── __init__.py
 │       ├── agent.py           # Agent class (Groq/Ollama, streaming SSE, tool calling)
 │       ├── tools.py           # Registry: native + external + MCP
 │       ├── loop.py            # AgentLoop: while True → LLM → tool_calls → execute → continue
 │       ├── loop_helpers.py    # build_system_prompt (injects context_files), fetch_context_window, execute_tool
 │       ├── session.py         # SessionManager (SQLite WAL, history, config_kv, error_log)
-│       ├── permissions.py     # Permissions per agent (tool/skill/task allow/deny/ask + wildcards)
+│       ├── permissions.py     # Permissions per agent (tool/skill/task/rag allow/deny/ask + wildcards)
 │       ├── config_dir.py      # ~/.config/synapseForge/ discovery
 │       ├── contract.py        # ContractResponse, UsageReport, StreamingResponse
 │       ├── ddl_setup.py       # SQLite table initialization
 │       ├── agent_db/          # SQLite runtime (created on start)
 │       ├── prompts/
 │       │   ├── system_prompt.md  # Router base prompt
-│       │   ├── mandatory.md  # ## MANDATORY: fidelity rules injected into all agents
+│       │   ├── mandatory.md   # ## MANDATORY: fidelity rules injected into all agents
 │       │   ├── help.md        # Internal documentation for `help` tool
 │       │   ├── title.md       # Prompt for session title generation
 │       │   ├── generar_skill.md / evaluar_skills.md / explicar_skill.md / iterar_skill.md  # Skill creation prompts
-│       ├── utils/
-│       │   ├── __init__.py
-│       │   ├── clean_memory.py    # GPU/CPU model release
-│       │   ├── model_resolver.py  # Active model resolution and validation
-│   │   ├── skill_loader.py    # SKILL.md loading and formatting for system prompt
-│   │   ├── skill_creator.py   # LLM-based skill creation (evaluation + generation)
-│   │   ├── email_parser.py    # Email parsing (headers, body, attachments)
-│       │   ├── mcp_helper.py      # MCP stdio/HTTP, tool discovery, health check
-│       │   ├── subagent_logger.py # Custom SUBAGENT log level
-│       │   └── error_logger.py    # Error logging to SQLite (error_log table)
-│       └── README.md
+│       └── utils/
+│           ├── __init__.py
+│           ├── agent_helpers.py    # Skills/tools/agents/MCP listings
+│           ├── chunking.py         # Intelligent-overlap chunking (RAG)
+│           ├── clean_memory.py     # GPU/CPU model release
+│           ├── config.py           # Runtime config
+│           ├── config_dir.py       # ~/.config/synapseForge/ discovery
+│           ├── contract.py         # Unified response contract
+│           ├── email_parser.py     # Email parsing (headers, body, attachments)
+│           ├── error_logger.py     # Error logging to SQLite (error_log table)
+│           ├── loop_helpers.py     # Loop helpers (system prompt, context, tools)
+│           ├── mcp_helper.py       # MCP stdio/HTTP, tool discovery, health check
+│           ├── model_resolver.py   # Active model resolution and validation
+│           ├── skill_loader.py     # SKILL.md loading and formatting for system prompt
+│           ├── skill_creator/      # LLM-based skill creation (evaluation + generation)
+│           ├── subagent_logger.py  # Custom SUBAGENT log level
+│           └── vector_db.py        # ChromaDB wrapper (collections, embeddings, query)
 ├── frontend/
 │   ├── package.json
 │   ├── package-lock.json
@@ -194,39 +209,52 @@ my-project/
 │   ├── tsconfig.node.json
 │   ├── vite.config.ts
 │   ├── index.html
+│   ├── skill.html             # Skill creation page (multi-page)
+│   ├── rag.html               # RAG management page (multi-page)
 │   ├── public/
-│   │   └── docs.html
+│   │   └── docs.html          # Product documentation (user)
 │   └── src/
 │       ├── main.tsx           # Entry: loads colors.json → sets CSS vars → render App
-│       ├── App.tsx            # Root + providers
+│       ├── App.tsx            # Root + providers + SSE event handling (Telegram)
+│       ├── ragMain.tsx        # Entry of rag.html → RagInterface
+│       ├── skillMain.tsx      # Entry of skill.html → SkillInterface
 │       ├── index.css          # @theme Tailwind v4: 4 configurable vars + fixed
+│       ├── skillColors.css    # Colors of the standalone pages
 │       ├── vite-env.d.ts
 │       ├── assets/
-│       │   └── logo_cliente.png
+│       │   ├── logo_cliente.png
+│       │   └── logo_empresa.png
 │       ├── services/
 │       │   ├── chatService.ts          # SSE parsing: chunk, tool_call, done
-│       │   ├── configService.ts        # Providers, models, MCP health
+│       │   ├── configService.ts        # Providers, models, MCP, skills/tools/agents, delete
 │       │   ├── sessionService.ts       # Sessions CRUD
 │       │   ├── contextFilesService.ts  # CRUD context files
-│       │   ├── metricsService.ts       # Metrics: overview, sessions, tokens
+│       │   ├── metricsService.ts       # Metrics: overview, sessions, tools, errors
+│       │   ├── telegramService.ts      # Telegram status/toggle/active-session
 │       │   └── quoteHistoryService.ts
 │       ├── components/
-│       │   ├── ChatInterface.tsx
-│       │   ├── Sidebar.tsx             # Sessions + Config tabs
-│       │   ├── MessageBubble.tsx
+│       │   ├── ChatInterface.tsx       # Chat SSE + context gauge + Telegram toggle
+│       │   ├── Sidebar.tsx             # Tabs: Conversations, Config, Agent, Create
+│       │   ├── configTab.tsx           # Provider, model, context, verbose, instructions/documents
+│       │   ├── agentInfoTab.tsx        # Panel: Tools, Skills, Agents, MCP, RAG (with delete)
+│       │   ├── createTab.tsx           # Access to creation pages (skill, rag)
+│       │   ├── RagInterface.tsx        # RAG collection management (files + URLs)
+│       │   ├── SkillInterface.tsx      # LLM skill creation (interview + agent)
+│       │   ├── ContextGauge.tsx        # Context-window gauge
 │       │   ├── MetricsModal.tsx        # Metrics dashboard
 │       │   ├── HistoryModal.tsx
+│       │   ├── MessageBubble.tsx
+│       │   ├── chatBlocks.tsx          # MessageRow, MarkdownRenderer, ToolCallBlock, FileChip
+│       │   ├── sessionsTab.tsx
 │       │   ├── Logo.tsx
 │       │   └── ui/                     # shadcn/ui: avatar, button, dialog, input, separator, textarea, utils
-│       └── README.md
+│       └── utils/
+│           └── mermaid.ts
 ├── config/
 │   └── replace.json           # Project placeholders (build-time)
 ├── store/                     # Store of installable tools and skills
 │   ├── tools_store/
 │   └── skills_store/
-├── docs/                      # Product documentation
-│   ├── tools/                 # Tool creation guide
-│   └── agents/                # Agent creation guide
 ├── src/
 │   └── logo_empresa.png       # Company logo (for README, copied by pipeline)
 ├── on_boarding/               # Developer onboarding
@@ -243,7 +271,8 @@ my-project/
 │   └── commands/
 │       ├── list_cmds.py
 │       ├── quick_push.py
-│       └── quick_sync.py
+│       ├── quick_sync.py
+│       └── template.py
 ├── .github/                   # Workflows and PR template
 │   └── PULL_REQUEST_TEMPLATE/
 │       ├── feature.md
@@ -287,6 +316,8 @@ permission:
     explorador: allow
   skill:
     mi_skill: allow
+  rag:
+    mi_coleccion: allow
 parameters:
   temperature: 0.0
   top_p: 0.5
@@ -295,7 +326,7 @@ parameters:
 # System prompt del agente (cuerpo del markdown)
 ```
 
-**Permissions**: `allow` / `deny` / `ask` (default: deny). Supports wildcards (`*`). Nested for `task` (sub-agent names) and `skill` (skill names).
+**Permissions**: `allow` / `deny` / `ask` (default: deny). Supports wildcards (`*`). Nested for `task` (sub-agent names), `skill` (skill names) and `rag` (collection names).
 
 **AGENT.md** (`~/.config/synapseForge/agents/AGENT.md`): general behavior injected as a `## Behavior` section in the system prompt of **all** agents (router and sub-agents), before `## MANDATORY:`. It never replaces the system prompt — `system_prompt.md` is always the router's base.
 
@@ -303,11 +334,15 @@ parameters:
 
 **`## MANDATORY:`**: injected at the end of every agent's system prompt (from `backend/agent/prompts/mandatory.md`): extract the user's faithful objective, don't add or invent anything, ask useful questions when in doubt, and iterate with tools/sub-agents until the objective is met.
 
-### Context handling (planned)
+### Context handling
 
-> **Current state**: Context is managed only via **context window** (`context_window_turns`), which limits how many conversation turns are passed to the LLM (`-1` = all history). Automatic compaction/summarization is not implemented — planned for a future release.
+> **Current state**: Context is managed via **context window** (`context_window_turns`), which limits how many conversation turns are passed to the LLM (`-1` = all history). The selected model's **token context window** is also detected and persisted, and the frontend shows a gauge with the used percentage. Automatic compaction/summarization is not implemented.
 
 **Context Files (Instructions & Documents)**: Files uploaded via Config panel → `POST /api/context-files` → text extracted → concatenated and injected into system prompt for router and sub-agents. Useful for permanent reference: company manuals, business rules, technical docs.
+
+### RAG (knowledge base)
+
+RAG uses **ChromaDB** persisted at `~/.config/synapseForge/knowledge/` with a local embedding model (SentenceTransformer `all-MiniLM-L6-v2`, CPU), pre-loaded at startup. Collections are created from the UI (`rag.html`) or Telegram. Files are text-extracted, chunked (500 chars base, 60 overlap, intelligent cut) and stored; web pages are fetched (with SSRF protection), converted to text, chunked and stored (URL in metadata, raw HTML in the first chunk). Search uses **cosine similarity**; the native `rag` tool returns the 5 most similar chunks and only queries collections allowed in the agent's `permission.rag`.
 
 ---
 
@@ -316,21 +351,10 @@ parameters:
 | Command | Description |
 |---------|-------------|
 | `synapseforge init [dir]` | Scaffold a project from bundled template (GUI) |
-| `synapseforge launch <path> <exe>` | Build self-contained distribution zip |
+| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed]` | Build self-contained distribution zip |
 | `synapseforge colors [dir]` | Edit `frontend/public/colors.json` via GUI (live reload) |
-| `synapseforge run [dir]` | Start uvicorn + npm dev servers, open browser |
+| `synapseforge run [dir]` | Start uvicorn + npm dev servers, open browser (venv must be active) |
 | `synapseforge --help` | Show global help |
-
----
-
-## Future integration — Vercel Skills
-
-Integration with the [Vercel Skills ecosystem](https://github.com/vercel-labs/skills) (`npx skills`) is planned. The two-stage workflow will:
-
-1. **Search**: run `npx skills find <query>` to discover skills from public repositories.
-2. **Evaluate/Install**: an LLM evaluates results against the user's needs and installs matching skills automatically.
-
-This will expand the skill repository without manual creation, leveraging the open agent skills ecosystem.
 
 ---
 
@@ -342,6 +366,7 @@ This will expand the skill repository without manual creation, leveraging the op
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)
 ![Tailwind](https://img.shields.io/badge/Tailwind-4-06b6d4?logo=tailwindcss&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-000000?logo=chroma&logoColor=white)
 ![PyInstaller](https://img.shields.io/badge/PyInstaller-6-3776ab?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 ![Groq](https://img.shields.io/badge/Groq-API-f97316?logo=groq&logoColor=white)

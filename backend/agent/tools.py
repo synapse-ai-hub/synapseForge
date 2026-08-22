@@ -1179,10 +1179,16 @@ class Tools:
                     workdir: str | None = None) -> dict:
         """Run a terminal command in the system shell.
 
-        Non-blocking: runs the command as an async subprocess so the event
-        loop keeps serving Telegram polling / SSE while the command executes.
-        Supports cancellation via the stream cancel event (kills the child
-        process) and a timeout. Output larger than 50 KB is truncated.
+        Non-blocking: runs the command in a worker thread (via
+        ``asyncio.to_thread``) so the event loop keeps serving Telegram
+        polling / SSE while the command executes. This avoids the
+        ``NotImplementedError`` raised by ``asyncio.create_subprocess_shell``
+        on Windows when the running event loop is a ``SelectorEventLoop``
+        (which does not implement subprocess transport).
+
+        Supports cancellation via the stream cancel event (the worker thread
+        is abandoned; the process may keep running in the background) and a
+        timeout. Output larger than 50 KB is truncated.
 
         Args:
             command: The command to execute (e.g. ``"dir"``, ``"python script.py"``).
@@ -1196,22 +1202,31 @@ class Tools:
         cancel_event = getattr(self, "_stream_cancel_event", None)
         try:
             cwd = workdir or os.getcwd()
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-            )
+            timeout_s = timeout / 1000
 
-            communicate_task = asyncio.create_task(proc.communicate())
-            timeout_task = asyncio.create_task(asyncio.sleep(timeout / 1000))
+            # Run the blocking subprocess call in a worker thread so the
+            # event loop is never blocked. ``subprocess.run`` works on every
+            # platform regardless of the event-loop policy (unlike
+            # ``asyncio.create_subprocess_shell`` which is unsupported on
+            # Windows ``SelectorEventLoop``).
+            def _run() -> subprocess.CompletedProcess:
+                return subprocess.run(
+                    command,
+                    shell=True,
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_s,
+                )
+
+            run_task = asyncio.create_task(asyncio.to_thread(_run))
             cancel_task = (
                 asyncio.create_task(cancel_event.wait())
                 if cancel_event is not None
                 else None
             )
 
-            tasks = [communicate_task, timeout_task]
+            tasks = [run_task]
             if cancel_task is not None:
                 tasks.append(cancel_task)
 
@@ -1219,45 +1234,41 @@ class Tools:
                 tasks, return_when=asyncio.FIRST_COMPLETED
             )
 
-            timed_out = timeout_task in done
             cancelled = cancel_task is not None and cancel_task in done
 
-            if timed_out or cancelled:
+            if cancelled:
                 for t in pending:
                     t.cancel()
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-                await proc.wait()
-                if timed_out:
-                    log_error(
-                        f"run_cmd: command timed out after {timeout}ms",
-                        source="tools.py:shell(timeout)",
-                    )
-                    return make_error_response(
-                        message=f"run_cmd: command timed out after {timeout}ms. "
-                                "If this command is expected to take longer, retry with a larger timeout.",
-                        usage=zero_usage(),
-                    )
+                # The worker thread cannot be killed from here; let it finish
+                # in the background. We just report cancellation.
                 return make_error_response(
                     message="run_cmd: command cancelled by user.",
                     usage=zero_usage(),
                 )
 
-            # communicate finished normally
+            # run_task finished (success or timeout)
             for t in pending:
                 t.cancel()
-            try:
-                stdout_b, stderr_b = communicate_task.result()
-            except Exception:
-                stdout_b, stderr_b = b"", b""
 
-            output = ""
-            if stdout_b:
-                output += stdout_b.decode("utf-8", errors="replace")
-            if stderr_b:
-                output += "\n" + stderr_b.decode("utf-8", errors="replace")
+            try:
+                result = run_task.result()
+            except subprocess.TimeoutExpired as e:
+                log_error(
+                    f"run_cmd: command timed out after {timeout}ms",
+                    source="tools.py:shell(timeout)",
+                )
+                return make_error_response(
+                    message=f"run_cmd: command timed out after {timeout}ms. "
+                            "If this command is expected to take longer, retry with a larger timeout.",
+                    usage=zero_usage(),
+                )
+
+            stdout_s = result.stdout or ""
+            stderr_s = result.stderr or ""
+
+            output = stdout_s
+            if stderr_s:
+                output += "\n" + stderr_s
 
             MAX_BYTES = 50 * 1024
             truncated = len(output.encode("utf-8")) > MAX_BYTES
@@ -1269,7 +1280,7 @@ class Tools:
                 message="Command executed.",
                 data={
                     "output": output or "(no output)",
-                    "returncode": proc.returncode,
+                    "returncode": result.returncode,
                     "truncated": truncated,
                     "workdir": cwd,
                 },

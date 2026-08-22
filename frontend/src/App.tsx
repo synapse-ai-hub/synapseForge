@@ -3,7 +3,7 @@ import {
   ChatInterface,
   WELCOME_MESSAGE,
   type ChatInterfaceHandle,
-} from "./components/ChatInterface";
+} from "./chat/ChatInterface";
 import { HistoryModal } from "./components/HistoryModal";
 import { MetricsModal } from "./components/MetricsModal";
 import { Sidebar } from "./components/Sidebar";
@@ -301,12 +301,19 @@ const handleTelegramToggle = useCallback((val: boolean) => {
         window.dispatchEvent(new CustomEvent("model-changed"));
       } else if (data.type === "telegram_create") {
         // Telegram as remote control ("or"): open/close the same create window
-        // (skill.html / rag.html) the user would open from the web UI.
+        // (skill.html / rag.html / tool.html) the user would open from the web UI.
         const kind: string = data.kind || "";
         const action: string = data.action || "";
         const base = window.location.origin;
         if (action === "open") {
-          const page = kind === "rag" ? "rag.html" : kind === "skill" ? "skill.html" : null;
+          const page =
+            kind === "rag"
+              ? "rag.html"
+              : kind === "skill"
+                ? "skill.html"
+                : kind === "tool"
+                  ? "tool.html"
+                  : null;
           if (page) {
             if (createWindowRef.current) {
               createWindowRef.current.close();

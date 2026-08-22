@@ -1,0 +1,64 @@
+/* ============================================================
+ * createColors.css
+ * Paleta única compartida por todas las páginas de creación
+ * (skill.html, rag.html, tool.html).
+ * Mismos colores: acento, header, hover, gradiente, bordes.
+ * Override solo si el fetch de /colors.json (solo index.html) fija
+ * otras variables; estas quedan como fallback consistente.
+ * ============================================================ */
+
+:root {
+  --color-app-bg: #ffffff;
+  --color-app-bg-secondary: #f3f4f6;            /* gray-100 */
+  --color-app-bg-tertiary: #f9fafb;             /* bg-gray-50 (tools/reasoning cards) */
+  --color-app-border: #e5e7eb;                  /* border-gray-200 */
+  --color-app-text: #1f2937;                    /* text-gray-800 */
+  --color-app-text-secondary: #6b7280;          /* text-gray-500 */
+  --color-app-primary: #4f46e5;                 /* indigo-600 (acento único) */
+  --color-app-primary-light: #8b5cf6;          /* violet-500 */
+  --color-app-primary-text: #ffffff;
+  --color-app-gradient-secondary: #8b5cf6;
+}
+
+/* Markdown — colores comunes (idéntico al skill.html original) */
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid #d4d4d4;
+}
+.markdown-content th {
+  background-color: #ebebeb;
+}
+.markdown-content code {
+  background-color: #ebebeb;
+}
+.markdown-content pre {
+  background-color: #ebebeb;
+}
+.markdown-content a {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+.markdown-content blockquote {
+  border-left: 4px solid #d4d4d4;
+  color: #5c5c5c;
+}
+
+/* Mermaid diagrams */
+.markdown-content .mermaid,
+.prose .mermaid {
+  margin: 0.75rem 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Línea de actividad — paleta unificada (mismo gradiente para las 3) */
+.activity-bar {
+  background-color: #e5e7eb;
+}
+.activity-bar::before {
+  background: linear-gradient(90deg, #fb923c, #d31aba, #8b5cf6, #4f46e5);
+}

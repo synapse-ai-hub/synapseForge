@@ -51,35 +51,47 @@ load_dotenv()
 
 class Agent():
     '''
-    Core class for interacting with LLMs (Groq API u Ollama local) with integrated logging and file management.
+    Core class for interacting with LLMs (Groq API or local Ollama) with
+    integrated logging and file management.
 
     This class centralizes interaction with LLM providers and provides helper
     utilities for cleaning outputs and simple file I/O.
 
-    Selecciona el proveedor según la variable de entorno ``PROVIDER``:
-      - ``API``  → usa Groq (OpenAI-compatible, necesita ``GROQ_API_KEY``).
-      - ``LOCAL`` → usa Ollama (local, necesita ``ollama`` instalado y el servicio corriendo).
+    The provider and model are resolved at runtime (see
+    ``backend/agent/utils/model_resolver.py``) and set through the
+    ``POST /api/config/models/select`` endpoint; they are not read from
+    environment variables. The only environment variable consumed here is
+    ``GROQ_API_KEY``, used to build the Groq client.
 
     ## Attributes:
-        - __api_key (str): API key used to authenticate with the Groq client (loaded from environment).
-        - model_qwen (str): Model identifier for the Qwen model (from MODEL_NAME_2 env var).
-        - model_openai (str): Model identifier for the OpenAI-compatible model (from MODEL_NAME_3 env var).
-        - provider (str): ``API`` o ``LOCAL`` según la variable de entorno ``PROVIDER``.
-        - client (groq.Groq | None): Instantiated Groq client (solo si provider == ``API``).
-        - ollama_client (ollama.Client | None): Instantiated Ollama client (solo si provider == ``LOCAL``).
+        - __api_key (str): API key used to authenticate with the Groq client
+          (loaded from the ``GROQ_API_KEY`` env var).
+        - provider (str | None): ``GROQ`` or ``LOCAL``; set at runtime by the
+          model selection endpoint.
+        - _resolved_model (str | None): Currently resolved model identifier.
+        - _context_window (int | None): Context window (tokens) of the
+          resolved model.
+        - groq_client (AsyncGroq | None): Instantiated Groq client (only if
+          ``GROQ_API_KEY`` is present).
+        - ollama_client (AsyncClient | None): Instantiated Ollama client
+          (only if the local service is reachable).
         - usage (tuple | None): Last request usage metrics in the form
-          (prompt_tokens, completion_tokens, total_tokens, prompt_time, completion_time, total_time).
+          (prompt_tokens, completion_tokens, total_tokens, prompt_time,
+          completion_time, total_time).
 
     ## Notes:
-        - Para provider ``API``: requiere ``.env`` con ``GROQ_API_KEY``, ``MODEL_NAME_2``, ``MODEL_NAME_3``.
-        - Para provider ``LOCAL``: requiere ``ollama`` instalado (``pip install ollama``) y el servicio corriendo.
-        - Methods that call the API catch exceptions and print errors rather than raising; callers should
-          handle missing return values accordingly.
+        - For provider ``GROQ``: requires ``GROQ_API_KEY`` in ``.env``.
+        - For provider ``LOCAL``: requires ``ollama`` installed
+          (``pip install ollama``) and the service running.
+        - Methods that call the API catch exceptions and print errors rather
+          than raising; callers should handle missing return values
+          accordingly.
 
     ## Example:
-        >>> from Utils.agent import Agent
+        >>> import asyncio
+        >>> from backend.agent.agent import Agent
         >>> agent = Agent()
-        >>> resp, usage = agent.llm_process(agent.model_qwen, "What is the capital of France?")
+        >>> resp, usage = asyncio.run(agent.llm_process("qwen/qwen3.6-27b", "What is the capital of France?"))
         >>> print(resp)
         The capital of France is Paris.
     '''
@@ -297,7 +309,7 @@ class Agent():
                        it (Ollama ``think=False``, Groq ``reasoning_effort="none"``)
                        with a fallback so models that don't support the flag are
                        not broken.
-            provider: Optional provider override (``"API"`` or ``"LOCAL"``).
+            provider: Optional provider override (``"GROQ"`` or ``"LOCAL"``).
                       When ``None``, falls back to ``self.provider`` so existing
                       callers keep their current behavior. Pass an explicit value
                       from the agent loop when a sub-agent overrides the provider
@@ -314,7 +326,7 @@ class Agent():
         try:
             # --- Build messages ---
             if messages is not None:
-                is_groq = effective_provider == 'API'
+                is_groq = effective_provider.upper() == 'GROQ'
                 msgs = []
                 for m in messages:
                     m_copy = dict(m)
@@ -336,7 +348,7 @@ class Agent():
             if max_tokens is not None:
                 api_kwargs['max_tokens'] = max_tokens
 
-            if effective_provider == 'API':
+            if effective_provider.upper() == 'GROQ':
                 # ── Groq (OpenAI-compatible) ──
                 groq_kwargs = dict(api_kwargs)
                 if tools:
@@ -376,7 +388,7 @@ class Agent():
                 total_tokens = response.usage.total_tokens
                 total_time = round(response.usage.total_time, 2)
 
-            elif effective_provider == 'LOCAL':
+            elif effective_provider.upper() == 'LOCAL':
                 # ── Ollama (local) ──
                 options = {}
                 if temperature is not None:
@@ -487,7 +499,7 @@ class Agent():
             cleaned_output: Apply ``self.clean()`` to text chunks.
             tools: Tool definitions for function calling.
             stream_cancel_event: Optional event to cancel mid-stream.
-            provider: Optional provider override (``"API"`` or ``"LOCAL"``).
+            provider: Optional provider override (``"GROQ"`` or ``"LOCAL"``).
                       When ``None``, falls back to ``self.provider`` so existing
                       callers keep their current behavior. Pass an explicit value
                       from the agent loop when a sub-agent overrides the provider
@@ -499,7 +511,7 @@ class Agent():
         """
         effective_provider = provider if provider is not None else self.provider
         if messages is not None:
-            is_groq = effective_provider == 'API'
+            is_groq = effective_provider.upper() == 'GROQ'
             msgs = []
             for m in messages:
                 m_copy = dict(m)
@@ -513,7 +525,7 @@ class Agent():
                 msgs.append({'role': 'system', 'content': system_content})
             msgs.append({'role': 'user', 'content': prompt or ''})
 
-        if effective_provider == 'API':
+        if effective_provider.upper() == 'GROQ':
             groq_kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": msgs,
@@ -526,23 +538,32 @@ class Agent():
             if tools:
                 groq_kwargs["tools"] = tools
                 groq_kwargs["tool_choice"] = "auto"
-# Groq: pedir reasoning como campo separado (delta.reasoning_content)
+            # Groq: pedir reasoning como campo separado (delta.reasoning_content).
+            # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
+            # lo rechaza, reintentar sin el campo (igual que en llm_process).
             groq_kwargs["reasoning_format"] = "parsed"
-            # Groq: pedir usage en el último chunk del stream (choices vacío)
-            groq_kwargs["stream_options"] = {"include_usage": True}
-
-            stream = await self.groq_client.chat.completions.create(**groq_kwargs)
+            try:
+                stream = await self.groq_client.chat.completions.create(**groq_kwargs)
+            except Exception as _ex:
+                if "reasoning_format" in str(_ex):
+                    groq_kwargs.pop("reasoning_format", None)
+                    stream = await self.groq_client.chat.completions.create(**groq_kwargs)
+                else:
+                    raise
+            # Groq: el usage llega en el campo x_groq.usage del último chunk
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
             in_think_tag = False  #  thinking tag state machine
-            has_dedicated_thinking = False  # si vimos reasoning_content, no parseamos  thinking
+            has_dedicated_thinking = False  # si vimos delta.reasoning, no parseamos  thinking
             usage_data: dict[str, Any] | None = None
 
+            # print(f"[DEBUG-STREAM] Starting stream iteration, groq_kwargs keys: {list(groq_kwargs.keys())}")
             async for chunk in stream:
+                # print(f"[DEBUG-CHUNK] chunk type={type(chunk).__name__}, choices={len(chunk.choices) if hasattr(chunk, 'choices') and chunk.choices else 0}, usage={getattr(chunk, 'usage', None)}, x_groq={getattr(chunk, 'x_groq', None)}")
                 if stream_cancel_event and stream_cancel_event.is_set():
                     yield {'type': 'aborted'}
                     return
-                # Capturar usage del chunk final (stream_options.include_usage)
+                # Capturar usage del chunk final (x_groq.usage)
                 if getattr(chunk, 'usage', None):
                     _u = chunk.usage
                     usage_data = {
@@ -576,10 +597,11 @@ class Agent():
                                 if tc.function.arguments:
                                     accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
 
-                    # Groq / OpenAI-compatible reasoning_content (parsed mode)
-                    if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                    # Groq / OpenAI-compatible reasoning (parsed mode)
+                    # print(f"[DEBUG-REASONING] delta.reasoning={getattr(delta, 'reasoning', 'MISSING')!r}, delta.content={getattr(delta, 'content', 'MISSING')!r}")
+                    if delta and hasattr(delta, 'reasoning') and delta.reasoning:
                         has_dedicated_thinking = True
-                        yield {'type': 'reasoning', 'content': delta.reasoning_content}
+                        yield {'type': 'reasoning', 'content': delta.reasoning}
                         await asyncio.sleep(0.01)
 
                     # Stream text content
@@ -592,7 +614,7 @@ class Agent():
                             yield {'type': 'chunk', 'content': text}
                             await asyncio.sleep(0.01)
                         else:
-                            # Fallback: parsear <think> tags del content
+                            # Fallback: parsear  thinking tags del content
                             rzn, clean_text, in_think_tag = self._process_think_tags(text, in_think_tag)
                             if rzn:
                                 yield {'type': 'reasoning', 'content': rzn}
@@ -836,7 +858,7 @@ class Agent():
             str: Cleaned text.
 
         ## Example:
-            >>> agent.clean('Hello\\u200bWorld')
+            >>> agent.clean('Hello World')
             'HelloWorld'
         '''
         text = text.replace('\ufeff', '')

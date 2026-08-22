@@ -14,6 +14,8 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const [providers, setProviders] = useState<Array<{ provider: string; label: string }>>([]);
   const [models, setModels] = useState<string[]>([]);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [currentProvider, setCurrentProvider] = useState<string>("");
+  const [pendingModel, setPendingModel] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [maxTurns, setMaxTurns] = useState<number>(-1);
   const [loading, setLoading] = useState(true);
@@ -22,6 +24,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
   const [uploadingContext, setUploadingContext] = useState(false);
   const contextFileInputRef = useRef<HTMLInputElement>(null);
+  const isFirstLoadRef = useRef(true);
 
   const load = useCallback(async (prov?: string) => {
     let label: string | undefined;
@@ -42,8 +45,22 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       ]);
       setProviders(provResp.providers || []);
       setModels(m.models || []);
-      setCurrentModel(m.model);
-      const effective = prov || m.provider || (provResp.providers?.[0]?.provider ?? "");
+      // Set both currentModel and pendingModel to backend's current model.
+      // When model changes externally (Telegram, another tab), both stay in sync.
+      // User changes dropdown → pendingModel changes → Apply button enables.
+      // User clicks Apply → currentModel updated to pendingModel.
+      const model = m.model || null;
+      const provider = m.provider || (provResp.providers?.[0]?.provider ?? "");
+      setCurrentModel(model);
+      setPendingModel(model);
+      // Only set currentProvider on first load (initial mount).
+      // On provider change or external model change, keep currentProvider as last applied.
+      // This allows the Apply button to enable when user switches provider in UI.
+      if (isFirstLoadRef.current) {
+        setCurrentProvider(provider);
+        isFirstLoadRef.current = false;
+      }
+      const effective = prov || provider;
       setSelectedProvider(effective);
       setMaxTurns(typeof cw.max_turns === "number" ? cw.max_turns : -1);
     } catch (err) {
@@ -78,11 +95,33 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
     load(value);
   };
 
+  const handleModelChange = (value: string) => {
+    setPendingModel(value);
+  };
+
+  const handleApplyModel = async () => {
+    // Enable if provider OR model differs from current (not both equal)
+    const isSame = pendingModel === currentModel && selectedProvider === currentProvider;
+    if (!pendingModel || isSame || savingModel) return;
+    try {
+      setSavingModel(true);
+      await configService.selectModel(pendingModel, selectedProvider);
+      setCurrentModel(pendingModel);
+      setCurrentProvider(selectedProvider);
+      window.dispatchEvent(new Event("model-changed"));
+    } catch (err) {
+      console.error("Error seleccionando modelo:", err);
+    } finally {
+      setSavingModel(false);
+    }
+  };
+
   const handleSelectModel = async (model: string) => {
     try {
       setSavingModel(true);
       await configService.selectModel(model, selectedProvider);
       setCurrentModel(model);
+      setPendingModel(model);
       window.dispatchEvent(new Event("model-changed"));
     } catch (err) {
       console.error("Error seleccionando modelo:", err);
@@ -161,8 +200,8 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
           Modelo
         </div>
         <select
-          value={currentModel || ""}
-          onChange={(e) => handleSelectModel(e.target.value)}
+          value={pendingModel || ""}
+          onChange={(e) => handleModelChange(e.target.value)}
           disabled={savingModel || models.length === 0}
           className="mt-1 w-full rounded-lg border border-app-border bg-white px-3 py-2 text-sm text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light"
         >
@@ -176,6 +215,40 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             ))
           )}
         </select>
+        <Button
+          onClick={handleApplyModel}
+          disabled={savingModel || !pendingModel || (pendingModel === currentModel && selectedProvider === currentProvider)}
+          variant="gradient"
+          className="mt-2 w-full"
+        >
+          {savingModel ? (
+            <>
+              <svg
+                className="animate-spin -ml-1 mr-2 h-4 w-4"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              Aplicando...
+            </>
+          ) : (
+            "Aplicar"
+          )}
+        </Button>
       </div>
 
       <div>

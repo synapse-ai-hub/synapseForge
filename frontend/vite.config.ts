@@ -21,6 +21,7 @@ export default defineConfig({
         main: path.resolve(__dirname, "index.html"),
         skill: path.resolve(__dirname, "skill.html"),
         rag: path.resolve(__dirname, "rag.html"),
+        tool: path.resolve(__dirname, "tool.html"),
       },
     },
   },

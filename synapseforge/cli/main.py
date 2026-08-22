@@ -340,8 +340,19 @@ def _run(project_dir: str) -> None:
         ``taskkill /F /T`` to kill the whole tree. This also force-kills
         uvicorn even when it is stuck in a graceful shutdown waiting for open
         SSE connections.
+
+        Before force-killing, we give the backend a chance to run its graceful
+        shutdown (which frees the local Ollama model) by hitting ``/api/shutdown``.
         """
         print("\nDeteniendo servidores...")
+        # Darle chance al backend de liberar el modelo antes de matarlo
+        try:
+            import urllib.request
+
+            urllib.request.urlopen("http://127.0.0.1:8000/api/shutdown", timeout=2)
+            time.sleep(5)
+        except Exception:
+            pass
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(uvicorn_proc.pid)], capture_output=True)
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(npm_proc.pid)], capture_output=True)
         print("Servidores detenidos.")

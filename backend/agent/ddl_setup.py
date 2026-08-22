@@ -66,6 +66,13 @@ def setup_database(conn: sqlite3.Connection) -> None:
             value TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS providers (
+            provider TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            models TEXT,
+            updated_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS error_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT,

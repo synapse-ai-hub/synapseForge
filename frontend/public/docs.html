@@ -150,6 +150,7 @@ synapseForge run .
               <tr><td>Node.js</td><td>20 o superior</td><td>Build del frontend y modo desarrollo</td></tr>
             </tbody>
           </table>
+          <blockquote><p><strong>API key:</strong> para usar la app necesitás al menos una API key de un proveedor cloud — <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">OpenRouter</a>, <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google Gemini</a> o <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>, todos con capa gratis. Se carga desde la pantalla inicial de configuración (o Configuración → Providers). Ollama es opcional: solo si querés modelos locales.</p></blockquote>
           <h3>Instalación desde PyPI</h3>
           <p>La forma más rápida:</p>
           <pre><code>pip install synapseForge</code></pre>
@@ -177,7 +178,6 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <p>Cuando ejecutás <code>init</code>, se abre una ventana con los siguientes pasos:</p>
           <ol>
             <li><strong>Datos del proyecto</strong> — Cargás el logo de la empresa, el logo del cliente (opcional), nombre de empresa, owner, legal, nombre del repositorio, nombre del cliente y colores hexadecimales (opcional).</li>
-            <li><strong>Modelos Ollama</strong> — Se verifica que los modelos requeridos estén instalados; si falta <code>qwen3.5:4b</code> se instala automáticamente.</li>
             <li><strong>Extracción de la plantilla</strong> — Se toma la plantilla base (incluida en el paquete o descargada desde GitHub) y se copia al directorio destino.</li>
             <li><strong>Entorno virtual</strong> — Se crea un <code>venv</code> aislado dentro del proyecto.</li>
             <li><strong>Dependencias de Python</strong> — Se instalan las dependencias del backend dentro del venv.</li>
@@ -261,6 +261,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h2>Base de conocimiento (RAG)</h2>
           <h3>¿Qué es?</h3>
           <p>El sistema de <strong>RAG</strong> (Retrieval-Augmented Generation) te permite armar una <strong>base de conocimiento</strong> que el agente consulta para responder con información específica de tu dominio. El contenido se guarda en <strong>colecciones vectoriales</strong> (ChromaDB) y se busca por <strong>similitud coseno</strong>.</p>
+          <blockquote><p><strong>Requisito:</strong> la base de conocimiento necesita una <strong>API key de OpenRouter</strong> (tiene capa gratis) cargada en Configuración → Providers. Sin esa key, esta sección queda deshabilitada — el resto de la app funciona normalmente.</p></blockquote>
           <h3>¿Cómo se organiza?</h3>
           <p>El contenido se agrupa en <strong>colecciones</strong>. Cada colección es un tema o fuente de información independiente (similar a NotebookLM). Podés tener tantas colecciones como necesites, y cada agente accede solo a las que tiene permitidas.</p>
           <h3>¿Qué podés cargar?</h3>
@@ -507,9 +508,9 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>Panel de configuración</h3>
           <p>En el panel lateral, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
           <h4>Proveedor y modelo</h4>
-          <p>Podés seleccionar el proveedor de modelos (Ollama local, Groq, Google Gemini u OpenRouter) y el modelo específico a utilizar. La selección se persiste entre sesiones.</p>
+          <p>Podés seleccionar el proveedor de modelos (Ollama local, Groq, Google Gemini u OpenRouter) y el modelo específico a utilizar. La selección se persiste entre sesiones. No hay modelo por defecto: al primer arranque aparece una pantalla inicial de configuración (que podés saltar) para cargar tus API keys; sin ningún proveedor disponible, el chat y los creadores quedan bloqueados hasta configurar uno.</p>
           <h4>Providers (API keys)</h4>
-          <p>En la sección <strong>Providers</strong> podés cargar la API key de cada proveedor cloud (Groq, Google Gemini, OpenRouter). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Si además existe la variable de entorno correspondiente (<code>GROQ_API_KEY</code>, <code>GOOGLE_API_KEY</code>, <code>OPENROUTER_API_KEY</code>), se usa como fallback cuando no hay key guardada en la base.</p>
+          <p>En la sección <strong>Providers</strong> podés cargar la API key de cada proveedor cloud (Groq, Google Gemini, OpenRouter). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el proveedor queda disponible de inmediato en los selectores. Las variables de entorno (<code>GROQ_API_KEY</code>, etc.) no se consultan: las keys se resuelven únicamente desde la base de datos.</p>
           <h4>Contexto (turnos)</h4>
           <p>Controla cuántos turnos de conversación se mantienen en el contexto del modelo. <code>-1</code> significa todo el historial. Reducir este número ayuda a controlar el uso de tokens y el costo.</p>
           <h4>Modo verbose</h4>
@@ -686,16 +687,9 @@ synapseForge run .</code></pre>
             <li>Abre el navegador automáticamente en la URL del frontend.</li>
           </ol>
           <h3>Configurar las claves de tu proveedor</h3>
-          <p>Antes de empezar a chatear, copiá el archivo de ejemplo de variables de entorno y completá las claves de tu proveedor de modelos:</p>
-          <pre><code>cp .env.example .env
-# Editar .env con PROVIDER, MODEL y API_KEY</code></pre>
-          <p>Las variables mínimas que necesitás configurar son:</p>
-          <ul>
-            <li><strong>Proveedor</strong> — El servicio que usás para los modelos (Ollama local, Groq, Google Gemini u OpenRouter).</li>
-            <li><strong>Modelo</strong> — Qué modelo específico querés usar.</li>
-            <li><strong>API Key</strong> — Tu clave del proveedor (para Groq, Google u OpenRouter). También podés cargarlas desde el panel de Configuración, sección <strong>Providers</strong>: se guardan cifradas en la base de datos interna y tienen prioridad sobre las variables de entorno.</li>
-            <li><strong>URL del backend</strong> — Dónde está corriendo el backend (por defecto <code>http://localhost:8000</code>).</li>
-          </ul>
+          <p>Para usar la app necesitás al menos una API key de un proveedor cloud. Al primer arranque aparece una pantalla de configuración donde podés cargarlas directamente (también desde Configuración → <strong>Providers</strong>). Recomendaciones con capa gratis: <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">OpenRouter</a>, <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google Gemini</a> y <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>. Ollama es opcional: solo si querés correr modelos locales.</p>
+          <blockquote><p><strong>Importante:</strong> la base de conocimiento necesita específicamente una API key de OpenRouter (capa gratis). Sin ella esa sección queda deshabilitada; el resto funciona con cualquier proveedor.</p></blockquote>
+          <p>Las keys se guardan cifradas en la base de datos SQLite interna, se validan contra la API del proveedor al guardarlas y no se vuelven a mostrar. Las variables de entorno (<code>GROQ_API_KEY</code>, etc.) no se consultan.</p>
           <h3>Probar en otra máquina de la red</h3>
           <p>Si querés acceder desde otra computadora o dispositivo:</p>
           <ol>

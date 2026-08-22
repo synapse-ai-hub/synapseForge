@@ -5,7 +5,7 @@ Creates a self-contained zip with compiled backend, frontend, venv,
 launcher executable, .env, LICENSE, and README.
 
 Usage:
-    python forge.py <repo_path> "<exe_name>"
+    python forge.py <repo_path> "<exe_name>" [--compile]
 
 Example:
     python forge.py D:\\ia-san-juan\\4_reinas "<cliente>nombre_cliente</cliente>"
@@ -268,8 +268,11 @@ def _compile_backend(repo_path: str) -> None:
 # ---------------------------------------------------------------------------
 # Step 3: Create clean backend copy (exclude unwanted files)
 # ---------------------------------------------------------------------------
-def _clean_backend_copy(repo_path: str) -> Path:
-    """Copy compiled backend, excluding .md/.txt (except prompts), build_launcher, etc.
+def _clean_backend_copy(repo_path: str, *, compiled: bool) -> Path:
+    """Copy backend, excluding unwanted files.
+
+    When ``compiled`` is True only ``.pyc`` files are kept (``.py`` excluded).
+    Otherwise the original ``.py`` sources are kept (``.pyc`` excluded).
 
     Returns the path to the clean backend directory.
     """
@@ -279,7 +282,7 @@ def _clean_backend_copy(repo_path: str) -> Path:
     if dst.exists():
         shutil.rmtree(dst)
 
-    _log(f"Copying compiled backend (clean) -> {dst} ...")
+    _log(f"Copying backend (clean) -> {dst} ...")
 
     for root, dirs, files in os.walk(str(src)):
         rel = Path(root).relative_to(src)
@@ -295,8 +298,12 @@ def _clean_backend_copy(repo_path: str) -> Path:
             src_file = Path(root) / fname
             dest_file = dest_dir / fname
 
-            # Skip .py files (only keep compiled .pyc)
-            if fname.endswith(".py") and not fname.endswith(".pyc"):
+            # Compiled build: skip .py sources (only keep .pyc).
+            # Source build: skip .pyc (only keep .py).
+            if compiled and fname.endswith(".py") and not fname.endswith(".pyc"):
+                _log(f"  Excluding: {rel / fname}")
+                continue
+            if not compiled and fname.endswith(".pyc"):
                 _log(f"  Excluding: {rel / fname}")
                 continue
 
@@ -505,7 +512,7 @@ def _build_zip(repo_path: str, exe_path: Path, exe_name: str) -> Path:
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
-def _cleanup(repo_path: str, *, keep_zip: bool = True) -> Path | None:
+def _cleanup(repo_path: str, *, keep_zip: bool = True, compiled: bool = True) -> Path | None:
     """Remove build artifacts from repo. Returns final zip path if kept."""
     build_dir = Path(repo_path) / BUILD_DIR_NAME
     final_zip: Path | None = None
@@ -524,9 +531,9 @@ def _cleanup(repo_path: str, *, keep_zip: bool = True) -> Path | None:
             _log(f"Zip moved to: {dest}")
         shutil.rmtree(str(build_dir))
 
-    # Also clean .pyc files from original backend
+    # Also clean .pyc files from original backend (only if we compiled them)
     backend_dir = Path(repo_path) / "backend"
-    if backend_dir.is_dir():
+    if compiled and backend_dir.is_dir():
         _log("Cleaning .pyc files from original backend/ ...")
         for pyc in backend_dir.rglob("*.pyc"):
             pyc.unlink(missing_ok=True)
@@ -537,8 +544,23 @@ def _cleanup(repo_path: str, *, keep_zip: bool = True) -> Path | None:
 # ---------------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------------
-def build(repo_path: str, exe_name: str, *, skip_frontend: bool = False, use_embed: bool = True) -> Path | None:
+def build(
+    repo_path: str,
+    exe_name: str,
+    *,
+    skip_frontend: bool = False,
+    use_embed: bool = True,
+    compile_backend: bool = False,
+) -> Path | None:
     """Run the full build pipeline.
+
+    Args:
+        repo_path: Absolute path to the repository root.
+        exe_name: Name for the generated executable.
+        skip_frontend: Skip npm build and reuse existing ``frontend/dist``.
+        use_embed: Download/configure embedded Python instead of using a venv.
+        compile_backend: Compile ``backend/`` to ``.pyc`` (default: ship
+            the ``.py`` sources as-is).
 
     Returns the path to the generated zip file, or None if build failed.
     """
@@ -553,6 +575,7 @@ def build(repo_path: str, exe_name: str, *, skip_frontend: bool = False, use_emb
     _log(f"Version: {_get_version(repo_path)}")
     _log(f"Python: embedded ({EMBEDDED_PYTHON_VERSION})" if use_embed else f"Python: venv (.{{repo}})")
     _log(f"Download: {EMBEDDED_PYTHON_URL}" if use_embed else "")
+    _log(f"Backend: {'compiled (.pyc)' if compile_backend else 'source (.py)'}")
 
     # Validate
     if not Path(repo_path).is_dir():
@@ -568,15 +591,16 @@ def build(repo_path: str, exe_name: str, *, skip_frontend: bool = False, use_emb
             _step(current_step, total_steps, "Build frontend (npm run build)")
             _build_frontend(repo_path)
 
-        # Step 2 — Compile backend
-        current_step += 1
-        _step(current_step, total_steps, "Compile backend to .pyc")
-        _compile_backend(repo_path)
+        # Step 2 — Compile backend (optional)
+        if compile_backend:
+            current_step += 1
+            _step(current_step, total_steps, "Compile backend to .pyc")
+            _compile_backend(repo_path)
 
         # Step 3 — Clean backend copy
         current_step += 1
         _step(current_step, total_steps, "Create clean backend copy")
-        _clean_backend_copy(repo_path)
+        _clean_backend_copy(repo_path, compiled=compile_backend)
 
         # Step 4 — Setup embedded Python (download, pip, deps)
         if use_embed:
@@ -601,7 +625,7 @@ def build(repo_path: str, exe_name: str, *, skip_frontend: bool = False, use_emb
         _step(current_step, total_steps, "Package distribution zip")
         zip_path = _build_zip(repo_path, exe_path, exe_name)
         _log("Cleaning build artifacts ...")
-        final_zip = _cleanup(repo_path, keep_zip=True)
+        final_zip = _cleanup(repo_path, keep_zip=True, compiled=compile_backend)
 
         print(f"\n{'=' * 60}")
         print(f"  BUILD COMPLETE")
@@ -610,7 +634,7 @@ def build(repo_path: str, exe_name: str, *, skip_frontend: bool = False, use_emb
 
     except Exception:
         _log("Build FAILED — cleaning temporary files ...", err=True)
-        _cleanup(repo_path, keep_zip=False)
+        _cleanup(repo_path, keep_zip=False, compiled=compile_backend)
         raise
 
     return final_zip
@@ -648,6 +672,12 @@ def main() -> None:
         help="Use existing venv instead of downloading embedded Python",
     )
     parser.add_argument(
+        "--compile",
+        "-c",
+        action="store_true",
+        help="Compile backend/ to .pyc (default: ship .py sources as-is)",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         help="Output directory for the zip (default: repo root)",
@@ -660,6 +690,7 @@ def main() -> None:
             args.exe_name,
             skip_frontend=args.skip_frontend,
             use_embed=not args.no_embed,
+            compile_backend=args.compile,
         )
     except Exception as e:
         _log(f"ERROR: {e}", err=True)

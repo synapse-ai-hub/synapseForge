@@ -24,7 +24,7 @@ import configService from "../services/configService";
 import { Button } from "../components/ui/button";
 import { FileChip, FileWarningBanner, MessageRow } from "../components/chatBlocks";
 import { ContextGauge } from "../components/ContextGauge";
-import type { Message, SubagentEvent, SubagentStep, ContentBlock } from "../../App";
+import type { Message, SubagentEvent, SubagentStep, ContentBlock } from "../App";
 
 /* ------------------------------------------------------------------ */
 /*  Exported welcome message for App initialization                   */
@@ -234,6 +234,32 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
     window.addEventListener("model-changed", onModelChange);
     return () => window.removeEventListener("model-changed", onModelChange);
   }, [loadContextWindow]);
+
+  /* ---- blocked state: no provider/model selected yet ---- */
+  const [modelSelected, setModelSelected] = useState<boolean | null>(null);
+  const loadModelSelected = useCallback(() => {
+    configService
+      .getModels()
+      .then((data) => {
+        if (cancelledRef.current) return;
+        setModelSelected(Boolean(data.model));
+      })
+      .catch(() => {
+        if (!cancelledRef.current) setModelSelected(null);
+      });
+  }, []);
+
+  useEffect(() => {
+    loadModelSelected();
+  }, [loadModelSelected]);
+
+  useEffect(() => {
+    const onModelChange = () => loadModelSelected();
+    window.addEventListener("model-changed", onModelChange);
+    return () => window.removeEventListener("model-changed", onModelChange);
+  }, [loadModelSelected]);
+
+  const chatBlocked = modelSelected === false;
 
   const handleMessagesScroll = useCallback(() => {
     const el = messagesContainerRef.current;
@@ -767,8 +793,9 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
 
   /* ---- send button / Enter ---- */
   const handleSend = useCallback(() => {
+    if (chatBlocked) return;
     sendMessage(input);
-  }, [input, sendMessage]);
+  }, [input, sendMessage, chatBlocked]);
 
   /* ---- stop streaming ---- */
   const handleCancel = useCallback(() => {
@@ -957,6 +984,24 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
                    px-3 sm:px-4 py-3 sm:py-4"
       >
         <div className="max-w-full sm:max-w-3xl lg:max-w-4xl mx-auto">
+          {/* Blocked banner: no provider/model selected yet */}
+          {chatBlocked && (
+            <div className="flex items-center justify-between gap-3 mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5">
+              <span className="text-sm text-amber-800">
+                Configur&aacute; un proveedor y un modelo para empezar.
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  window.dispatchEvent(new CustomEvent("open-config-tab"))
+                }
+                className="shrink-0 bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:opacity-90"
+              >
+                Ir a Configuraci&oacute;n
+              </button>
+            </div>
+          )}
+
           {/* File warning banner */}
           {fileWarning && (
             <FileWarningBanner
@@ -991,10 +1036,15 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Escribí tu consulta..."
+              disabled={chatBlocked}
+              placeholder={
+                chatBlocked
+                  ? "Configurá un proveedor y un modelo para empezar..."
+                  : "Escribí tu consulta..."
+              }
               rows={1}
               className="w-full resize-none rounded-2xl border border-app-border
-                         bg-white
+                         bg-white disabled:bg-gray-50 disabled:text-gray-400
                          text-app-text placeholder:text-app-text-secondary
                          focus:outline-none focus:ring-2 focus:ring-app-primary/30 focus:border-app-primary
                          transition-colors
@@ -1009,9 +1059,10 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
+              disabled={chatBlocked}
                className="absolute bottom-3 left-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
                           flex items-center justify-center
-                          bg-app-primary/10 hover:bg-app-primary/20
+                          bg-app-primary/10 hover:bg-app-primary/20 disabled:opacity-40 disabled:cursor-not-allowed
                           text-app-primary transition-all duration-150"
               aria-label="Adjuntar archivos"
             >
@@ -1037,7 +1088,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() || chatBlocked}
                 className="absolute bottom-3 right-3 w-7 h-7 sm:w-8 sm:h-8 rounded-full
                            flex items-center justify-center
                            bg-gradient-to-r from-app-primary to-app-gradient-secondary

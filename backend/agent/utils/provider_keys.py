@@ -266,24 +266,71 @@ def list_configured() -> list[dict[str, Any]]:
 def resolve_api_key(provider: str) -> str | None:
     """Resolve the effective API key for a provider.
 
-    Priority: key stored (encrypted) in the DB first, then the
-    corresponding environment variable as fallback.
+    Keys are resolved **only** from the encrypted DB storage — environment
+    variables are never consulted.
 
     Args:
         provider: Provider name (case-insensitive).
 
     Returns:
-        The API key string, or ``None`` if none is available.
+        The API key string, or ``None`` if none is stored.
     """
-    stored = get_key(provider)
-    if stored:
-        return stored
-    env_names = {
-        "GROQ": "GROQ_API_KEY",
-        "GOOGLE": "GOOGLE_API_KEY",
-        "OPENROUTER": "OPENROUTER_API_KEY",
-    }
-    env_name = env_names.get((provider or "").upper())
-    if env_name:
-        return os.getenv(env_name)
-    return None
+    return get_key(provider)
+
+
+def validate_key(provider: str, api_key: str) -> dict:
+    """Validate an API key against the provider's live API.
+
+    The key is **not** persisted here — callers should only store it when
+    this check succeeds.
+
+    Args:
+        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        api_key: The plain-text API key to verify.
+
+    Returns:
+        Contract response ``{"status": "success"|"error", "message": ...}``.
+    """
+    provider_u = (provider or "").upper()
+    if provider_u not in _VALID_PROVIDERS:
+        return {"status": "error", "message": f"Provider inválido: '{provider}'."}
+    if not api_key or not api_key.strip():
+        return {"status": "error", "message": "La API key no puede estar vacía."}
+    key = api_key.strip()
+    try:
+        if provider_u == "OPENROUTER":
+            # The model catalog is public, so validation uses the /key
+            # endpoint which requires a valid Bearer token (401 otherwise).
+            import requests
+
+            resp = requests.get(
+                "https://openrouter.ai/api/v1/key",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=30,
+            )
+            if resp.status_code == 401:
+                return {"status": "error", "message": "API key de OpenRouter inválida."}
+            resp.raise_for_status()
+        elif provider_u == "GOOGLE":
+            from backend.agent.utils.model_resolver import get_google_models
+
+            if not get_google_models(key):
+                return {
+                    "status": "error",
+                    "message": "API key de Google inválida o sin modelos disponibles.",
+                }
+        else:  # GROQ
+            from backend.agent.utils.model_resolver import get_groq_models
+
+            if not get_groq_models(key):
+                return {
+                    "status": "error",
+                    "message": "API key de Groq inválida o sin modelos disponibles.",
+                }
+        return {"status": "success", "message": f"API key de {provider_u} válida."}
+    except Exception as e:
+        log_error(str(e), source="provider_keys.py:validate_key")
+        return {
+            "status": "error",
+            "message": f"No se pudo validar la API key de {provider_u}: {e}",
+        }

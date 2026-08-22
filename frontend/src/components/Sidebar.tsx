@@ -58,6 +58,14 @@ export function Sidebar({
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Other components (e.g. the "configure a provider" banner in the chat)
+  // can request the config tab via this window event.
+  useEffect(() => {
+    const openConfig = () => setTab("config");
+    window.addEventListener("open-config-tab", openConfig);
+    return () => window.removeEventListener("open-config-tab", openConfig);
+  }, []);
+
   const loadSessions = useCallback(async () => {
     try {
       setIsLoading(true);

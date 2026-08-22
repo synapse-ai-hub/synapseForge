@@ -96,21 +96,21 @@ def get_groq_models(api_key: str | None = None) -> List[str]:
     """List available models via the Groq API.
 
     Calls ``GET https://api.groq.com/openai/v1/models`` with the given API
-    key (or falls back to the ``GROQ_API_KEY`` env var) and extracts model
-    IDs from the response.
+    key and extracts model IDs from the response.
 
     Args:
-        api_key: Groq API key. If ``None``, reads ``GROQ_API_KEY`` from env.
+        api_key: Groq API key (resolved from the encrypted DB storage by
+            the caller).
 
     Returns:
         A list of model ID strings. Empty if the API call fails.
     """
     import requests
 
-    key = api_key or os.getenv("GROQ_API_KEY")
-    if not key:
-        logger.error("No GROQ_API_KEY found in env")
+    if not api_key:
+        logger.error("No Groq API key provided")
         return []
+    key = api_key
 
     url = "https://api.groq.com/openai/v1/models"
     headers = {
@@ -225,7 +225,9 @@ def resolve_model() -> str:
             logger.info("Using legacy MODEL_NAME_3: %s", legacy)
             return legacy
 
-        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        from backend.agent.utils import provider_keys
+
+        api_key = provider_keys.get_key("GROQ")
         models = get_groq_models(api_key)
         selected = _prompt_user_selection(models, "Groq (API)")
         return selected or ""
@@ -263,15 +265,16 @@ def get_google_models(api_key: str | None = None) -> List[str]:
     robotics, computer-use) so only text-generation chat models are shown.
 
     Args:
-        api_key: Google API key. If ``None``, reads ``GOOGLE_API_KEY`` env var.
+        api_key: Google API key (resolved from the encrypted DB storage by
+            the caller).
 
     Returns:
         A list of model name strings (with the ``models/`` prefix).
         Empty if the API call fails or no key is available.
     """
-    key = api_key or os.getenv("GOOGLE_API_KEY", "").strip()
+    key = (api_key or "").strip()
     if not key:
-        logger.error("No GOOGLE_API_KEY found in env")
+        logger.error("No Google API key provided")
         return []
 
     try:
@@ -308,12 +311,13 @@ def get_google_context_window(model: str, api_key: str | None = None) -> int | N
 
     Args:
         model: The Gemini model name (e.g. ``models/gemini-3.5-flash``).
-        api_key: Google API key. If ``None``, reads ``GOOGLE_API_KEY`` env var.
+        api_key: Google API key (resolved from the encrypted DB storage by
+            the caller).
 
     Returns:
         The context window in tokens, or ``None`` if it cannot be resolved.
     """
-    key = api_key or os.getenv("GOOGLE_API_KEY", "").strip()
+    key = (api_key or "").strip()
     if not key:
         return None
 
@@ -466,16 +470,17 @@ def get_groq_context_window(model: str, api_key: str | None = None) -> int | Non
 
     Args:
         model: The Groq model ID.
-        api_key: Groq API key. If ``None``, reads ``GROQ_API_KEY`` from env.
+        api_key: Groq API key (resolved from the encrypted DB storage by
+            the caller).
 
     Returns:
         The context window in tokens, or ``None`` if it cannot be resolved.
     """
     import requests
 
-    key = api_key or os.getenv("GROQ_API_KEY")
-    if not key:
+    if not api_key:
         return None
+    key = api_key
     url = f"https://api.groq.com/openai/v1/models/{model}"
     headers = {
         "Authorization": f"Bearer {key}",
@@ -564,7 +569,9 @@ def ensure_context_window(agent, model: str) -> int | None:
         elif provider.upper() == "OPENROUTER":
             cw = get_openrouter_context_window(model)
         else:
-            cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
+            from backend.agent.utils import provider_keys
+
+            cw = get_groq_context_window(model, provider_keys.get_key("GROQ"))
     except Exception as e:
         log_error(str(e), source="model_resolver.py:ensure_context_window")
         cw = None

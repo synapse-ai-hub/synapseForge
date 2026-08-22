@@ -3,8 +3,13 @@
 Abstracts ChromaDB operations behind a simple interface. If the engine is
 switched later (e.g. pgvector), only this file needs to change.
 
-The embedding model (SentenceTransformer) is loaded once at initialization
-and kept in memory to avoid per-operation reload latency.
+The embedding model runs on OpenRouter (``liquid/lfm-2.5-embedding-350m:free``)
+through the OpenAI-compatible ``/api/v1/embeddings`` endpoint, so no local
+model is downloaded or kept in memory. The same function is used to index
+documents and to embed queries (Chroma calls it in both paths). The
+OpenRouter API key is resolved from the encrypted DB storage
+(``provider_keys``) — without it the VectorDB cannot be instantiated and
+RAG stays disabled.
 
 Typical usage::
 
@@ -22,13 +27,78 @@ import logging
 from typing import Any
 
 import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+from chromadb import Documents, EmbeddingFunction, Embeddings
 
+from backend.agent.utils import provider_keys
 from backend.agent.utils.config_dir import get_knowledge_dir
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "all-MiniLM-L6-v2"
+_DEFAULT_MODEL = "liquid/lfm-2.5-embedding-350m:free"
+_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
+_BATCH_SIZE = 32  # texts per embeddings request
+
+
+class OpenRouterEmbeddingFunction(EmbeddingFunction[Documents]):
+    """Chroma embedding function backed by the OpenRouter embeddings API.
+
+    Sends texts in batches to ``POST /api/v1/embeddings`` using an
+    OpenAI-compatible payload and returns the resulting vectors.
+
+    Attributes:
+        model_name: OpenRouter embedding model identifier.
+        batch_size: Maximum number of texts sent per request.
+    """
+
+    def __init__(self, api_key: str, model_name: str = _DEFAULT_MODEL) -> None:
+        """Initialize the embedding function.
+
+        Args:
+            api_key: OpenRouter API key (resolved from the encrypted DB).
+            model_name: OpenRouter embedding model identifier.
+        """
+        self.api_key = api_key
+        self.model_name = model_name
+
+    def __call__(self, input: Documents) -> Embeddings:
+        """Embed a batch of documents.
+
+        Args:
+            input: List of texts to embed.
+
+        Returns:
+            A list of embedding vectors (one per input text).
+
+        Raises:
+            RuntimeError: If the OpenRouter API call fails.
+        """
+        import requests
+
+        vectors: list[list[float]] = []
+        try:
+            for start in range(0, len(input), _BATCH_SIZE):
+                batch = list(input[start:start + _BATCH_SIZE])
+                resp = requests.post(
+                    _EMBEDDINGS_URL,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"model": self.model_name, "input": batch},
+                    timeout=120,
+                )
+                resp.raise_for_status()
+                data = resp.json().get("data", [])
+                if len(data) != len(batch):
+                    raise RuntimeError(
+                        f"OpenRouter devolvió {len(data)} embeddings para "
+                        f"{len(batch)} textos."
+                    )
+                vectors.extend(item["embedding"] for item in data)
+        except Exception as e:
+            logger.error("Error llamando a OpenRouter embeddings: %s", e)
+            raise RuntimeError(f"No se pudieron generar los embeddings: {e}") from e
+        return vectors
 
 
 class VectorDB:
@@ -36,26 +106,34 @@ class VectorDB:
 
     Attributes:
         chroma_path: Absolute path to the persistent Chroma directory.
-        embed_func: Embedding function (SentenceTransformer), loaded once at init.
+        embed_func: Embedding function (OpenRouter API), created once at init.
         _client: ``chromadb.PersistentClient`` instance.
     """
 
     def __init__(self, collection_name: str | None = None) -> None:
-        """Initialize the persistent ChromaDB client and the embedding model.
+        """Initialize the persistent ChromaDB client and the embedding function.
 
         Args:
             collection_name: If provided, creates/gets that collection and
                 stores it as ``self.collection``.
+
+        Raises:
+            ValueError: If no OpenRouter API key is stored in the DB (RAG
+                requires it to generate embeddings).
         """
         self.chroma_path = get_knowledge_dir()
         self.chroma_path.mkdir(parents=True, exist_ok=True)
 
-        self._client = chromadb.PersistentClient(path=str(self.chroma_path))
+        api_key = provider_keys.get_key("OPENROUTER")
+        if not api_key:
+            raise ValueError(
+                "No hay una API key de OpenRouter configurada. Cargala en "
+                "Configuración → Providers: es necesaria para la fuente de "
+                "conocimiento."
+            )
+        self.embed_func = OpenRouterEmbeddingFunction(api_key=api_key)
 
-        self.embed_func = SentenceTransformerEmbeddingFunction(
-            model_name=_DEFAULT_MODEL,
-            device="cpu",
-        )
+        self._client = chromadb.PersistentClient(path=str(self.chroma_path))
 
         self.collection = None
         if collection_name:
@@ -354,10 +432,11 @@ _db_singleton: VectorDB | None = None
 def get_vector_db() -> VectorDB:
     """Return the process-wide shared VectorDB instance.
 
-    The embedding model is loaded once (pre-loaded at app startup via
-    ``main.py``) and shared by every consumer (RAG routes, the ``rag`` tool
-    and the AgentInfo listing). It is never killed, so the first use of RAG
-    does not pay the model-load cost.
+    The embedding function (OpenRouter API) is created once and shared by
+    every consumer (RAG routes, the ``rag`` tool and the AgentInfo listing).
+    It is never killed, so repeated RAG calls reuse the same client. Raises
+    ``ValueError`` if no OpenRouter key is configured — callers should
+    surface that message to the user.
 
     Returns:
         The shared VectorDB instance.

@@ -1139,8 +1139,9 @@ class TelegramBot:
         except Exception:
             provider = "LOCAL"
         if provider.upper() == 'GROQ':
-            import os as _os
-            models = get_groq_models(_os.getenv("GROQ_API_KEY", "").strip())
+            from backend.agent.utils import provider_keys as _pk
+
+            models = get_groq_models(_pk.get_key("GROQ"))
         elif provider.upper() == 'OPENROUTER':
             models = get_openrouter_models()
         else:

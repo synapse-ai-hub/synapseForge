@@ -4,12 +4,10 @@ This module initializes the FastAPI application, configures CORS middleware,
 mounts route handlers, and provides a health check endpoint.
 """
 
-import json
 import logging
 import os
 import sys
 import time
-import urllib.request
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -171,44 +169,6 @@ async def _heartbeat_watchdog() -> None:
             os._exit(0)
 
 # ---------------------------------------------------------------------------
-# Model resolution at startup (via the config endpoint, not a helper)
-# ---------------------------------------------------------------------------
-async def _resolve_model_at_startup() -> None:
-    """Resolve the default model, preferring any persisted selection.
-
-    Runs as a background task after the server is listening. If a model was
-    already resolved via persisted config (loaded in lifespan), we return early.
-    Otherwise we call the config endpoint (``GET /api/config/models``) to
-    perform the normal resolution and persist the resulting default so it
-    survives the next restart.
-    """
-    await asyncio.sleep(2)
-
-    # If a model was already resolved (persisted), we are done.
-    if agent is not None and agent._resolved_model is not None:
-        logger.info("Modelo ya resuelto (persistido): %s", agent._resolved_model)
-        return
-
-    # Otherwise resolve via the config endpoint and persist the default.
-    host = os.getenv("HOST", "127.0.0.1")
-    port = os.getenv("PORT", "8000")
-    url = f"http://{host}:{port}/api/config/models"
-    try:
-        def _get() -> dict:
-            with urllib.request.urlopen(url, timeout=30) as resp:
-                return json.loads(resp.read().decode())
-
-        data = await asyncio.to_thread(_get)
-        logger.info("Model resolved at startup via endpoint: %s", data.get("model"))
-
-        if session_manager is not None and data.get("model"):
-            session_manager.set_config("selected_model", data.get("model"))
-    except Exception as exc:
-        log_error(str(exc), source="main.py:_resolve_model_at_startup(model)")
-        logger.warning("Failed to resolve model at startup via %s: %s", url, exc)
-
-
-# ---------------------------------------------------------------------------
 # FastAPI application
 # ---------------------------------------------------------------------------
 @asynccontextmanager
@@ -249,8 +209,9 @@ async def lifespan(app: FastAPI):
         log_error(str(exc), source="main.py:lifespan(context_window)")
         logger.warning("Failed to schedule context window detection: %s", exc)
 
-    # Resolve the model via the config endpoint once the server is up (fallback if no persisted model)
-    asyncio.create_task(_resolve_model_at_startup())
+    # No default model is resolved automatically: the user picks provider +
+    # model from the UI and applies it. A previously persisted selection was
+    # already restored by ``load_persisted_config`` above.
 
     # Start heartbeat watchdog (desktop app: exit if frontend closes)
     asyncio.create_task(_heartbeat_watchdog())
@@ -272,17 +233,24 @@ async def lifespan(app: FastAPI):
 
     logger.info("<descripcion>Nombre del proyecto</descripcion> API started successfully.")
 
-    # Pre-load the RAG embedding model once at startup. It is shared and
-    # never killed, so the first use of RAG (e.g. listing collections in
-    # AgentInfo) does not pay the model-load cost.
+    # Pre-create the RAG vector DB (OpenRouter embeddings) once at startup,
+    # only if the OpenRouter key is configured. It is shared and never
+    # killed, so the first use of RAG does not pay the init cost.
     try:
+        from backend.agent.utils import provider_keys
         from backend.agent.utils.vector_db import get_vector_db
 
-        await asyncio.to_thread(get_vector_db)
-        logger.info("RAG embedding model loaded at startup.")
+        if provider_keys.get_key("OPENROUTER"):
+            await asyncio.to_thread(get_vector_db)
+            logger.info("RAG vector DB initialized at startup.")
+        else:
+            logger.warning(
+                "Sin API key de OpenRouter — la fuente de conocimiento "
+                "(RAG) queda deshabilitada hasta configurarla."
+            )
     except Exception as exc:
         log_error(str(exc), source="main.py:lifespan(vector_db)")
-        logger.warning("Failed to pre-load RAG embedding model: %s", exc)
+        logger.warning("Failed to pre-init RAG vector DB: %s", exc)
 
     yield
     try:

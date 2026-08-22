@@ -39,9 +39,9 @@
 
 - **Scaffolding completo**: `synapseforge init` crea el proyecto desde un template embebido con GUI interactiva — estructura, venv, logos, `.ico`, colores y reemplazo de placeholders.
 - **Distribución autocontenida**: `synapseforge launch` genera un zip listo para entregar (PyInstaller + Python embebido + frontend compilado).
-- **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini y OpenRouter. API keys cloud gestionadas desde el panel de configuración y guardadas cifradas en SQLite (variables de entorno como fallback).
+- **Multi-provider LLM**: LOCAL (Ollama, opcional), Groq, Google Gemini y OpenRouter. API keys cloud gestionadas desde el panel de configuración, validadas contra la API de cada proveedor y guardadas cifradas en SQLite. Pantalla inicial de configuración saltable: sin ningún provider configurado la app queda bloqueada hasta cargar una key.
 - **Framework de agentes completo**: AgentLoop con tool calling nativo, tools registry (nativas + externas + MCP), permisos por agente (allow/deny/ask + wildcards), skills y sub-agentes con delegación por `task`.
-- **RAG**: colecciones vectoriales en ChromaDB con embeddings locales. Subida de archivos y páginas web, chunking con overlap y búsqueda por similitud coseno.
+- **RAG**: colecciones vectoriales en ChromaDB con embeddings en OpenRouter (`liquid/lfm-2.5-embedding-350m:free`). Subida de archivos y páginas web, chunking con overlap y búsqueda por similitud coseno. Requiere API key de OpenRouter (capa gratis).
 - **Creación asistida por LLM**: interfaces standalone para crear skills, tools y agentes mediante entrevista iterativa + agente creador, con selección efímera de modelo cloud por tarea.
 - **Telegram como control remoto**: el bot emite eventos al event bus y el frontend ejecuta el mismo flujo de chat. Comandos de sesión, modelo/proveedor y creación de skills/RAG.
 - **Archivos de contexto**: subida de documentos (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) → extracción de texto → inyección en el system prompt del agente.
@@ -72,6 +72,8 @@ cd mi-proyecto
 synapseforge run .
 ```
 
+Al primer arranque aparece la pantalla de configuración: cargá una API key de algún proveedor cloud ([OpenRouter](https://openrouter.ai/settings/keys), [Google Gemini](https://aistudio.google.com/apikey) o [Groq](https://console.groq.com/keys) — todos con capa gratis) y aprieta **Aplicar**. Ollama es opcional (solo si querés modelos locales). La **fuente de conocimiento** necesita específicamente una key de OpenRouter.
+
 ---
 
 ## CLI — Comandos
@@ -79,12 +81,12 @@ synapseforge run .
 | Comando | Descripción |
 |---------|-------------|
 | `synapseforge init [dir]` | Crea proyecto desde template con GUI interactiva |
-| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed]` | Build de distribución autocontenida (zip) |
+| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build de distribución autocontenida (zip). Con `-c` compila el backend a `.pyc`; por defecto empaqueta los `.py` |
 | `synapseforge colors [dir]` | Editor GUI para `frontend/public/colors.json` (cambios en vivo sin rebuild) |
 | `synapseforge run [dir]` | Levanta uvicorn --reload + npm run dev + abre browser |
 | `synapseforge --help` | Ayuda global |
 
-- **`init`**: pipeline de 11 pasos (input GUI → verificación de modelos Ollama → template → venv → deps → logos → `.ico` → colores → config → placeholders).
+- **`init`**: pipeline de 10 pasos (input GUI → template → venv → deps → logos → `.ico` → colores → config → placeholders).
 - **`launch`**: compila backend (PyInstaller), build del frontend, descarga Python embebido, genera launcher nativo y empaqueta todo en un zip.
 - **`run`**: requiere el venv activado (`VIRTUAL_ENV`). Ctrl+C mata ambos servidores.
 
@@ -195,11 +197,17 @@ parameters:
 
 ### Providers y modelos
 
-Los proveedores soportados son **LOCAL** (Ollama), **GROQ**, **GOOGLE** (Gemini) y **OPENROUTER**. Las API keys cloud se gestionan desde el panel de Configuración (**Providers**) y se guardan cifradas en la SQLite interna; las variables de entorno (`GROQ_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`) funcionan como fallback. Un provider solo aparece disponible si tiene key configurada — para LOCAL basta con que Ollama responda.
+Los proveedores soportados son **LOCAL** (Ollama, opcional), **GROQ**, **GOOGLE** (Gemini) y **OPENROUTER**. Las API keys cloud se gestionan desde el panel de Configuración (**Providers**): se validan contra la API de cada proveedor al guardarlas y se almacenan cifradas en la SQLite interna — las variables de entorno no se consultan. Al guardar una key válida, el provider queda disponible de inmediato en los selectores; un provider solo aparece si tiene key guardada — para LOCAL basta con que Ollama responda.
 
-El modelo por defecto de LOCAL es `qwen3.5:4b` (instalado por `init` si falta). La ventana de contexto en tokens del modelo seleccionado se detecta y persiste automáticamente, y el frontend muestra un gauge con el porcentaje usado.
+No hay modelo por defecto: al primer arranque (o si no hay ningún provider disponible) aparece la pantalla inicial de configuración, saltable. Sin ningún provider configurado el chat y los creadores quedan bloqueados hasta cargar una key válida.
+
+La ventana de contexto en tokens del modelo seleccionado se detecta y persiste automáticamente, y el frontend muestra un gauge con el porcentaje usado.
 
 En las pantallas de creación (skill, tool y agente) se puede elegir con qué modelo cloud se genera el elemento (proveedor + modelo + Aplicar). La selección es efímera: vale solo para esa tarea mientras la pestaña está abierta.
+
+### Fuente de conocimiento (RAG)
+
+Las colecciones RAG usan embeddings en la nube vía OpenRouter (`liquid/lfm-2.5-embedding-350m:free`, capa gratis) — no se instala ningún modelo local de embeddings. Para usar esta sección hace falta una API key de OpenRouter cargada en **Providers**: sin ella, la fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
 
 ---
 

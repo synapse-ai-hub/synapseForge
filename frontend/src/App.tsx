@@ -6,6 +6,7 @@ import {
 } from "./chat/ChatInterface";
 import { HistoryModal } from "./components/HistoryModal";
 import { MetricsModal } from "./components/MetricsModal";
+import { SetupScreen } from "./components/SetupScreen";
 import { Sidebar } from "./components/Sidebar";
 import sessionService, {
   type SessionMessage,
@@ -124,6 +125,24 @@ function App() {
   );
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramCountdown, setTelegramCountdown] = useState<number | null>(null);
+
+  /* Initial setup screen: shown while no provider is available
+   * (no cloud API key stored and Ollama not responding). */
+  const [setupState, setSetupState] = useState<"loading" | "setup" | "ready">("loading");
+
+  const checkProviders = useCallback(async () => {
+    try {
+      const data = await configService.getProviders();
+      setSetupState((data.providers || []).length > 0 ? "ready" : "setup");
+    } catch {
+      // Backend unreachable: show the normal app (it surfaces its own errors).
+      setSetupState("ready");
+    }
+  }, []);
+
+  useEffect(() => {
+    checkProviders();
+  }, [checkProviders]);
 
   const initialLoadRef = useRef(true);
   const chatRef = useRef<ChatInterfaceHandle>(null);
@@ -333,6 +352,20 @@ const handleTelegramToggle = useCallback((val: boolean) => {
     };
     return () => es.close();
   }, [handleNewChat, handleSessionTitleUpdate, handleSelectSession]);
+
+  if (setupState === "loading") {
+    return <div className="h-screen bg-app-bg" />;
+  }
+
+  if (setupState === "setup") {
+    return (
+      <SetupScreen
+        onDone={() => {
+          checkProviders();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="h-screen bg-app-bg flex">

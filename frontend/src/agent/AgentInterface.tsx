@@ -10,7 +10,7 @@ import { flushSync } from "react-dom";
 import { Send, Square, Download } from "lucide-react";
 import { MessageRow } from "../components/chatBlocks";
 import { CreateModelSelector } from "../components/CreateModelSelector";
-import type { Message, ContentBlock } from "../../App";
+import type { Message, ContentBlock } from "../App";
 import { saveFileWithPicker, fetchConversationMarkdown } from "../utils/conversationExport";
 
 const API = (import.meta.env.VITE_URL_BASE || "http://localhost:8000") + "/api";
@@ -39,6 +39,8 @@ export function AgentInterface() {
   /* Selección efímera de modelo cloud para esta tarea (no se persiste) */
   const [createModel, setCreateModel] = useState<string | null>(null);
   const [createProvider, setCreateProvider] = useState<string | null>(null);
+  /* Sin proveedores cloud configurados: la creación queda bloqueada */
+  const [noProviders, setNoProviders] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const historialRef = useRef<HistorialMsg[]>([]);
@@ -507,6 +509,13 @@ export function AgentInterface() {
               </div>
             )}
 
+            {noProviders && (
+              <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+                No hay proveedores configurados. Configur&aacute; una API key en la
+                app principal (Configuraci&oacute;n &rarr; Providers) para poder crear agentes.
+              </div>
+            )}
+
             <form onSubmit={handleSetupSubmit} className="space-y-4">
               <div>
                 <label htmlFor="agent-name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -552,11 +561,13 @@ export function AgentInterface() {
                   setCreateModel(m);
                   setCreateProvider(p);
                 }}
+                onProvidersChange={(count) => setNoProviders(count === 0)}
               />
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90"
+                disabled={noProviders}
+                className="w-full bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Comenzar
               </button>

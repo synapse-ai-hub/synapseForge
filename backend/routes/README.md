@@ -93,7 +93,7 @@ Elimina **todas** las conversaciones (tabla `conversaciones` completa). Operaci�
 
 #### `GET /api/config/providers`
 
-Lista los proveedores disponibles (Ollama si `ollama list` responde, Groq si hay `GROQ_API_KEY` configurada).
+Lista los proveedores disponibles (Ollama si `ollama list` responde; cada provider cloud solo si tiene key válida guardada y cifrada en la SQLite interna — las variables de entorno no se consultan).
 
 **Respuesta:** `JSONResponse` `{status, providers: string[]}`.
 
@@ -104,7 +104,7 @@ Lista los modelos disponibles según `provider` (query param `provider=LOCAL|API
 - `LOCAL` → ejecuta `ollama list`.
 - `API` → consulta la API de Groq.
 
-Si aún no hay un modelo seleccionado, se resuelve y persiste el **default** del proveedor: para `LOCAL` es **`qwen3.5:4b`** si está en la lista (acepta tools), con fallback al primer modelo; para `API` es el primer modelo de Groq. El default se guarda en SQLite (`config_kv`) y se usa desde ahí.
+No hay modelo por defecto automático: si no hay ninguno seleccionado, la respuesta trae la lista y el usuario elige proveedor + modelo y aplica desde el frontend (pantalla inicial de configuración saltable). Si hay un modelo persistido en SQLite (`config_kv`) de una sesión anterior, se usa ese.
 
 **Respuesta:** `JSONResponse` `{status, provider, models: string[], model: string}`.
 

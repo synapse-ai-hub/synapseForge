@@ -12,6 +12,8 @@ interface ProviderEntry {
 interface CreateModelSelectorProps {
   /** Called when the user applies a (model, provider) selection. */
   onApply: (model: string, provider: string) => void;
+  /** Optional: reports how many cloud providers are available after loading. */
+  onProvidersChange?: (count: number) => void;
 }
 
 /**
@@ -21,7 +23,7 @@ interface CreateModelSelectorProps {
  * ephemeral — it lives while the tab is open and is sent with each
  * creation request; nothing is persisted.
  */
-export function CreateModelSelector({ onApply }: CreateModelSelectorProps) {
+export function CreateModelSelector({ onApply, onProvidersChange }: CreateModelSelectorProps) {
   const [providers, setProviders] = useState<ProviderEntry[]>([]);
   const [provider, setProvider] = useState("");
   const [models, setModels] = useState<string[]>([]);
@@ -42,6 +44,7 @@ export function CreateModelSelector({ onApply }: CreateModelSelectorProps) {
           (p: ProviderEntry) => p.provider.toUpperCase() !== "LOCAL",
         );
         setProviders(cloud);
+        onProvidersChange?.(cloud.length);
       } catch {
         if (!cancelled) setError("No se pudieron cargar los proveedores.");
       }

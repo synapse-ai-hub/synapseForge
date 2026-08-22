@@ -63,6 +63,9 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       await configService.saveProviderKey(provider, apiKey);
       setKeyInputs((prev) => ({ ...prev, [provider]: "" }));
       await loadProviderKeys();
+      // Refresh providers/models so a newly validated provider becomes
+      // selectable immediately.
+      await load();
     } catch (err) {
       setKeysError(err instanceof Error ? err.message : "Error guardando la API key.");
     } finally {
@@ -77,6 +80,8 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       setSavingKeyProvider(provider);
       await configService.deleteProviderKey(provider);
       await loadProviderKeys();
+      // Refresh providers so the removed provider disappears from the list.
+      await load();
     } catch (err) {
       setKeysError(err instanceof Error ? err.message : "Error eliminando la API key.");
     } finally {

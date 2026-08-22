@@ -78,7 +78,7 @@ function renderSubagentEvents(events: Record<string, SubagentEvent> | undefined)
         const resultStr = typeof tr.result === "string"
           ? tr.result
           : JSON.stringify(tr.result, null, 2);
-        out += `- \`${tr.tool_name}\`:\n\`\`\`\n${escapeCodeBlock(resultStr)}\n\`\`\`\n`;
+        out += `- \`${tr.name}\`:\n\`\`\`\n${escapeCodeBlock(resultStr)}\n\`\`\`\n`;
       });
       out += "\n";
     }

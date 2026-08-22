@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { Database, Plus, Trash2, Upload, Link2, FolderOpen } from "lucide-react";
+import { configService } from "../services/configService";
 
 const API = (import.meta.env.VITE_URL_BASE || "http://localhost:8000") + "/api";
 
@@ -48,6 +49,25 @@ export function RagInterface() {
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [resultType, setResultType] = useState<"success" | "error" | null>(null);
 
+  /* ---- bloqueo: la fuente de conocimiento necesita la clave de OpenRouter ---- */
+  const [ragBlocked, setRagBlocked] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    configService
+      .getProviderKeys()
+      .then((data) => {
+        if (cancelled) return;
+        const openrouter = (data.keys || []).find((k) => k.provider === "OPENROUTER");
+        setRagBlocked(!(openrouter && openrouter.configured));
+      })
+      .catch(() => {
+        if (!cancelled) setRagBlocked(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /* ---- heartbeat (el watchdog del backend mata el server sin heartbeat) ---- */
   useEffect(() => {
     const interval = setInterval(() => {
@@ -84,6 +104,7 @@ export function RagInterface() {
   const handleCreate = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
+      if (ragBlocked) return;
       setCreateError(null);
       const name = newName.trim();
       if (!name) {
@@ -112,7 +133,7 @@ export function RagInterface() {
         setCreating(false);
       }
     },
-    [newName, newDescription, loadCollections],
+    [newName, newDescription, loadCollections, ragBlocked],
   );
 
   /* ---- eliminar colección ---- */
@@ -177,6 +198,7 @@ export function RagInterface() {
 
   /* ---- subir archivos ---- */
   const handleUploadFiles = useCallback(async () => {
+    if (ragBlocked) return;
     if (!selected || files.length === 0) return;
     setProcessing(true);
     setResultMsg(null);
@@ -212,10 +234,11 @@ export function RagInterface() {
     } finally {
       setProcessing(false);
     }
-  }, [selected, files, loadCollections]);
+  }, [selected, files, loadCollections, ragBlocked]);
 
   /* ---- agregar URL ---- */
   const handleAddUrl = useCallback(async () => {
+    if (ragBlocked) return;
     const trimmed = url.trim();
     if (!selected || !trimmed) return;
     setProcessing(true);
@@ -243,7 +266,7 @@ export function RagInterface() {
     } finally {
       setProcessing(false);
     }
-  }, [selected, url, loadCollections]);
+  }, [selected, url, loadCollections, ragBlocked]);
 
   /* ---- render ---- */
   return (
@@ -301,7 +324,7 @@ export function RagInterface() {
             )}
             <button
               type="submit"
-              disabled={creating}
+              disabled={creating || ragBlocked === true}
               className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-50"
             >
               <Plus size={14} />
@@ -353,6 +376,22 @@ export function RagInterface() {
           {error && (
             <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
               {error}
+            </div>
+          )}
+
+          {ragBlocked && (
+            <div className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 leading-relaxed">
+              La <strong>fuente de conocimiento</strong> necesita una clave de{" "}
+              <strong>OpenRouter</strong> para funcionar. Pod&eacute;s sacarla gratis en{" "}
+              <a
+                href="https://openrouter.ai/settings/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-app-primary underline"
+              >
+                openrouter.ai/settings/keys
+              </a>{" "}
+              y cargarla en la app principal (Configuraci&oacute;n &rarr; Providers). Mientras no la cargues, esta secci&oacute;n queda deshabilitada.
             </div>
           )}
 
@@ -439,7 +478,7 @@ export function RagInterface() {
                 <button
                   type="button"
                   onClick={handleUploadFiles}
-                  disabled={processing || files.length === 0}
+                  disabled={processing || files.length === 0 || ragBlocked === true}
                   className="w-full bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-50"
                 >
                   {processing ? "Procesando..." : "Subir archivos"}
@@ -463,7 +502,7 @@ export function RagInterface() {
                   <button
                     type="button"
                     onClick={handleAddUrl}
-                    disabled={processing || !url.trim()}
+                    disabled={processing || !url.trim() || ragBlocked === true}
                     className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors border border-gray-300 disabled:opacity-50"
                   >
                     Agregar

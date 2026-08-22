@@ -3,7 +3,7 @@
 Installed via ``pyproject.toml`` entry point::
 
     synapseforge init [target_dir]
-    synapseforge launch [-p PATH] -n NAME [--skip-frontend] [--no-embed]
+    synapseforge launch [-p PATH] -n NAME [--skip-frontend] [--no-embed] [-c]
     synapseforge colors [project_dir]
     synapseforge run [project_dir]
 
@@ -13,6 +13,7 @@ Examples:
     synapseforge launch -n mi-app        # Build distribution zip (current dir)
     synapseforge launch -p ./mi-proyecto -n mi-app  # Build from specific project
     synapseforge launch -n mi-app --skip-frontend   # Skip frontend build
+    synapseforge launch -n mi-app -c                # Compile backend to .pyc
     synapseforge colors                  # Edit colors in current project
     synapseforge colors ./mi-proyecto    # Edit colors in specific project
     synapseforge run                     # Start dev servers (uvicorn + npm)
@@ -96,6 +97,7 @@ Arguments:
 Options:
   --skip-frontend   Skip npm build, use existing frontend/dist/
   --no-embed        Use existing venv instead of downloading embedded Python
+  -c, --compile     Compile backend/ to .pyc (default: ship .py sources)
 
 Output: pipeline/dist/<exe_name>.zip containing installer + portable version""",
     )
@@ -120,6 +122,12 @@ Output: pipeline/dist/<exe_name>.zip containing installer + portable version""",
         "--no-embed",
         action="store_true",
         help="Use existing venv instead of downloading embedded Python",
+    )
+    launch_p.add_argument(
+        "-c",
+        "--compile",
+        action="store_true",
+        help="Compile backend/ to .pyc (default: ship .py sources as-is)",
     )
 
     # ── colors ──────────────────────────────────────────────────────────
@@ -184,7 +192,7 @@ Requirements:
         if args.command == "init":
             _init(args.target_dir)
         elif args.command == "launch":
-            _launch(args.path, args.name, args.skip_frontend, args.no_embed)
+            _launch(args.path, args.name, args.skip_frontend, args.no_embed, args.compile)
         elif args.command == "colors":
            _colors(args.project_dir)
         elif args.command == "run":
@@ -214,7 +222,11 @@ def _init(target_dir: str) -> None:
 
 
 def _launch(
-    repo_path: str, exe_name: str, skip_frontend: bool, no_embed: bool
+    repo_path: str,
+    exe_name: str,
+    skip_frontend: bool,
+    no_embed: bool,
+    compile_backend: bool = False,
 ) -> None:
     """Import and run pipeline.launch.forge.build()."""
     try:
@@ -227,6 +239,7 @@ def _launch(
         exe_name,
         skip_frontend=skip_frontend,
         use_embed=not no_embed,
+        compile_backend=compile_backend,
     )
 
 

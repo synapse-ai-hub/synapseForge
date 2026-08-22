@@ -11,7 +11,12 @@ from dotenv import load_dotenv
 from typing import Any, Dict, Generator
 import asyncio
 from groq import AsyncGroq
-from ollama import AsyncClient
+try:
+    # Optional dependency: the LOCAL (Ollama) provider needs the ``ollama``
+    # package, but the app must start without it installed.
+    from ollama import AsyncClient
+except ImportError:
+    AsyncClient = None
 from google import genai
 from google.genai import types
 from openai import AsyncOpenAI
@@ -102,13 +107,13 @@ class Agent():
     The provider and model are resolved at runtime (see
     ``backend/agent/utils/model_resolver.py``) and set through the
     ``POST /api/config/models/select`` endpoint; they are not read from
-    environment variables. API keys are resolved from the encrypted DB
-    storage first (see ``provider_keys``), falling back to their
-    environment variables, and are used to build the cloud clients.
+    environment variables. API keys are resolved exclusively from the
+    encrypted DB storage (see ``provider_keys``) and are used to build the
+    cloud clients.
 
     ## Attributes:
         - __api_key (str): API key used to authenticate with the Groq client
-          (DB storage first, ``GROQ_API_KEY`` env var fallback).
+          (encrypted DB storage only).
         - __google_api_key (str): API key for the Google GenAI client.
         - __openrouter_api_key (str): API key for the OpenRouter client.
         - provider (str | None): ``GROQ``, ``LOCAL``, ``GOOGLE`` or
@@ -130,10 +135,10 @@ class Agent():
           completion_time, total_time).
 
     ## Notes:
-        - For provider ``GROQ``: requires a Groq API key (DB or env).
-        - For provider ``GOOGLE``: requires a Google API key (DB or env).
+        - For provider ``GROQ``: requires a Groq API key stored in the DB.
+        - For provider ``GOOGLE``: requires a Google API key stored in the DB.
         - For provider ``OPENROUTER``: requires an OpenRouter API key
-          (DB or env).
+          stored in the DB.
         - For provider ``LOCAL``: requires ``ollama`` installed
           (``pip install ollama``) and the service running.
         - Methods that call the API catch exceptions and print errors rather
@@ -168,7 +173,7 @@ class Agent():
         '''
         super().__init__()
 
-        # Resolve API keys: encrypted DB storage first, env var fallback.
+        # Resolve API keys: encrypted DB storage only (no env fallback).
         self.__api_key = provider_keys.resolve_api_key('GROQ')
         self.__google_api_key = provider_keys.resolve_api_key('GOOGLE')
         self.__openrouter_api_key = provider_keys.resolve_api_key('OPENROUTER')
@@ -185,7 +190,13 @@ class Agent():
             self.groq_client = None
 
         try:
-            self.ollama_client = AsyncClient(host='http://localhost:11434')
+            # ``ollama`` is an optional dependency: if the package is not
+            # installed the LOCAL provider is simply unavailable.
+            self.ollama_client = (
+                AsyncClient(host='http://localhost:11434')
+                if AsyncClient is not None
+                else None
+            )
         except Exception as e:
             log_error(str(e), source="agent.py:__init__(ollama)")
             self.ollama_client = None
@@ -227,9 +238,8 @@ class Agent():
     def rebuild_provider_client(self, provider: str) -> dict:
         """Rebuild the LLM client for a provider with the current API key.
 
-        Resolves the key from the encrypted DB storage first, falling back
-        to the corresponding environment variable, then re-instantiates the
-        client so a key saved at runtime takes effect without restarting
+        Resolves the key from the encrypted DB storage, then re-instantiates
+        the client so a key saved at runtime takes effect without restarting
         the app.
 
         Args:

@@ -68,36 +68,6 @@ _verbose_mode: bool = False
 Set via ``POST /config/verbose-mode``."""
 
 
-_LOCAL_DEFAULT_MODEL = "qwen3.5:4b"
-"""Default model for the LOCAL (Ollama) provider.
-
-Used only on first initialization (when no model is persisted yet). Once a
-model is selected it is stored in the SQLite config and used from there.
-"""
-
-
-def _default_model_for_provider(provider: str, models: list[str]) -> str | None:
-    """Return the default model for the given provider.
-
-    - ``LOCAL`` (Ollama): ``qwen3.5:4b`` if present in the ``ollama list``
-      output (it accepts tools); otherwise falls back to the first model.
-    - ``GROQ``: first available model from the Groq model list,
-      avoiding a hard-coded model if the API returns real choices.
-
-    Args:
-        provider: ``"LOCAL"`` or ``"GROQ"``.
-        models: The list of models already resolved for that provider.
-
-    Returns:
-        The default model string, or ``None`` if no models are available.
-    """
-    if not models:
-        return None
-    if provider.upper() == "LOCAL" and _LOCAL_DEFAULT_MODEL in models:
-        return _LOCAL_DEFAULT_MODEL
-    return models[0]
-
-
 def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
     """Resolve the model's context window, cache it and persist it in one place.
 
@@ -123,7 +93,9 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
         elif provider.upper() == "OPENROUTER":
             cw = get_openrouter_context_window(model)
         else:
-            cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
+            from backend.agent.utils import provider_keys
+
+            cw = get_groq_context_window(model, provider_keys.get_key("GROQ"))
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:_detect_and_persist_context_window")
         logger.warning("No se pudo detectar la context window de %s: %s", model, exc)
@@ -392,14 +364,21 @@ async def list_provider_keys() -> JSONResponse:
 
 @router.put("/providers/{provider}/key")
 async def save_provider_key(provider: str, data: dict[str, Any]) -> JSONResponse:
-    """Store (encrypted) the API key for a provider and rebuild its client.
+    """Validate, store (encrypted) and activate the API key for a provider.
 
-    Body: ``{"api_key": "..."}``. The key is encrypted with Fernet before
-    being persisted in the ``provider_api_keys`` table.
+    Body: ``{"api_key": "..."}``. The key is first validated against the
+    provider's live API; if invalid it is rejected (400) and nothing is
+    stored. On success the key is encrypted with Fernet, persisted in the
+    ``provider_api_keys`` table, the provider client is rebuilt and the
+    providers cache is refreshed so the new provider becomes selectable
+    immediately.
     """
     from backend.agent.utils import provider_keys
 
     api_key = (data or {}).get("api_key", "")
+    validation = await asyncio.to_thread(provider_keys.validate_key, provider, api_key)
+    if validation.get("status") != "success":
+        return JSONResponse(status_code=400, content=validation)
     result = await asyncio.to_thread(provider_keys.save_key, provider, api_key)
     if result.get("status") != "success":
         return JSONResponse(status_code=400, content=result)
@@ -407,15 +386,22 @@ async def save_provider_key(provider: str, data: dict[str, Any]) -> JSONResponse
         rebuild = await asyncio.to_thread(agent.rebuild_provider_client, provider)
         if rebuild.get("status") != "success":
             return JSONResponse(status_code=500, content=rebuild)
-    return JSONResponse(status_code=200, content=result)
+    await asyncio.to_thread(refresh_providers_cache)
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "success",
+            "message": f"API key de {(provider or '').upper()} validada y guardada.",
+        },
+    )
 
 
 @router.delete("/providers/{provider}/key")
 async def delete_provider_key(provider: str) -> JSONResponse:
     """Remove the stored API key for a provider and rebuild its client.
 
-    After deletion the client falls back to the environment variable or
-    becomes unavailable.
+    After deletion the client becomes unavailable and the providers cache
+    is refreshed so the provider disappears from the selectable list.
     """
     from backend.agent.utils import provider_keys
 
@@ -426,6 +412,7 @@ async def delete_provider_key(provider: str) -> JSONResponse:
         rebuild = await asyncio.to_thread(agent.rebuild_provider_client, provider)
         if rebuild.get("status") != "success":
             return JSONResponse(status_code=500, content=rebuild)
+    await asyncio.to_thread(refresh_providers_cache)
     return JSONResponse(status_code=200, content=result)
 
 
@@ -465,10 +452,11 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     - ``LOCAL`` → models from the startup cache (Ollama).
     - ``GROQ`` → models from the startup cache (Groq).
 
-    If no model has been selected yet, resolves and stores the provider-
-    appropriate default from the available model list.
+    No model is selected automatically: the user must pick one and apply it
+    via ``POST /config/models/select``. The response carries ``model: null``
+    until then (a previously persisted selection is still honored).
 
-    Returns the list of model IDs/names and the selected (or default) model.
+    Returns the list of model IDs/names and the selected model (or null).
     """
     from dotenv import load_dotenv
 
@@ -500,24 +488,6 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     selected_model = None
     if agent is not None and previous_provider == provider:
         selected_model = agent._resolved_model
-
-    if selected_model is None:
-        default = _default_model_for_provider(provider, models)
-        if default is not None and agent is not None:
-            agent._resolved_model = default
-            selected_model = default
-            try:
-                if session_manager is not None:
-                    session_manager.set_config("selected_model", default)
-                    session_manager.set_config("selected_provider", provider)
-            except Exception as exc:
-                log_error(str(exc), source="backend/routes/config.py")
-                logger.warning("No se pudo persistir modelo/proveedor por defecto: %s", exc)
-            # Detect/persist the default model's context window in the
-            # background so this endpoint never blocks on network calls.
-            asyncio.create_task(
-                asyncio.to_thread(_detect_and_persist_context_window, default, provider)
-            )
 
     if agent is not None and session_manager is not None:
         try:

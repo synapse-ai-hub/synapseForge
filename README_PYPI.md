@@ -33,7 +33,7 @@
 The generated project includes:
 
 - **Agent Framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), sessions (SQLite WAL), per-agent permissions, skills and sub-agent delegation
-- **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini and OpenRouter — cloud API keys managed from the config panel, stored encrypted in SQLite
+- **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini and OpenRouter — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
 - **RAG knowledge base**: ChromaDB vector collections with local embeddings; upload files and web pages, cosine-similarity search
 - **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview, with ephemeral cloud model selection per task
 - **Telegram bot**: remote control that bridges messages to the agent through the web UI (commands, voice transcription, attachments)
@@ -58,6 +58,12 @@ Package dependencies: `colorthief` (color palette extraction) and `Pillow` (.ico
 | Node.js | 20+ | `launch` (frontend build), `run` (dev server) |
 | Docker | 20+ | Optional: containerized deployment |
 
+**LLM provider (required):** at least one cloud API key is needed to use the app — [OpenRouter](https://openrouter.ai/settings/keys), [Google Gemini](https://aistudio.google.com/apikey) or [Groq](https://console.groq.com/keys) all offer free tiers. Keys are loaded from the in-app config panel (**Providers**) on first launch; nothing else has to be installed.
+
+> The **knowledge base** feature specifically requires an **OpenRouter** key (free tier works). Without it, that section stays disabled — everything else runs normally.
+
+**Ollama (optional):** local models are supported but not required. Install Ollama only if you want to run models locally.
+
 ---
 
 ## Quick Start
@@ -69,7 +75,7 @@ synapseforge init my-project
 cd my-project
 ```
 
-Interactive GUI pipeline (project data, logos, colors). It verifies the required Ollama models and installs `qwen3.5:4b` if missing.
+Interactive GUI pipeline (project data, logos, colors).
 
 ### Run in development
 
@@ -85,7 +91,7 @@ Requires the project venv to be activated (`VIRTUAL_ENV`). Starts backend + fron
 synapseforge launch -p ./my-project -n "MyApp"
 ```
 
-Compiles the backend (PyInstaller), builds the frontend, bundles embedded Python and packages everything into a self-contained zip ready to deliver. Options: `--skip-frontend`, `--no-embed`.
+Builds the frontend, bundles embedded Python and packages everything into a self-contained zip ready to deliver. By default the backend ships as `.py` sources; pass `-c` / `--compile` to compile it to `.pyc`. Other options: `--skip-frontend`, `--no-embed`.
 
 ### Edit colors at runtime (no rebuild)
 
@@ -102,7 +108,7 @@ GUI editor for `frontend/public/colors.json`. Refresh the browser (F5) to see ch
 | Command | Description |
 |---------|-------------|
 | `synapseforge init [dir]` | Scaffold a project from bundled template (GUI) |
-| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed]` | Build self-contained distribution zip |
+| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build self-contained distribution zip (`-c` compiles backend to `.pyc`, default ships `.py`) |
 | `synapseforge colors [dir]` | Edit `frontend/public/colors.json` via GUI (live reload) |
 | `synapseforge run [dir]` | Start uvicorn + npm dev servers, open browser (venv must be active) |
 | `synapseforge --help` | Show global help |

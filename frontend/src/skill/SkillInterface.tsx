@@ -11,7 +11,7 @@ import { flushSync } from "react-dom";
 import { Send, Square, Paperclip, Download } from "lucide-react";
 import { FileChip, FileWarningBanner, MessageRow } from "../components/chatBlocks";
 import { CreateModelSelector } from "../components/CreateModelSelector";
-import type { Message, ContentBlock } from "../../App";
+import type { Message, ContentBlock } from "../App";
 import { saveFileWithPicker, fetchConversationMarkdown } from "../utils/conversationExport";
 
 const API = (import.meta.env.VITE_URL_BASE || "http://localhost:8000") + "/api";
@@ -58,6 +58,8 @@ export function SkillInterface() {
   /* Selección efímera de modelo cloud para esta tarea (no se persiste) */
   const [createModel, setCreateModel] = useState<string | null>(null);
   const [createProvider, setCreateProvider] = useState<string | null>(null);
+  /* Sin proveedores cloud configurados: la creación queda bloqueada */
+  const [noProviders, setNoProviders] = useState(false);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const historialRef = useRef<HistorialMsg[]>([]);
@@ -614,6 +616,13 @@ export function SkillInterface() {
               </div>
             )}
 
+            {noProviders && (
+              <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5">
+                No hay proveedores configurados. Configur&aacute; una API key en la
+                app principal (Configuraci&oacute;n &rarr; Providers) para poder crear skills.
+              </div>
+            )}
+
             <form onSubmit={handleSetupSubmit} className="space-y-4">
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -655,10 +664,12 @@ export function SkillInterface() {
                   setCreateModel(m);
                   setCreateProvider(p);
                 }}
+                onProvidersChange={(count) => setNoProviders(count === 0)}
               />
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50"
+                disabled={noProviders}
+                className="w-full bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Comenzar
               </button>

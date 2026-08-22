@@ -11,6 +11,8 @@ from typing import Any, Dict, Generator
 import asyncio
 from groq import AsyncGroq
 from ollama import AsyncClient
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,7 @@ class Agent():
         super().__init__()
 
         self.__api_key = os.getenv('GROQ_API_KEY')
+        self.__google_api_key = os.getenv('GOOGLE_API_KEY')
         self.provider: str | None = None
         self._resolved_model: str | None = None
         self._context_window: int | None = None
@@ -133,6 +136,12 @@ class Agent():
         except Exception as e:
             log_error(str(e), source="agent.py:__init__(ollama)")
             self.ollama_client = None
+            
+        try:
+            self.google_client = genai.Client(api_key=self.__google_api_key)
+        except Exception as e:
+            log_error(str(e), source="agent.py:__init__(google)")
+            self.google_client = None
 
         self.usage = None
 
@@ -435,6 +444,24 @@ class Agent():
                 prompt_tokens = response.prompt_eval_count or 0
                 total_tokens = (response.eval_count or 0) + (response.prompt_eval_count or 0)
                 total_time = round((response.total_duration or 0) / 1_000_000_000, 2)
+            elif effective_provider.upper() == 'GOOGLE':
+                # ── Google Gemini ──
+                # Convert messages to Gemini format
+                gemini_msgs = []
+                for m in msgs:
+                    role = "user" if m["role"] == "user" else "model"
+                    gemini_msgs.append({"role": role, "parts": [{"text": m["content"]}]})
+                
+                # Create chat
+                chat = self.google_client.chats.create(model=model, history=gemini_msgs[:-1])
+                response = await chat.send_message_async(gemini_msgs[-1]["parts"][0]["text"])
+                
+                output = response.text or ""
+                raw_tc = None # TODO: Implement tool calling for Gemini
+                completion_tokens = response.usage_metadata.candidates_token_count or 0
+                prompt_tokens = response.usage_metadata.prompt_token_count or 0
+                total_tokens = response.usage_metadata.total_token_count or 0
+                total_time = 0.0 # TODO: Get time
             else:
                 return validate_response(make_error_response(message=f"PROVIDER inválido: '{effective_provider}'"))
 

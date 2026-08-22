@@ -230,6 +230,30 @@ def resolve_model() -> str:
         selected = _prompt_user_selection(models, "Groq (API)")
         return selected or ""
 
+    elif provider.upper() == 'GOOGLE':
+        # Legacy: check if MODEL_NAME_4 is already set
+        legacy = os.getenv("MODEL_NAME_4", "").strip()
+        if legacy:
+            logger.info("Using legacy MODEL_NAME_4: %s", legacy)
+            return legacy
+
+        # Listar modelos de Google (Gemini)
+        from google import genai
+        api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+        if not api_key:
+            logger.error("No GOOGLE_API_KEY found in env")
+            return ""
+        
+        try:
+            client = genai.Client(api_key=api_key)
+            models = [m.name for m in client.models.list() if 'gemini' in m.name]
+            selected = _prompt_user_selection(models, "Google Gemini (API)")
+            return selected or ""
+        except Exception as e:
+            log_error(str(e), source="model_resolver.py:resolve_model(google)")
+            logger.error("Google API request failed: %s", e)
+            return ""
+
     else:
         logger.error("Unknown PROVIDER: %s", provider)
         return ""
@@ -340,6 +364,9 @@ def ensure_context_window(agent, model: str) -> int | None:
     try:
         if provider.upper() == "LOCAL":
             cw = get_ollama_context_window(model)
+        elif provider.upper() == "GOOGLE":
+            # Gemini context window is usually large, default to 1M for now
+            cw = 1000000
         else:
             cw = get_groq_context_window(model, os.getenv("GROQ_API_KEY", "").strip())
     except Exception as e:

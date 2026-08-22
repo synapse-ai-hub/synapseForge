@@ -915,18 +915,30 @@ async def post_create_agent_stream(req: CreateAgentRequest):
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
             return
 
-        # Obtener tools y skills disponibles para pasar al prompt
+        # Obtener tools, skills, subagentes, MCPs y RAG disponibles para pasar al prompt
         try:
             available_tools = _listar_tools_locales()
             available_skills = _listar_skills_locales()
+            available_subagents = _listar_agentes_locales()
+            # MCPs y RAG (necesitan helpers)
+            from backend.agent.utils.agent_helpers import get_mcp_list
+            available_mcps = await get_mcp_list()
+            from backend.agent.utils.rag_helpers import list_collections
+            available_rag = list_collections()
         except Exception as e:
-            logger.warning("No se pudieron listar tools/skills: %s", e)
+            logger.warning("No se pudieron listar recursos: %s", e)
             available_tools = []
             available_skills = []
+            available_subagents = []
+            available_mcps = []
+            available_rag = []
 
-        # Formatear texto de tools y skills disponibles
+        # Formatear texto de recursos disponibles
         tools_list_text = "\n".join(f"- {t['name']}: {t['description'][:150]}" for t in available_tools) if available_tools else "(ninguna creada todavía)"
         skills_list_text = "\n".join(f"- {s['name']}: {s['description'][:150]}" for s in available_skills) if available_skills else "(ninguna creada todavía)"
+        subagents_list_text = "\n".join(f"- {a['name']}: {a['description'][:150]}" for a in available_subagents) if available_subagents else "(ninguno creado todavía)"
+        mcp_list_text = "\n".join(f"- {m.get('label', 'mcp')}" for m in available_mcps) if available_mcps else "(ninguno configurado)"
+        rag_list_text = "\n".join(f"- {r}" for r in available_rag) if available_rag else "(ninguna colección creada)"
 
         # Escape { y } en inputs de usuario para evitar KeyError en format()
         desc_esc = descripcion.replace("{", "{{").replace("}", "}}")
@@ -939,6 +951,9 @@ async def post_create_agent_stream(req: CreateAgentRequest):
             mensajes=mensajes_esc,
             tools_disponibles=tools_list_text,
             skills_disponibles=skills_list_text,
+            subagentes_disponibles=subagents_list_text,
+            mcp_disponibles=mcp_list_text,
+            rag_disponibles=rag_list_text,
         )
 
         collected_content = ""

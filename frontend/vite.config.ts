@@ -22,6 +22,7 @@ export default defineConfig({
         skill: path.resolve(__dirname, "skill.html"),
         rag: path.resolve(__dirname, "rag.html"),
         tool: path.resolve(__dirname, "tool.html"),
+        agent: path.resolve(__dirname, "agent.html"),
       },
     },
   },

@@ -37,7 +37,7 @@ _project_root = os.path.dirname(os.path.dirname(_current_dir))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from backend.agent.utils.config_dir import get_skills_dir, get_tools_dir
+from backend.agent.utils.config_dir import get_agents_dir, get_skills_dir, get_tools_dir
 from backend.agent.utils.skills_helpers import (
     _copiar_referencias,
     _evaluar_si_existe,
@@ -53,10 +53,12 @@ router = APIRouter(prefix="/create", tags=["create"])
 
 _SKILLS_DIR = get_skills_dir()
 _TOOLS_DIR = get_tools_dir()
+_AGENTS_DIR = get_agents_dir()
 
 # Mensaje user-friendly para errores: el detalle técnico NUNCA llega a la UI.
 _FRIENDLY_ERROR = "No se pudo crear la skill. Ocurrió un error durante el proceso. Verificá la configuración e intentá de nuevo."
 _FRIENDLY_ERROR_TOOL = "No se pudo crear la tool. Ocurrió un error durante el proceso. Verificá la configuración e intentá de nuevo."
+_FRIENDLY_ERROR_AGENT = "No se pudo crear el agente. Ocurrió un error durante el proceso. Verificá la configuración e intentá de nuevo."
 
 
 # ── Modelos de request / response ─────────────────────────────────────
@@ -78,6 +80,14 @@ class CreateToolRequest(BaseModel):
     mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
     parametros: list[dict] | None = None  # [{"name", "type", "description", "required"}]
     datos: list[str] | None = None  # Lista de env vars / datos externos
+
+
+class CreateAgentRequest(BaseModel):
+    """Request para crear un agente especializado con iteración."""
+
+    descripcion: str
+    name: str | None = None
+    mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
 
 
 # ── Tool definition for interview ─────────────────────────────────────
@@ -773,3 +783,369 @@ async def _evaluar_si_existe_tool_inline(tarea, tools_locales, agent):
     """Wrapper sobre el helper compartido."""
     from backend.agent.utils.tools_helpers import _evaluar_si_existe
     return await _evaluar_si_existe(tarea, tools_locales)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# POST /api/create/agent — crear agentes especializados
+# ═══════════════════════════════════════════════════════════════════════
+
+
+# Tool schema para la entrevista de agentes
+_AGENT_INTERVIEW_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "responder_interview_agent",
+        "description": (
+            "Llamar cuando tengas suficiente información para crear el agente "
+            "o cuando necesites hacer una pregunta al usuario. "
+            "Los parámetros contienen la información estructurada de tu decisión."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["question", "create"],
+                    "description": (
+                        "'question' cuando necesitás más información del usuario. "
+                        "'create' cuando ya tenés suficiente para diseñar el agente."
+                    ),
+                },
+                "question": {
+                    "type": "string",
+                    "description": "Tu pregunta para el usuario (solo si action='question').",
+                },
+                "task": {
+                    "type": "string",
+                    "description": (
+                        "Descripción del rol del agente, su propósito y restricciones "
+                        "(solo si action='create')."
+                    ),
+                },
+                "name": {
+                    "type": "string",
+                    "description": (
+                        "Nombre exacto del archivo del agente (sin extensión, "
+                        "snake_case). Si no dio nombre, inferir del contexto "
+                        "(solo si action='create')."
+                    ),
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Lista de tools que el agente debe tener habilitadas "
+                        "(solo si action='create')."
+                    ),
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Lista de skills que el agente debe tener habilitadas "
+                        "(solo si action='create')."
+                    ),
+                },
+                "temperature": {
+                    "type": "number",
+                    "description": "Temperature para el agente (solo si action='create'). Default: 0.0.",
+                },
+                "top_p": {
+                    "type": "number",
+                    "description": "Top_p para el agente (solo si action='create'). Default: 0.5.",
+                },
+            },
+            "required": ["action"],
+        },
+    },
+}
+
+
+@router.post("/agent")
+async def post_create_agent_stream(req: CreateAgentRequest):
+    """Streaming endpoint para crear agentes especializados. Retorna SSE events.
+
+    Contrato idéntico a ``POST /api/create/skill`` pero emite eventos
+    ``agent_action`` y ``agent_result`` en lugar de ``skill_action`` /
+    ``skill_result``.
+    """
+    logger.info(
+        "POST /api/create/agent — descripcion='%s' name=%s mensajes=%d",
+        req.descripcion, req.name,
+        len(req.mensajes) if req.mensajes else 0,
+    )
+
+    descripcion = req.descripcion.strip()
+    nombre = req.name.strip() if req.name else None
+    mensajes = req.mensajes or []
+
+    if not descripcion:
+        return StreamingResponse(
+            iter([_sse({"type": "error", "content": "El campo 'descripcion' es obligatorio."})]),
+            media_type="text/event-stream",
+        )
+
+    async def event_stream() -> AsyncGenerator[str, None]:
+        """Generate SSE events for the agent creation flow."""
+        # ════════════════════════════════════════════════════════════════
+        # FASE 1: EVALUAR — ¿ya existe un agente que cubra esto?
+        # ════════════════════════════════════════════════════════════════
+        try:
+            _AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+            agentes_locales = _listar_agentes_locales()
+            if nombre:
+                for ag in agentes_locales:
+                    if ag["name"] == nombre:
+                        yield _sse({"type": "agent_result_final", "content": {
+                            "status": "success",
+                            "message": f"Ya existe un agente con el nombre '{nombre}'.",
+                            "data": {"exist": "Sí", "agent": nombre},
+                        }})
+                        return
+        except Exception as e:
+            logger.exception("Error en evaluación inicial: %s", e)
+
+        # ════════════════════════════════════════════════════════════════
+        # FASE 2: ENTREVISTA — stream texto + tool responder_interview
+        # ════════════════════════════════════════════════════════════════
+        try:
+            template = agent.prompt("iterar_agent")
+        except FileNotFoundError:
+            logger.exception("Prompt iterar_agent.md no encontrado.")
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
+            return
+
+        # Obtener tools y skills disponibles para pasar al prompt
+        try:
+            available_tools = _listar_tools_locales()
+            available_skills = _listar_skills_locales()
+        except Exception as e:
+            logger.warning("No se pudieron listar tools/skills: %s", e)
+            available_tools = []
+            available_skills = []
+
+        # Formatear texto de tools y skills disponibles
+        tools_list_text = "\n".join(f"- {t['name']}: {t['description'][:150]}" for t in available_tools) if available_tools else "(ninguna creada todavía)"
+        skills_list_text = "\n".join(f"- {s['name']}: {s['description'][:150]}" for s in available_skills) if available_skills else "(ninguna creada todavía)"
+
+        # Escape { y } en inputs de usuario para evitar KeyError en format()
+        desc_esc = descripcion.replace("{", "{{").replace("}", "}}")
+        nombre_esc = nombre.replace("{", "{{").replace("}}", "}") if nombre else ""
+        mensajes_esc = _formatear_mensajes(mensajes).replace("{", "{{").replace("}}", "}") if mensajes else ""
+
+        prompt = template.format(
+            descripcion=desc_esc,
+            nombre=nombre_esc or "(inferir)",
+            mensajes=mensajes_esc,
+            tools_disponibles=tools_list_text,
+            skills_disponibles=skills_list_text,
+        )
+
+        collected_content = ""
+        tool_calls_data = None
+
+        try:
+            _create_model, _create_provider = _resolve_create_model_provider()
+            async for event in agent.llm_streaming(
+                model=_create_model,
+                provider=_create_provider,
+                prompt=prompt,
+                tools=[_AGENT_INTERVIEW_TOOL],
+                temperature=0.3,
+                top_p=0.8,
+                max_tokens=3000,
+                cleaned_output=True,
+            ):
+                if event["type"] == "chunk":
+                    collected_content += event.get("content", "")
+                    yield _sse({"type": "chunk", "content": event.get("content", "")})
+
+                elif event["type"] == "reasoning":
+                    yield _sse({"type": "reasoning", "content": event.get("content", "")})
+
+                elif event["type"] == "tool_calls_detected":
+                    tcs = event["content"]
+                    if tcs:
+                        tc = tcs[0]
+                        tool_calls_data = tc.get("args", {})
+                    break
+
+                elif event["type"] == "aborted":
+                    yield _sse({"type": "aborted", "content": "Stream cancelado."})
+                    return
+
+        except Exception as e:
+            logger.exception("Error en streaming interview: %s", e)
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
+            return
+
+        # ── Fallback: si no hubo tool call, intentar parsear JSON ──
+        if not tool_calls_data:
+            logger.warning("No tool call recibida. Content: %s", collected_content)
+            parsed = _try_parse_json(collected_content)
+            if parsed:
+                tool_calls_data = parsed
+            elif collected_content.strip():
+                return
+            else:
+                yield _sse({"type": "error", "content": "El LLM no devolvió una respuesta válida."})
+                return
+
+        action = tool_calls_data.get("action")
+
+        # ── QUESTION ──
+        if action == "question":
+            question_text = tool_calls_data.get("question", "")
+            yield _sse({"type": "agent_action", "content": {"action": "question", "question": question_text}})
+            return
+
+        # ── CREATE ──
+        if action != "create":
+            logger.warning("Acción desconocida del LLM: %s", action)
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
+            return
+
+        task = tool_calls_data.get("task", descripcion)
+        name = nombre or tool_calls_data.get("name")
+        llm_tools = tool_calls_data.get("tools") or []
+        llm_skills = tool_calls_data.get("skills") or []
+        temperature = tool_calls_data.get("temperature", 0.0)
+        top_p = tool_calls_data.get("top_p", 0.5)
+
+        # ════════════════════════════════════════════════════════════════
+        # FASE 3: CREAR — ejecutar agente con tools (mismo loop que /skill)
+        # ════════════════════════════════════════════════════════════════
+        yield _sse({"type": "agent_action", "content": {"action": "creating"}})
+
+        try:
+            sys_prompt_template = agent.prompt("generar_agent")
+        except FileNotFoundError:
+            logger.exception("Prompt generar_agent.md no encontrado.")
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
+            return
+
+        conversacion = _formatear_mensajes(mensajes) if mensajes else f"**Usuario**: {task}"
+        carpeta = str(_AGENTS_DIR)
+        tools_text = "\n".join(f"- {t}" for t in llm_tools) if llm_tools else "(ninguna declarada por el usuario, inferir las mínimas)"
+        skills_text = "\n".join(f"- {s}" for s in llm_skills) if llm_skills else "(ninguna declarada por el usuario, inferir las mínimas)"
+        sys_prompt = sys_prompt_template.format(
+            nombre=name or "(inferir del contexto)",
+            conversacion=conversacion,
+            carpeta=carpeta,
+            tools=tools_text,
+            skills=skills_text,
+        )
+
+        user_msg = (
+            "Creá el agente. Pasos OBLIGATORIOS en orden: "
+            "1) Leé las tools y skills disponibles con list_dir. "
+            "2) Seleccioná las mínimas necesarias para el rol. "
+            "3) Escribí el archivo .md con write en la carpeta de agents. "
+            "4) Confirmame qué creaste."
+        )
+
+        # ── 3a. Resolver tools ──
+        try:
+            tools = list(agent.tools.tools_registry(_AGENT_TOOLS_PERMS))
+        except AttributeError as e:
+            logger.exception("Error obteniendo tools: %s", e)
+            yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
+            return
+
+        # ── 3b. Loop de tool calling EXACTO ChatInterface (loop.py) ──
+        msgs: list[dict[str, Any]] = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_msg},
+        ]
+
+        async for event in stream_tool_calling_loop(msgs, tools, _FRIENDLY_ERROR_AGENT):
+            yield _sse(event)
+            if event["type"] == "error":
+                return
+
+        # ════════════════════════════════════════════════════════════════
+        # FASE 4: BUSCAR lo que creó el agente
+        # ════════════════════════════════════════════════════════════════
+        if name:
+            agent_path = _AGENTS_DIR / f"{name}.md"
+            if agent_path.is_file():
+                yield _sse({"type": "agent_result_final", "content": {
+                    "status": "success",
+                    "message": f"Agente '{name}' creado exitosamente.",
+                    "data": {"exist": "No", "agent": name, "agent_path": str(agent_path)},
+                }})
+                return
+
+        # Fallback: escanear agentes recién creados
+        import time as _time
+        cutoff = _time.time() - 300  # 5 min
+        candidatos = []
+        if _AGENTS_DIR.is_dir():
+            for entry in _AGENTS_DIR.iterdir():
+                if not entry.is_file() or not entry.name.endswith(".md"):
+                    continue
+                try:
+                    mtime = entry.stat().st_mtime
+                    if mtime >= cutoff:
+                        candidatos.append(entry.stem)
+                except Exception:
+                    continue
+        if candidatos:
+            nueva_nombre = candidatos[0]
+            agent_path = _AGENTS_DIR / f"{nueva_nombre}.md"
+            yield _sse({"type": "agent_result_final", "content": {
+                "status": "success",
+                "message": f"Agente '{nueva_nombre}' creado exitosamente.",
+                "data": {"exist": "No", "agent": nueva_nombre, "agent_path": str(agent_path)},
+            }})
+            return
+
+        yield _sse({"type": "agent_result_final", "content": {
+            "status": "success",
+            "message": f"Agente '{name or 'agente'}' creado exitosamente.",
+            "data": {"exist": "No", "agent": name or "agente", "agent_path": str(_AGENTS_DIR / f"{name or 'agente'}.md")},
+        }})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def _listar_agentes_locales() -> list[dict[str, str]]:
+    """List local agents from the agents directory.
+
+    Returns:
+        List of dicts with ``name`` and ``description`` keys.
+    """
+    import yaml as _yaml
+
+    if not _AGENTS_DIR.is_dir():
+        return []
+
+    result: list[dict[str, str]] = []
+    for entry in sorted(_AGENTS_DIR.iterdir()):
+        if not entry.is_file() or not entry.name.endswith(".md"):
+            continue
+        try:
+            with open(entry, encoding="utf-8-sig") as f:
+                content = f.read()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        fm_data: dict[str, Any] = {}
+        if content.lstrip().startswith("---"):
+            lines = content.splitlines()
+            end = None
+            for i in range(1, len(lines)):
+                if lines[i].strip() == "---":
+                    end = i
+                    break
+            if end is not None:
+                try:
+                    fm_data = _yaml.safe_load("\n".join(lines[1:end])) or {}
+                except _yaml.YAMLError:
+                    fm_data = {}
+
+        name = fm_data.get("name", entry.stem)
+        description = fm_data.get("description", "")
+        result.append({"name": name, "description": description})
+
+    return result

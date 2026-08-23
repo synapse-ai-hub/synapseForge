@@ -392,7 +392,10 @@ class InitApp:
             self.result = config
             self.root.after(0, self._on_success)
         except Exception as exc:
-            self.root.after(0, lambda: self._on_error(str(exc)))
+            # Bind the message now: ``exc`` is deleted when the except block
+            # exits, before the deferred callback runs.
+            msg = str(exc)
+            self.root.after(0, lambda: self._on_error(msg))
 
     def _on_success(self) -> None:
         self.progress.stop()

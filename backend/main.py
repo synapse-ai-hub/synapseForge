@@ -133,25 +133,19 @@ _HEARTBEAT_TIMEOUT: float = 180.0  # 3 minutes
 
 
 async def _liberar_modelo_al_cerrar() -> None:
-    """Libera el modelo de Ollama si el proveedor actual es LOCAL.
+    """Unload EVERY Ollama model left in memory before the backend exits.
 
-    Solo aplica cuando el proveedor activo es ``LOCAL`` (Ollama): si el
-    proveedor es ``GROQ`` no hay modelo local cargado que descargar (ya se
-    liberó al cambiar de proveedor). Se ejecuta en un thread para no bloquear
-    el event loop.
+    Runs unconditionally on shutdown (no provider check): queries the
+    Ollama API for all currently loaded models (``/api/ps``) and forces
+    ``keep_alive=0`` on each one, so nothing stays in VRAM/RAM after the
+    app closes regardless of which provider was active. Executed in a
+    thread to avoid blocking the event loop.
     """
     try:
-        if agent is None:
-            return
-        if agent.provider.upper() != "LOCAL":
-            return
-        modelo = agent._resolved_model
-        if not modelo:
-            return
-        from backend.agent.utils.clean_memory import liberar_modelo
+        from backend.agent.utils.clean_memory import liberar_todos_los_modelos
 
-        await asyncio.to_thread(liberar_modelo, modelo)
-        logger.info("Modelo liberado al cerrar: %s", modelo)
+        await asyncio.to_thread(liberar_todos_los_modelos)
+        logger.info("Modelos de Ollama liberados al cerrar.")
     except Exception as exc:
         log_error(str(exc), source="main.py:_liberar_modelo_al_cerrar")
         logger.warning("No se pudo liberar modelo al cerrar: %s", exc)

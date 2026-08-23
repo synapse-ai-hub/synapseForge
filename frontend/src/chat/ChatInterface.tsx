@@ -17,6 +17,7 @@ import {
   BarChart3,
   LogOut,
   BookOpen,
+  AlarmClock,
 } from "lucide-react";
 import LogoImage from "../assets/logo_cliente.png";
 import chatService from "../services/chatService";
@@ -94,6 +95,7 @@ interface ChatInterfaceProps {
   verboseMode: boolean;
   telegramEnabled: boolean;
   onTelegramToggle: (val: boolean) => void;
+  onShowScheduler?: () => void;
 }
 
 export interface ChatInterfaceHandle {
@@ -130,6 +132,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
       verboseMode,
       telegramEnabled,
       onTelegramToggle,
+      onShowScheduler,
     }: ChatInterfaceProps,
     ref: ForwardedRef<ChatInterfaceHandle>,
   ) {
@@ -869,7 +872,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           </h1>
         </div>
 
-        {/* Right: Telegram toggle + docs + métricas + salir */}
+        {/* Right: Telegram toggle + scheduler + docs + métricas + salir */}
         <div className="flex items-center gap-1 shrink-0">
           {/* Telegram toggle — mismo formato y colores que el toggle de verbose */}
           <button
@@ -901,6 +904,18 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
               />
             </span>
           </button>
+
+          {/* Scheduler — mismo formato que Docs/Métricas */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onShowScheduler}
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
+            title="Tareas programadas"
+          >
+            <AlarmClock size={16} />
+            <span className="hidden sm:inline">Agenda</span>
+          </Button>
 
           <Button
             variant="ghost"
@@ -984,21 +999,12 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
                    px-3 sm:px-4 py-3 sm:py-4"
       >
         <div className="max-w-full sm:max-w-3xl lg:max-w-4xl mx-auto">
-          {/* Blocked banner: no provider/model selected yet */}
+          {/* Blocked banner: no provider/model selected yet (text only) */}
           {chatBlocked && (
-            <div className="flex items-center justify-between gap-3 mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5">
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5">
               <span className="text-sm text-amber-800">
                 Configur&aacute; un proveedor y un modelo para empezar.
               </span>
-              <button
-                type="button"
-                onClick={() =>
-                  window.dispatchEvent(new CustomEvent("open-config-tab"))
-                }
-                className="shrink-0 bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:opacity-90"
-              >
-                Ir a Configuraci&oacute;n
-              </button>
             </div>
           )}
 

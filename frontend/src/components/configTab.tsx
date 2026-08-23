@@ -113,7 +113,9 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       // User changes dropdown → pendingModel changes → Apply button enables.
       // User clicks Apply → currentModel updated to pendingModel.
       const model = m.model || null;
-      const provider = m.provider || (provResp.providers?.[0]?.provider ?? "");
+      // No default: when the backend reports no provider selected, keep the
+      // dropdown empty so the user must choose one explicitly.
+      const provider = m.provider || "";
       setCurrentModel(model);
       setPendingModel(model);
       // Only set currentProvider on first load (initial mount).
@@ -246,6 +248,9 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
           onChange={(e) => handleProviderChange(e.target.value)}
           className="mt-1 w-full rounded-lg border border-app-border bg-white px-3 py-2 text-sm text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light"
         >
+          {selectedProvider === "" && (
+            <option value="">Seleccion&aacute; un proveedor</option>
+          )}
           {providers.length === 0 ? (
             <option value="">No hay proveedores disponibles</option>
           ) : (

@@ -55,6 +55,11 @@ export interface ProviderKeysResponse {
   keys: ProviderKeyStatus[];
 }
 
+export interface SetupCompletedResponse {
+  status: string;
+  completed: boolean;
+}
+
 export const configService = {
   /** List available models and the currently selected one. */
   async getModels(provider?: string): Promise<ModelsResponse> {
@@ -188,6 +193,27 @@ export const configService = {
     const result = await response.json();
     if (!response.ok || result.status === "error") {
       throw new Error(result.message || `HTTP ${response.status}`);
+    }
+  },
+
+  /** Whether the initial provider-setup screen was already completed/skipped. */
+  async getSetupCompleted(): Promise<SetupCompletedResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/config/setup-completed`, {
+      method: "GET",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  /** Mark the initial provider-setup screen as completed (or skipped). */
+  async markSetupCompleted(): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/config/setup-completed`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
   },
 

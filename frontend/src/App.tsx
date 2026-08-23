@@ -6,6 +6,7 @@ import {
 } from "./chat/ChatInterface";
 import { HistoryModal } from "./components/HistoryModal";
 import { MetricsModal } from "./components/MetricsModal";
+import { SchedulerModal } from "./components/SchedulerModal";
 import { SetupScreen } from "./components/SetupScreen";
 import { Sidebar } from "./components/Sidebar";
 import sessionService, {
@@ -120,29 +121,36 @@ function App() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showMetrics, setShowMetrics] = useState(false);
+  const [showScheduler, setShowScheduler] = useState(false);
   const [verboseMode, setVerboseMode] = useState<boolean>(
     () => localStorage.getItem("verboseMode") === "true"
   );
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramCountdown, setTelegramCountdown] = useState<number | null>(null);
 
-  /* Initial setup screen: shown while no provider is available
-   * (no cloud API key stored and Ollama not responding). */
+  /* Initial setup screen: shown on first launch only (until the user saves
+   * a valid API key or skips it). Shown even when Ollama is available:
+   * nothing runs by default, the user must configure explicitly. */
   const [setupState, setSetupState] = useState<"loading" | "setup" | "ready">("loading");
 
-  const checkProviders = useCallback(async () => {
+  const checkSetup = useCallback(async () => {
     try {
-      const data = await configService.getProviders();
-      setSetupState((data.providers || []).length > 0 ? "ready" : "setup");
+      const data = await configService.getSetupCompleted();
+      setSetupState(data.completed ? "ready" : "setup");
     } catch {
       // Backend unreachable: show the normal app (it surfaces its own errors).
       setSetupState("ready");
     }
   }, []);
 
+  const handleSetupDone = useCallback(() => {
+    configService.markSetupCompleted().catch(() => {});
+    setSetupState("ready");
+  }, []);
+
   useEffect(() => {
-    checkProviders();
-  }, [checkProviders]);
+    checkSetup();
+  }, [checkSetup]);
 
   const initialLoadRef = useRef(true);
   const chatRef = useRef<ChatInterfaceHandle>(null);
@@ -358,13 +366,7 @@ const handleTelegramToggle = useCallback((val: boolean) => {
   }
 
   if (setupState === "setup") {
-    return (
-      <SetupScreen
-        onDone={() => {
-          checkProviders();
-        }}
-      />
-    );
+    return <SetupScreen onDone={handleSetupDone} />;
   }
 
   return (
@@ -396,6 +398,7 @@ const handleTelegramToggle = useCallback((val: boolean) => {
           verboseMode={verboseMode}
           telegramEnabled={telegramEnabled}
           onTelegramToggle={handleTelegramToggle}
+          onShowScheduler={() => setShowScheduler(true)}
         />
       </div>
 
@@ -407,6 +410,11 @@ const handleTelegramToggle = useCallback((val: boolean) => {
       <MetricsModal
         open={showMetrics}
         onClose={() => setShowMetrics(false)}
+      />
+
+      <SchedulerModal
+        open={showScheduler}
+        onClose={() => setShowScheduler(false)}
       />
 
       {/* Popup de activación de Telegram con contador regresivo */}

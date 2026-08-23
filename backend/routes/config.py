@@ -78,7 +78,7 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
 
     Args:
         model: The model name/ID.
-        provider: ``"LOCAL"`` or ``"GROQ"``.
+        provider: ``"LOCAL"``, ``"GROQ"``, ``"GOOGLE"`` or ``"OPENROUTER"``.
 
     Returns:
         The context window in tokens, or ``None`` if it cannot be resolved.
@@ -89,7 +89,9 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
         if provider.upper() == "LOCAL":
             cw = get_ollama_context_window(model)
         elif provider.upper() == "GOOGLE":
-            cw = get_google_context_window(model)
+            from backend.agent.utils import provider_keys
+
+            cw = get_google_context_window(model, provider_keys.get_key("GOOGLE"))
         elif provider.upper() == "OPENROUTER":
             cw = get_openrouter_context_window(model)
         else:
@@ -251,6 +253,46 @@ async def set_verbose_mode(data: dict[str, Any]) -> JSONResponse:
     )
 
 
+@router.get("/setup-completed")
+async def get_setup_completed() -> JSONResponse:
+    """Return whether the initial provider-setup screen was completed.
+
+    The flag is persisted in ``config_kv`` and set when the user saves a
+    valid API key or skips the initial setup screen, so the screen is only
+    shown on first launch (regardless of whether Ollama is available).
+    """
+    completed = False
+    if session_manager is not None:
+        try:
+            raw = session_manager.get_config("setup_completed")
+            completed = (raw or "").strip().lower() == "true"
+        except Exception as exc:
+            log_error(str(exc), source="backend/routes/config.py")
+            logger.warning("No se pudo leer setup_completed: %s", exc)
+    return JSONResponse(
+        status_code=200,
+        content={"status": "success", "completed": completed},
+    )
+
+
+@router.post("/setup-completed")
+async def set_setup_completed() -> JSONResponse:
+    """Mark the initial provider-setup screen as completed (or skipped)."""
+    try:
+        if session_manager is not None:
+            session_manager.set_config("setup_completed", "true")
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py")
+        logger.warning("No se pudo persistir setup_completed: %s", exc)
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "success",
+            "message": "Setup marked as completed.",
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Available providers
 # ---------------------------------------------------------------------------
@@ -382,11 +424,13 @@ async def save_provider_key(provider: str, data: dict[str, Any]) -> JSONResponse
     result = await asyncio.to_thread(provider_keys.save_key, provider, api_key)
     if result.get("status") != "success":
         return JSONResponse(status_code=400, content=result)
+    # Refresh the providers cache FIRST so the new provider becomes
+    # selectable immediately even if the client rebuild below fails.
+    await asyncio.to_thread(refresh_providers_cache)
     if agent is not None:
         rebuild = await asyncio.to_thread(agent.rebuild_provider_client, provider)
         if rebuild.get("status") != "success":
             return JSONResponse(status_code=500, content=rebuild)
-    await asyncio.to_thread(refresh_providers_cache)
     return JSONResponse(
         status_code=200,
         content={
@@ -408,11 +452,13 @@ async def delete_provider_key(provider: str) -> JSONResponse:
     result = await asyncio.to_thread(provider_keys.delete_key, provider)
     if result.get("status") != "success":
         return JSONResponse(status_code=400, content=result)
+    # Refresh the providers cache FIRST so the removed provider disappears
+    # even if the client rebuild below fails.
+    await asyncio.to_thread(refresh_providers_cache)
     if agent is not None:
         rebuild = await asyncio.to_thread(agent.rebuild_provider_client, provider)
         if rebuild.get("status") != "success":
             return JSONResponse(status_code=500, content=rebuild)
-    await asyncio.to_thread(refresh_providers_cache)
     return JSONResponse(status_code=200, content=result)
 
 
@@ -422,10 +468,18 @@ async def delete_provider_key(provider: str) -> JSONResponse:
 
 
 def _effective_provider(provider: str | None = None) -> str:
-    """Return the effective provider, using query param, persisted config, or env default."""
-    from dotenv import load_dotenv
+    """Return the effective provider: query param, else persisted selection.
 
-    load_dotenv()
+    No environment/default fallback: when nothing was explicitly selected
+    the empty string is returned so callers treat it as "no provider chosen"
+    (the UI then shows no provider pre-selected).
+
+    Args:
+        provider: Explicit provider from the query param, if any.
+
+    Returns:
+        Upper-case provider name, or empty string when none was selected.
+    """
     if provider:
         return provider.strip().upper()
 
@@ -438,7 +492,7 @@ def _effective_provider(provider: str | None = None) -> str:
             log_error(str(exc), source="backend/routes/config.py")
             logger.warning("No se pudo leer el proveedor persistido: %s", exc)
 
-    return (os.getenv("PROVIDER", "LOCAL") or "LOCAL").strip().upper()
+    return ""
 
 
 @router.get("/models")
@@ -458,10 +512,21 @@ async def list_models(provider: str | None = None) -> JSONResponse:
 
     Returns the list of model IDs/names and the selected model (or null).
     """
-    from dotenv import load_dotenv
-
     provider = _effective_provider(provider)
-    load_dotenv()
+
+    # Nothing selected yet: return empty lists so the UI shows no provider
+    # and no model pre-selected. The user must pick both explicitly.
+    if not provider:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "provider": "",
+                "provider_label": None,
+                "models": [],
+                "model": None,
+            },
+        )
 
     # Serve models from the startup cache (providers table) — no network calls.
     cached_providers = session_manager.get_providers() if session_manager is not None else []
@@ -488,13 +553,6 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     selected_model = None
     if agent is not None and previous_provider == provider:
         selected_model = agent._resolved_model
-
-    if agent is not None and session_manager is not None:
-        try:
-            session_manager.set_config("selected_provider", provider)
-        except Exception as exc:
-            log_error(str(exc), source="backend/routes/config.py")
-            logger.warning("No se pudo persistir proveedor seleccionado: %s", exc)
 
     return JSONResponse(
         status_code=200,

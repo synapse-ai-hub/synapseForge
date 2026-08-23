@@ -17,6 +17,11 @@ Both Groq (``client.chat.completions.create``) and Ollama
 (``ollama.chat``) support the ``tools`` parameter with JSON Schema
 definitions. Tool calls arrive as structured data, not as text to parse.
 
+LLM streaming errors are classified (rate-limit / transient / fatal) and
+rate-limit or transient failures are retried with exponential back-off
+(up to ``MAX_LLM_RETRIES`` retries); fatal errors and user cancellation
+are never retried.
+
 Sub-agent delegation
 --------------------
 The ``task`` tool resolves a sub-agent's system prompt and permissions
@@ -66,6 +71,7 @@ from backend.instances import agent, session_manager
 from backend.agent.utils.loop_helpers import (
     build_initial_messages,
     build_system_prompt,
+    classify_llm_error,
     execute_tool,
     fetch_context_window_turns,
 )
@@ -88,6 +94,16 @@ MAX_ITERATIONS = 25
 
 MAX_SUBAGENT_DEPTH = 3
 """Maximum nesting depth for sub-agent delegation (recursion guard)."""
+
+MAX_LLM_RETRIES = 5
+"""Maximum retries for the LLM streaming call on rate-limit/transient errors.
+
+The first attempt plus up to ``MAX_LLM_RETRIES`` retries, with exponential
+back-off waits of 2s, 4s, 8s, 16s and 32s (62s total).
+"""
+
+LLM_BACKOFF_BASE_SECONDS = 2.0
+"""Base delay (seconds) for the exponential back-off between LLM retries."""
 
 # Tool schema for the router agent (agent_name=None). The router's only job
 # is to delegate — it does NOT have direct access to any other tool.
@@ -501,40 +517,67 @@ class AgentLoop:
                 )
 
                 # ---- 6a. Call LLM with streaming (single API call, detects tool_calls) ----
+                # Retry loop: on rate-limit (429/413) or transient errors the
+                # stream consumption is retried with exponential back-off
+                # (MAX_LLM_RETRIES times). Fatal errors and user cancellation
+                # are never retried.
                 collected_content = ""
                 collected_reasoning = ""
                 tool_calls = None
+                usage_data: dict[str, Any] | None = None
 
-                try:
+                llm_attempt = 0
+                while True:
+                    # Reset partial state before every attempt so content from
+                    # a failed attempt never leaks into the next one.
+                    collected_content = ""
+                    collected_reasoning = ""
+                    tool_calls = None
+                    usage_data = None
 
-                    usage_data: dict[str, Any] | None = None
-                    async for event in agent.llm_streaming(
-                        model=model, messages=messages, tools=tools,
-                        stream_cancel_event=stream_cancel_event,
-                        temperature=temperature, top_p=top_p, max_tokens=max_tokens,
-                        provider=effective_provider,
-                    ):
-                        if event["type"] == "chunk":
-                            collected_content += event.get("content", "")
-                            yield f"data: {json.dumps({'type': 'chunk', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
-                        elif event["type"] == "reasoning":
-                            collected_reasoning += event.get("content", "")
-                            yield f"data: {json.dumps({'type': 'reasoning', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
-                        elif event["type"] == "tool_calls_detected":
-                            tool_calls = event["content"]
-                            break
-                        elif event["type"] == "usage":
-                            usage_data = event.get("content")
-                            logger.info(
-                                "USAGE [%s] prompt=%s completion=%s total=%s time=%ss",
-                                model,
-                                event.get("content", {}).get("prompt_tokens"),
-                                event.get("content", {}).get("completion_tokens"),
-                                event.get("content", {}).get("total_tokens"),
-                                event.get("content", {}).get("total_time"),
-                            )
-                        elif event["type"] == "aborted":
-                            # Guardar respuesta parcial antes de terminar (patrón ProspectingAgent/opencode)
+                    try:
+                        async for event in agent.llm_streaming(
+                            model=model, messages=messages, tools=tools,
+                            stream_cancel_event=stream_cancel_event,
+                            temperature=temperature, top_p=top_p, max_tokens=max_tokens,
+                            provider=effective_provider,
+                        ):
+                            if event["type"] == "chunk":
+                                collected_content += event.get("content", "")
+                                yield f"data: {json.dumps({'type': 'chunk', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
+                            elif event["type"] == "reasoning":
+                                collected_reasoning += event.get("content", "")
+                                yield f"data: {json.dumps({'type': 'reasoning', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
+                            elif event["type"] == "tool_calls_detected":
+                                tool_calls = event["content"]
+                                break
+                            elif event["type"] == "usage":
+                                usage_data = event.get("content")
+                                logger.info(
+                                    "USAGE [%s] prompt=%s completion=%s total=%s time=%ss",
+                                    model,
+                                    event.get("content", {}).get("prompt_tokens"),
+                                    event.get("content", {}).get("completion_tokens"),
+                                    event.get("content", {}).get("total_tokens"),
+                                    event.get("content", {}).get("total_time"),
+                                )
+                            elif event["type"] == "aborted":
+                                # Guardar respuesta parcial antes de terminar (patrón ProspectingAgent/opencode)
+                                if collected_content:
+                                    session_manager.save_message(
+                                        session_id, "assistant", content=collected_content,
+                                        reasoning=collected_reasoning or None,
+                                        turn_number=turn_number, step=step
+                                    )
+                                yield "data: [DONE]\n\n"
+                                return
+                    except Exception as e:
+                        error_category = classify_llm_error(e)
+                        logger.exception("Error in agent streaming: %s", e)
+                        log_error(str(e), source="loop.py:run(llm_stream)")
+
+                        # User cancellation always wins: never retry.
+                        if stream_cancel_event is not None and stream_cancel_event.is_set():
                             if collected_content:
                                 session_manager.save_message(
                                     session_id, "assistant", content=collected_content,
@@ -543,23 +586,62 @@ class AgentLoop:
                                 )
                             yield "data: [DONE]\n\n"
                             return
-                except Exception as e:
-                    logger.exception("Error in agent streaming: %s", e)
-                    log_error(str(e), source="loop.py:run(llm_stream)")
-                    # Guardar respuesta parcial antes de terminar con error
-                    if collected_content:
-                        session_manager.save_message(
-                            session_id, "assistant", content=collected_content,
-                            reasoning=collected_reasoning or None,
-                            turn_number=turn_number, step=step
-                        )
-                    else:
-                        session_manager.save_message(
-                            session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", turn_number=turn_number, step=step
-                        )
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': 'Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.'}, ensure_ascii=False)}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
+
+                        # Fatal errors keep the current behavior: no retry.
+                        if error_category == "fatal":
+                            # Guardar respuesta parcial antes de terminar con error
+                            if collected_content:
+                                session_manager.save_message(
+                                    session_id, "assistant", content=collected_content,
+                                    reasoning=collected_reasoning or None,
+                                    turn_number=turn_number, step=step
+                                )
+                            else:
+                                session_manager.save_message(
+                                    session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", turn_number=turn_number, step=step
+                                )
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': 'Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.'}, ensure_ascii=False)}\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
+
+                        # Rate-limit / transient: retry with exponential back-off
+                        # while attempts remain.
+                        if llm_attempt < MAX_LLM_RETRIES:
+                            await asyncio.sleep(LLM_BACKOFF_BASE_SECONDS * (2 ** llm_attempt))
+                            logger.warning(
+                                "LLM %s error (attempt %d/%d): %s — retrying in %.0fs",
+                                error_category, llm_attempt + 1, MAX_LLM_RETRIES + 1,
+                                e, LLM_BACKOFF_BASE_SECONDS * (2 ** llm_attempt),
+                            )
+                            log_error(str(e), source="loop.py:run(llm_retry)")
+                            if error_category == "rate_limit":
+                                retry_msg = f"\n\n*Rate limit alcanzado, reintentando (intento {llm_attempt + 1} de {MAX_LLM_RETRIES})...*"
+                            else:
+                                retry_msg = "\n\n*Error transitorio, reintentando...*"
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': retry_msg}, ensure_ascii=False)}\n\n"
+                            llm_attempt += 1
+                            continue
+
+                        # Attempts exhausted: user-friendly final message.
+                        if error_category == "rate_limit":
+                            final_msg = "*Se alcanzó el límite de peticiones del proveedor después de varios reintentos. Probá de nuevo en un minuto o cambiá a otro modelo desde la configuración.*"
+                        else:
+                            final_msg = "*El proveedor no respondió después de varios reintentos. Probá de nuevo en unos momentos.*"
+                        log_error(str(e), source="loop.py:run(llm_retry)")
+                        if collected_content:
+                            session_manager.save_message(
+                                session_id, "assistant", content=collected_content,
+                                reasoning=collected_reasoning or None,
+                                turn_number=turn_number, step=step
+                            )
+                        else:
+                            session_manager.save_message(
+                                session_id, "assistant", content=final_msg, turn_number=turn_number, step=step
+                            )
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                    break  # Stream consumed successfully
 
                 # Emit token counter after each LLM call (prompt_tokens is cumulative)
                 if usage_data:

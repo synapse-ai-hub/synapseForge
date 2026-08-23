@@ -2,7 +2,12 @@
 
 Provides endpoints to:
 - Get/set the context window (max turns to keep in context).
-- List available models per provider and select one.
+- Get/set verbose mode and the initial setup flag.
+- List available models per provider, select one and manage its advanced
+  parameters (temperature, top_p, reasoning) via ``/models/select`` and
+  ``/parameters``.
+- Manage provider API keys (list status, save encrypted, delete).
+- List skills, tools, agents and MCP servers for the settings panel.
 """
 
 from __future__ import annotations

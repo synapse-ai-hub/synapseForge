@@ -4,10 +4,11 @@ Given an agent name, this module locates its markdown definition in the
 ``agents/`` folder (config directory) and exposes three independent resolvers,
 each called from a different place:
 
-- :func:`get_tool_permissions` — called from ``backend.utils.tools``
+- :func:`get_tool_permissions` — called from ``backend.agent.tools``
   (``tools_registry``). Returns **only** the tool permissions.
-- :func:`get_skill_permissions` — called from ``backend.utils.skill_loader``
-  (``format_skills_section``). Returns **only** the skill permissions.
+- :func:`get_skill_permissions` — called from
+  ``backend.agent.utils.skill_loader`` (``format_skills_section``).
+  Returns **only** the skill permissions.
 - :func:`get_agent_prompt` — called from the system-prompt builder (loop,
   once agent selection is wired). Returns **only** the prompt body.
 
@@ -327,7 +328,7 @@ def list_agents() -> dict:
             with open(md_path, encoding="utf-8-sig") as f:
                 content = f.read()
         except (OSError, UnicodeDecodeError) as e:
-            log_error(str(e), source="permissions.py:get_agent_descriptions")
+            log_error(str(e), source="permissions.py:list_agents")
             logger.warning("Error al leer %s: %s", md_path, e)
             continue
 

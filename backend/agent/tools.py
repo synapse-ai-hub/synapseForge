@@ -1,11 +1,21 @@
-"""Tools for the quotation agent.
+"""Agent tools: native tools, external tools and MCP tools.
 
-Defines the ``Tools`` class with the quotation pipeline methods,
-all following the unified response contract (``contract.py``).
+Defines the ``Tools`` class whose public methods are the **native tools**
+(auto-discovered by introspection into the function-calling registry, all
+following the unified response contract from ``contract.py``).
 
-Native tools (``parser``) are hardcoded in the class.
-Project-specific tools live in ``intelligence/tools/`` as separate
-``.py`` files and are loaded dynamically by the registry.
+Tool sources:
+
+- Native tools: public methods of this class (``read``, ``write``,
+  ``websearch``, ``rag``, ``task``, ``search_memory``, ...).
+- External tools: ``.py`` files in ``~/.config/synapseForge/tools/``,
+  loaded dynamically by the registry.
+- MCP tools: discovered from configured MCP servers via
+  ``mcp_helper`` and wrapped as function schemas.
+
+``tools_registry(tool_permissions)`` filters the combined registry with
+the running agent's permissions (deny by default) before exposing it to
+the LLM.
 """
 
 import fnmatch

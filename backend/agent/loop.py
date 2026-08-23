@@ -10,7 +10,8 @@ Pattern
    a. Call LLM with ``messages`` + ``tools`` (no streaming).
    b. If response has ``tool_calls`` → execute each tool,
       append results as ``role: "tool"`` messages, continue.
-   c. If no ``tool_calls`` → yield content as chunk and break.
+   c. If no ``tool_calls`` → yield content as chunk and break (an empty
+      response is retried up to ``MAX_EMPTY_RESPONSE_RETRIES`` times).
 6. Persist every message in SQLite.
 
 Both Groq (``client.chat.completions.create``) and Ollama
@@ -88,6 +89,9 @@ MAX_ITERATIONS = 25
 
 MAX_SUBAGENT_DEPTH = 3
 """Maximum nesting depth for sub-agent delegation (recursion guard)."""
+
+MAX_EMPTY_RESPONSE_RETRIES = 2
+"""Maximum retries when the final LLM response is empty (no content, no tool_calls)."""
 
 # Tool schema for the router agent (agent_name=None). The router's only job
 # is to delegate — it does NOT have direct access to any other tool.
@@ -485,6 +489,8 @@ class AgentLoop:
             # --- 6. Agent loop (while True) ---
             iteration = 0
             step = 0
+            empty_response_retries = 0
+            empty_response_hint: dict[str, str] | None = None
             while iteration < self.max_iterations:
                 iteration += 1
                 step += 1
@@ -573,6 +579,15 @@ class AgentLoop:
                     "LLM response — tool_calls: %s, content_length: %d",
                     len(tool_calls) if tool_calls else 0, len(collected_content),
                 )
+
+                # Remove the ephemeral "empty response" hint once the iteration
+                # produces real content or tool calls (keeps the context clean).
+                if empty_response_hint is not None and (tool_calls or collected_content.strip()):
+                    try:
+                        messages.remove(empty_response_hint)
+                    except ValueError:
+                        pass
+                    empty_response_hint = None
 
                 
                 # ---- 6b. Process tool_calls (LLM wants to continue) ----
@@ -811,7 +826,67 @@ class AgentLoop:
                     continue  # back to while loop
 
                 # ---- 6c. No tool_calls → final response ----
-                cleaned = agent.clean(collected_content) if collected_content else None
+                # Empty response guard: an empty final answer (no content, no
+                # tool_calls) is treated as an invalid iteration and retried,
+                # up to MAX_EMPTY_RESPONSE_RETRIES times. The guard consumes
+                # normal iterations (no extra logic beyond its own counter).
+                if not collected_content.strip():
+                    if empty_response_retries < MAX_EMPTY_RESPONSE_RETRIES:
+                        empty_response_retries += 1
+                        logger.warning(
+                            "Empty LLM response (no content, no tool_calls) — retry %d/%d",
+                            empty_response_retries, MAX_EMPTY_RESPONSE_RETRIES,
+                        )
+                        log_error(
+                            "Empty LLM response, retrying",
+                            source="loop.py:empty_response_guard",
+                        )
+                        # Ephemeral system message guiding the model to produce
+                        # real content; removed once the iteration succeeds.
+                        # Remove any previous hint first so consecutive empty
+                        # responses never stack duplicates in the context.
+                        if empty_response_hint is not None:
+                            try:
+                                messages.remove(empty_response_hint)
+                            except ValueError:
+                                pass
+                        empty_response_hint = {
+                            "role": "system",
+                            "content": (
+                                "Tu respuesta anterior llegó vacía. DEBES responder "
+                                "con contenido real para el usuario; no devuelvas "
+                                "texto vacío."
+                            ),
+                        }
+                        messages.append(empty_response_hint)
+                        continue
+
+                    final_msg = "*El modelo devolvió una respuesta vacía después de varios intentos. Probá reformular tu mensaje.*"
+                    logger.warning(
+                        "Empty LLM response persisted after exhausting %d retries",
+                        MAX_EMPTY_RESPONSE_RETRIES,
+                    )
+                    log_error(
+                        "Empty LLM response after exhausting retries",
+                        source="loop.py:empty_response_guard",
+                    )
+                    session_manager.save_message(
+                        session_id, "assistant", content=final_msg,
+                        turn_number=turn_number, step=step,
+                    )
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    if parent_model and model != parent_model and parent_is_local and child_is_local:
+                        ctx = get_error_context()
+                        await asyncio.to_thread(
+                            liberar_modelo, model,
+                            ctx.get("session_id") if ctx else None,
+                            ctx.get("turn_number") if ctx else None,
+                            ctx.get("parent_id") if ctx else None,
+                        )
+                    return
+
+                cleaned = agent.clean(collected_content)
                 session_manager.save_message(
                     session_id, "assistant", content=cleaned,
                     reasoning=collected_reasoning or None,

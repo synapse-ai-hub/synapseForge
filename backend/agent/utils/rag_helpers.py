@@ -25,6 +25,8 @@ from urllib.parse import urljoin, urlparse
 import httpcore
 import httpx
 
+from backend.agent.utils.error_logger import log_error
+
 # ---------------------------------------------------------------------------
 # Ensure the project root is in sys.path for absolute imports
 # ---------------------------------------------------------------------------
@@ -296,3 +298,178 @@ async def fetch_url_content(url: str) -> tuple[str, str]:
         text = re.sub(r"\s+", " ", text).strip()
 
     return text, html
+
+
+# ---------------------------------------------------------------------------
+# Reindexing of collections created with an incompatible embedding model
+# ---------------------------------------------------------------------------
+
+# Transient markers (case-insensitive) that justify an embedding retry.
+_EMBED_TRANSIENT_MARKERS = (
+    "429",
+    "rate limit",
+    "too many requests",
+    "timeout",
+    "timed out",
+    "connection",
+)
+
+
+def _embed_with_retry(embed_func, texts: list[str], max_retries: int = 3) -> list[list[float]]:
+    """Embed texts with a simple retry for transient (rate-limit) failures.
+
+    Args:
+        embed_func: Callable (Chroma embedding function) that maps texts to
+            vectors.
+        texts: Texts to embed.
+        max_retries: Maximum retries after the first attempt fails with a
+            transient error. Waits grow exponentially (2s, 4s, 8s).
+
+    Returns:
+        The embedding vectors (one per input text).
+
+    Raises:
+        RuntimeError: Propagated from ``embed_func`` when the failure is not
+            transient or retries are exhausted.
+    """
+    import time as _time
+
+    delay = 2.0
+    for attempt in range(max_retries + 1):
+        try:
+            return embed_func(texts)
+        except Exception as exc:
+            message = str(exc).lower()
+            transient = any(marker in message for marker in _EMBED_TRANSIENT_MARKERS)
+            if not transient or attempt == max_retries:
+                raise
+            logger.warning(
+                "Embedding fallo (intento %d/%d), reintentando en %.0fs: %s",
+                attempt + 1,
+                max_retries,
+                delay,
+                exc,
+            )
+            log_error(str(exc), source="rag_helpers.py:_embed_with_retry")
+            _time.sleep(delay)
+            delay *= 2
+    raise RuntimeError("Unreachable: embedding retry loop exhausted.")
+
+
+def reindex_collection(db, name: str) -> dict:
+    """Reindex a collection with the current embedding model.
+
+    Reads every stored chunk (documents + metadatas) from the existing
+    collection — the chunk texts are the recoverable source — embeds them
+    ALL up front (so an embedding failure aborts before anything is
+    deleted), then recreates the collection and re-inserts everything.
+    Vectors are never converted; they are regenerated from the texts.
+
+    Args:
+        db: Shared ``VectorDB`` instance (current embedding function).
+        name: Name of the collection to reindex.
+
+    Returns:
+        Dict report: ``{"name", "reindexed", "documents", "failed_batches",
+        "sanity_ok"}``.
+
+    Raises:
+        ValueError: If the collection does not exist or is already
+            compatible with the current embedding model.
+        RuntimeError: If the upfront embedding fails (the original
+            collection is left untouched).
+    """
+    try:
+        old = db.get_collection(name)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"No se pudo acceder a la colección '{name}'.") from exc
+
+    meta = getattr(old, "metadata", None) or {}
+    from backend.agent.utils.vector_db import _DEFAULT_MODEL
+
+    if meta.get("embedding_model") == _DEFAULT_MODEL:
+        raise ValueError(
+            f"La colección '{name}' ya usa el modelo de embeddings actual."
+        )
+
+    # 1. Read every stored chunk (paginated via col.get offset/limit).
+    all_ids: list[str] = []
+    all_documents: list[str] = []
+    all_metadatas: list[dict] = []
+    batch_size = 256
+    offset = 0
+    while True:
+        page = old.get(limit=batch_size, offset=offset)
+        ids = page.get("ids") or []
+        if not ids:
+            break
+        all_ids.extend(ids)
+        all_documents.extend(page.get("documents") or [])
+        all_metadatas.extend(page.get("metadatas") or [])
+        if len(ids) < batch_size:
+            break
+        offset += batch_size
+
+    if not all_documents:
+        # Nothing to re-embed: just recreate with the current model metadata.
+        db.delete_collection(name)
+        db.create_collection(name, metadata=dict(meta))
+        return {
+            "name": name,
+            "reindexed": 0,
+            "documents": 0,
+            "failed_batches": [],
+            "sanity_ok": True,
+        }
+
+    # 2. Embed EVERYTHING up front. If this fails, the original collection
+    #    is untouched (no data loss).
+    logger.info(
+        "Reindexando '%s': embebiendo %d chunk(s) con el modelo actual...",
+        name,
+        len(all_documents),
+    )
+    vectors = _embed_with_retry(db.embed_func, all_documents)
+
+    # 3. Recreate the collection with the current embedding model.
+    db.delete_collection(name)
+    db.create_collection(name, metadata={"description": meta.get("description")})
+
+    # 4. Re-insert in batches using the precomputed vectors (no further API
+    #    calls, so this step cannot fail for rate-limit reasons).
+    insert_batch = 128
+    failed_batches: list[dict] = []
+    for start in range(0, len(all_ids), insert_batch):
+        end = start + insert_batch
+        try:
+            db.add_documents(
+                name,
+                ids=all_ids[start:end],
+                documents=all_documents[start:end],
+                metadatas=all_metadatas[start:end],
+                embeddings=vectors[start:end],
+            )
+        except Exception as exc:
+            logger.exception("Batch de reinsert falló en '%s'", name)
+            log_error(str(exc), source=f"rag_helpers.py:reindex_collection({name})")
+            failed_batches.append({"from": start, "to": min(end, len(all_ids))})
+
+    # 5. Sanity query: retrieve one known document as top result.
+    sanity_ok = False
+    try:
+        sample = all_documents[0][:500]
+        results = db.query(name, sample, n_results=1)
+        sanity_ok = bool((results.get("ids") or [[]])[0])
+    except Exception as exc:
+        logger.warning("Query de sanidad falló para '%s': %s", name, exc)
+        log_error(str(exc), source=f"rag_helpers.py:reindex_collection(sanity:{name})")
+
+    return {
+        "name": name,
+        "reindexed": len(all_ids) - sum(b["to"] - b["from"] for b in failed_batches),
+        "documents": len(all_ids),
+        "failed_batches": failed_batches,
+        "sanity_ok": sanity_ok,
+    }

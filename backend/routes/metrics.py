@@ -167,15 +167,6 @@ async def get_tool_metrics():
             {"name": row["tool_name"], "count": row["cnt"]} for row in subagent_rows
         ]
 
-        # Also count tool_calls from JSON field (Groq format)
-        json_tool_rows = _query_db(
-            """
-            SELECT COUNT(*) AS cnt FROM messages 
-            WHERE tool_calls IS NOT NULL AND tool_calls != ''
-            """
-        )
-        json_tool_calls = json_tool_rows[0]["cnt"] if json_tool_rows else 0
-
         return validate_response(
             make_success_response(
                 message="Tool metrics obtenidas",
@@ -183,7 +174,6 @@ async def get_tool_metrics():
                     "tool_usage": tool_usage,
                     "total_tool_calls": total_tool_calls,
                     "top_subagents": top_subagents,
-                    "json_tool_calls": json_tool_calls,
                 },
                 usage=zero_usage(),
             )
@@ -250,6 +240,48 @@ async def get_error_metrics():
     except Exception as e:
         log_error(str(e), source="backend/routes/metrics.py:get_error_metrics")
         return make_error_response(message="Error fetching error metrics")
+
+
+@router.get("/metrics/models")
+async def get_model_metrics():
+    """Return LLM usage metrics grouped by model from agent.db.
+
+    Counts assistant messages that recorded the model that produced
+    them. Historical messages without a model are excluded.
+
+    Returns:
+        A contract response with ``data`` containing the per-model
+        call counts, ordered from most to least used.
+    """
+    try:
+        model_rows = _query_db(
+            """
+            SELECT model, COUNT(*) AS cnt
+            FROM messages
+            WHERE role = 'assistant'
+                AND model IS NOT NULL AND model != ''
+            GROUP BY model
+            ORDER BY cnt DESC
+            """
+        )
+        models = [
+            {"model": row["model"], "count": row["cnt"]} for row in model_rows
+        ]
+        total_model_calls = sum(m["count"] for m in models)
+
+        return validate_response(
+            make_success_response(
+                message="Model metrics obtenidas",
+                data={
+                    "models": models,
+                    "total_model_calls": total_model_calls,
+                },
+                usage=zero_usage(),
+            )
+        )
+    except Exception as e:
+        log_error(str(e), source="backend/routes/metrics.py:get_model_metrics")
+        return make_error_response(message="Error fetching model metrics")
 
 
 @router.get("/metrics/overview")

@@ -22,248 +22,248 @@
 
 ---
 
-<h3 align="center">CLI + Framework + Template for building and distributing full-stack AI agent projects</h3>
+<h3 align="center">CLI + Framework + Template para crear y distribuir proyectos de agentes IA full-stack</h3>
 
 ---
 
-## Description
+## Descripción
 
-**synapseForge** is a PyPI package that provides a CLI for scaffolding and distributing AI agent projects from scratch. It includes:
+**synapseForge** es un paquete PyPI que provee un CLI para scaffoldear y distribuir proyectos de agentes IA desde cero. Incluye:
 
-1. **CLI** (`synapseforge init`, `launch`, `colors`, `run`) — scaffolding with tkinter GUI + distribution build + live color editor + dev server.
-2. **Agent framework** (`backend/agent/`) — AgentLoop, Tools Registry (native + external + MCP), Sessions (SQLite WAL), Permissions, Skills, RAG, MCP.
-3. **Embedded project template** (`pipeline/template.zip`) — FastAPI backend + React/Vite/TypeScript frontend.
-4. **Docker** — multi-stage `Dockerfile` + `docker-compose.yml`.
+1. **CLI** (`synapseforge init`, `launch`, `colors`, `run`) — scaffolding con GUI tkinter + build de distribución + editor de colores en vivo + servidor de desarrollo.
+2. **Framework de agentes** (`backend/agent/`) — AgentLoop, Tools Registry (nativas + externas + MCP), Sessions (SQLite WAL), Permissions, Skills, RAG, MCP.
+3. **Template de proyecto** embebido (`pipeline/template.zip`) — backend FastAPI + frontend React/Vite/TypeScript.
+4. **Docker** — `Dockerfile` multi-stage + `docker-compose.yml`.
 
-### ✨ Key Features
+### ✨ Características Principales
 
-- **Full scaffolding**: `synapseforge init` creates the project from an embedded template with an interactive GUI — structure, venv, logos, `.ico`, colors and placeholder replacement.
-- **Self-contained distribution**: `synapseforge launch` generates a ready-to-deliver zip (PyInstaller + embedded Python + compiled frontend).
-- **Multi-provider LLM**: LOCAL (Ollama, optional), Groq, Google Gemini and OpenRouter. Cloud API keys are managed from the settings panel, validated against each provider's API and stored encrypted in SQLite. Skippable initial setup screen: with no provider configured the app stays locked until a key is loaded.
-- **Complete agent framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), per-agent permissions (allow/deny/ask + wildcards), skills and sub-agents with delegation via `task`.
-- **RAG**: vector collections in ChromaDB with OpenRouter embeddings (`liquid/lfm-2.5-embedding-350m:free`). File and web page upload, chunking with overlap and cosine similarity search. Requires an OpenRouter API key (free tier).
-- **LLM-assisted creation**: standalone interfaces to create skills, tools and agents through an iterative interview + creator agent, with ephemeral cloud model selection per task.
-- **Telegram as remote control**: the bot publishes events to the event bus and the frontend runs the same chat flow. Session commands, model/provider switching, skill/tool/RAG creation and agenda management.
-- **Scheduled tasks**: the user defines tasks (description + time + days) from the header Agenda or via Telegram; the backend runs them with the selected model and notifies the result in the UI notification bell and via Telegram (always, even if the bot is disabled).
-- **Context files**: document upload (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) → text extraction → injection into the agent's system prompt.
-- **Usage metrics**: sessions, tools, errors and overview, with a dashboard in the frontend.
-- **Desktop app mode**: heartbeat watchdog + shutdown endpoint to distribute the app as a product.
-
----
-
-## What does it solve?
-
-- **Repetitive scaffolding**: A single command creates the whole project with the standard structure of all SYNAPSE projects.
-- **Centralized configuration**: Interactive GUI that replaces all XML placeholders in the project (company, client, colors, logo, etc.).
-- **Automated branding**: Logo copying + `.ico` generation + color palette extraction from the image.
-- **Dependency-free distribution**: Self-contained build ready to hand to the client — includes embedded Python, static frontend, native launcher.
+- **Scaffolding completo**: `synapseforge init` crea el proyecto desde un template embebido con GUI interactiva — estructura, venv, logos, `.ico`, colores y reemplazo de placeholders.
+- **Distribución autocontenida**: `synapseforge launch` genera un zip listo para entregar (PyInstaller + Python embebido + frontend compilado).
+- **Multi-provider LLM**: LOCAL (Ollama, opcional), Groq, Google Gemini y OpenRouter. API keys cloud gestionadas desde el panel de configuración, validadas contra la API de cada proveedor y guardadas cifradas en SQLite. Pantalla inicial de configuración saltable: sin ningún provider configurado la app queda bloqueada hasta cargar una key.
+- **Framework de agentes completo**: AgentLoop con tool calling nativo, tools registry (nativas + externas + MCP), permisos por agente (allow/deny/ask + wildcards), skills y sub-agentes con delegación por `task`.
+- **RAG**: colecciones vectoriales en ChromaDB con embeddings en OpenRouter (`liquid/lfm-2.5-embedding-350m:free`). Subida de archivos y páginas web, chunking con overlap y búsqueda por similitud coseno. Requiere API key de OpenRouter (capa gratis).
+- **Creación asistida por LLM**: interfaces standalone para crear skills, tools y agentes mediante entrevista iterativa + agente creador, con selección efímera de modelo cloud por tarea.
+- **Telegram como control remoto**: el bot emite eventos al event bus y el frontend ejecuta el mismo flujo de chat. Comandos de sesión, modelo/proveedor, creación de skills/tools/RAG y gestión de la agenda.
+- **Tareas programadas**: el usuario define tareas (descripción + hora + días) desde la Agenda del header o por Telegram; el backend las ejecuta con el modelo seleccionado y notifica el resultado en la campanita de la UI y por Telegram (siempre, aunque el bot esté deshabilitado).
+- **Archivos de contexto**: subida de documentos (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) → extracción de texto → inyección en el system prompt del agente.
+- **Métricas de uso**: sesiones, tools, errores y overview, con dashboard en el frontend.
+- **Modo desktop app**: heartbeat watchdog + endpoint de shutdown para distribuir la app como producto.
 
 ---
 
-## Quick start
+## ¿Qué resuelve?
+
+- **Scaffolding repetitivo**: Un solo comando crea el proyecto completo con la estructura estándar de todos los proyectos SYNAPSE.
+- **Configuración centralizada**: GUI interactiva que reemplaza todos los placeholders XML del proyecto (empresa, cliente, colores, logo, etc.).
+- **Branding automatizado**: Copia de logos + generación de `.ico` + extracción de paleta de colores desde la imagen.
+- **Distribución sin dependencias**: Build autocontenido listo para entregar al cliente — incluye Python embebido, frontend estático, launcher nativo.
+
+---
+
+## Inicio rápido
 
 ```bash
 pip install synapseforge
 
-# Create a project (interactive GUI)
-synapseforge init my-project
-cd my-project
+# Crear un proyecto (GUI interactiva)
+synapseforge init mi-proyecto
+cd mi-proyecto
 
-# Start in development mode (requires activated venv)
+# Levantar en desarrollo (requiere venv activado)
 synapseforge run .
 ```
 
-On first launch the setup screen appears: load an API key from any cloud provider ([OpenRouter](https://openrouter.ai/settings/keys), [Google Gemini](https://aistudio.google.com/apikey) or [Groq](https://console.groq.com/keys) — all with free tiers) and press **Apply**. Ollama is optional (only if you want local models). The **knowledge base** specifically requires an OpenRouter key.
+Al primer arranque aparece la pantalla de configuración: cargá una API key de algún proveedor cloud ([OpenRouter](https://openrouter.ai/settings/keys), [Google Gemini](https://aistudio.google.com/apikey) o [Groq](https://console.groq.com/keys) — todos con capa gratis) y aprieta **Aplicar**. Ollama es opcional (solo si querés modelos locales). La **fuente de conocimiento** necesita específicamente una key de OpenRouter.
 
 ---
 
-## CLI — Commands
+## CLI — Comandos
 
-| Command | Description |
+| Comando | Descripción |
 |---------|-------------|
-| `synapseforge init [dir]` | Creates a project from the template with an interactive GUI |
-| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Self-contained distribution build (zip). With `-c` it compiles the backend to `.pyc`; by default it packages the `.py` files |
-| `synapseforge colors [dir]` | GUI editor for `frontend/public/colors.json` (live changes without rebuild) |
-| `synapseforge run [dir]` | Starts uvicorn --reload + npm run dev + opens browser |
-| `synapseforge --help` | Global help |
+| `synapseforge init [dir]` | Crea proyecto desde template con GUI interactiva |
+| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build de distribución autocontenida (zip). Con `-c` compila el backend a `.pyc`; por defecto empaqueta los `.py` |
+| `synapseforge colors [dir]` | Editor GUI para `frontend/public/colors.json` (cambios en vivo sin rebuild) |
+| `synapseforge run [dir]` | Levanta uvicorn --reload + npm run dev + abre browser |
+| `synapseforge --help` | Ayuda global |
 
-- **`init`**: 10-step pipeline (GUI input → template → venv → deps → logos → `.ico` → colors → config → placeholders).
-- **`launch`**: compiles the backend (PyInstaller), builds the frontend, downloads embedded Python, generates a native launcher and packs everything into a zip.
-- **`run`**: requires the activated venv (`VIRTUAL_ENV`). Ctrl+C kills both servers.
+- **`init`**: pipeline de 10 pasos (input GUI → template → venv → deps → logos → `.ico` → colores → config → placeholders).
+- **`launch`**: compila backend (PyInstaller), build del frontend, descarga Python embebido, genera launcher nativo y empaqueta todo en un zip.
+- **`run`**: requiere el venv activado (`VIRTUAL_ENV`). Ctrl+C mata ambos servidores.
 
 ```mermaid
 flowchart LR
     A["pip install synapseforge"] --> B["synapseforge init"]
-    B --> C["tkinter GUI<br/>(Project · Logos · Colors)"]
-    C --> D["Extract template + venv + deps<br/>+ branding + placeholders"]
-    D --> E["Project ready"]
-    E --> F["synapseforge run<br/>(development)"]
-    E --> G["synapseforge launch<br/>(distributable zip)"]
+    B --> C["GUI tkinter<br/>(Proyecto · Logos · Colores)"]
+    C --> D["Extrae template + venv + deps<br/>+ branding + placeholders"]
+    D --> E["Proyecto listo"]
+    E --> F["synapseforge run<br/>(desarrollo)"]
+    E --> G["synapseforge launch<br/>(zip distribuible)"]
 ```
 
 ---
 
-## Project structure
+## Estructura del proyecto
 
 ```plaintext
 synapseForge/
 │
-├─ synapseforge/                 # Python package — pip-installable CLI
-│  ├─ cli/main.py                #   CLI parser: init | launch | colors | run
-│  └─ tk/                        #   tkinter GUIs (init, colors)
+├─ synapseforge/                 # Paquete Python — CLI instalable via pip
+│  ├─ cli/main.py                #   Parser CLI: init | launch | colors | run
+│  └─ tk/                        #   GUIs tkinter (init, colors)
 │
-├─ pipeline/                     # Source code for init and launch
-│  ├─ template.zip               #   Project template (embedded)
+├─ pipeline/                     # Código fuente de init y launch
+│  ├─ template.zip               #   Template del proyecto (embebido)
 │  ├─ init/                      #   Init: input, template, venv, config, logo, placeholders
 │  └─ launch/                    #   Launch: PyInstaller, npm build, zip
 │
-├─ backend/                      # Template source — FastAPI backend
-│  ├─ main.py                    #   FastAPI app: CORS, lifespan, routers, health, SPA static
+├─ backend/                      # Fuente del template — backend FastAPI
+│  ├─ main.py                    #   App FastAPI: CORS, lifespan, routers, health, SPA static
 │  ├─ instances.py               #   Singletons: agent, session_manager
-│  ├─ event_bus.py               #   Event bus (SSE) for Telegram ↔ Frontend
-│  ├─ routes/                    #   API endpoints (chat SSE, create, config, sessions, rag, metrics…)
-│  └─ agent/                     #   Agent framework
+│  ├─ event_bus.py               #   Event bus (SSE) para Telegram ↔ Frontend
+│  ├─ routes/                    #   Endpoints API (chat SSE, create, config, sessions, rag, metrics…)
+│  └─ agent/                     #   Framework de agentes
 │     ├─ agent.py                #   Agent class (multi-provider, streaming SSE, tool calling)
 │     ├─ loop.py                 #   AgentLoop: LLM → tool_calls → execute → continue
-│     ├─ tools.py                #   Registry: native + external (~/.config/synapseForge/tools/) + MCP
-│     ├─ session.py              #   SessionManager (SQLite WAL, history, config_kv)
-│     ├─ permissions.py          #   Per-agent permissions (tool/skill/task/rag + wildcards)
-│     ├─ ddl_setup.py            #   SQLite table initialization
-│     ├─ prompts/                #   System prompt, mandatory, help, skill creation
+│     ├─ tools.py                #   Registry: nativas + externas (~/.config/synapseForge/tools/) + MCP
+│     ├─ session.py              #   SessionManager (SQLite WAL, historial, config_kv)
+│     ├─ permissions.py          #   Permisos por agente (tool/skill/task/rag + wildcards)
+│     ├─ ddl_setup.py            #   Inicialización tablas SQLite
+│     ├─ prompts/                #   System prompt, mandatory, help, creación de skills
 │     └─ utils/                  #   Helpers: MCP, RAG/vector_db, skill_loader, model_resolver…
 │
-├─ frontend/                     # Template source — React/Vite/TS frontend
-│  ├─ public/docs.html           #   Product documentation (end user)
+├─ frontend/                     # Fuente del template — frontend React/Vite/TS
+│  ├─ public/docs.html           #   Documentación del producto (usuario final)
 │  └─ src/
 │     ├─ components/             #   Chat, Sidebar, configTab, RagInterface, SkillInterface…
-│     └─ services/               #   API clients (chatService SSE, configService, …)
+│     └─ services/               #   Clientes API (chatService SSE, configService, …)
 │
-├─ store/                        # Store of installable tools and skills
-├─ on_boarding/                  # Developer onboarding
+├─ store/                        # Store de tools y skills instalables
+├─ on_boarding/                  # Onboarding para desarrolladores
 ├─ cicd/                         # CI/CD
 ├─ tests/                        # Tests
-├─ .commands/                    # Local PowerShell commands
-├─ .github/                      # Workflows and PR template
+├─ .commands/                    # Comandos locales PowerShell
+├─ .github/                      # Workflows y PR template
 │
 ├─ Dockerfile                    # Multi-stage: Node 20 build → Python 3.12 slim runtime
-├─ docker-compose.yml            # app service: port 8000, VITE_MODE=prod
-├─ pyproject.toml                # Build config, synapseforge entry point
-└─ requirements.txt              # Repo development dependencies
+├─ docker-compose.yml            # Servicio app: puerto 8000, VITE_MODE=prod
+├─ pyproject.toml                # Build config, entry point synapseforge
+└─ requirements.txt              # Dependencias de desarrollo del repo
 ```
 
 ---
 
-## Backend — Agent Framework
+## Backend — Framework de Agentes
 
-The template includes a complete agent framework in `backend/agent/`: AgentLoop with SSE streaming and native tool calling, tools registry (native, external from `~/.config/synapseForge/tools/` and MCP servers via the official SDK), session management in SQLite (WAL), per-agent permission system and skills loaded as context.
+El template incluye un framework completo de agentes en `backend/agent/`: AgentLoop con streaming SSE y tool calling nativo, registro de tools (nativas, externas desde `~/.config/synapseForge/tools/` y servidores MCP vía SDK oficial), gestión de sesiones en SQLite (WAL), sistema de permisos por agente y skills cargadas como contexto.
 
-**Native tools**: `read`, `write`, `edit`, `glob`, `grep`, `webfetch`, `websearch`, `shell`, `list_dir`, `task` (delegation to sub-agents), `skill`, `reference`, `rag`, `check_email`, `send_email`, `help`.
+**Tools nativas**: `read`, `write`, `edit`, `glob`, `grep`, `webfetch`, `websearch`, `shell`, `list_dir`, `task` (delegación a sub-agentes), `skill`, `reference`, `rag`, `check_email`, `send_email`, `help`.
 
-### User configuration (`~/.config/synapseForge/`)
+### Configuración de usuario (`~/.config/synapseForge/`)
 
 ```
 ~/.config/synapseForge/
-├── skills/                 # Installed skills (SKILL.md + references/)
-├── tools/                  # Custom tools (.py with TOOL_NAME, execute())
-├── agents/                 # Agents (.md with YAML frontmatter + permissions) + AGENT.md
-├── knowledge/              # RAG collections (ChromaDB)
-├── mcp.json                # MCP servers
-└── config.yaml             # Router permissions (optional)
+├── skills/                 # Skills instaladas (SKILL.md + references/)
+├── tools/                  # Tools personalizadas (.py con TOOL_NAME, execute())
+├── agents/                 # Agentes (.md con frontmatter YAML + permisos) + AGENT.md
+├── knowledge/              # Colecciones RAG (ChromaDB)
+├── mcp.json                # Servidores MCP
+└── config.yaml             # Permisos del router (opcional)
 ```
 
-**Agent format (`.md` in `agents/`):**
+**Formato agente (`.md` en `agents/`):**
 ```markdown
 ---
-name: "My Agent"
-description: "What it does and when to use it"
+name: "Mi Agente"
+description: "Qué hace y cuándo usarlo"
 permission:
   read: allow
   task:
-    explorer: allow
+    explorador: allow
   skill:
-    my_skill: allow
+    mi_skill: allow
   rag:
-    my_collection: allow
+    mi_coleccion: allow
 parameters:
   temperature: 0.0
   top_p: 0.5
   model: null
 ---
-# Agent system prompt (markdown body)
+# System prompt del agente (cuerpo del markdown)
 ```
 
-- **AGENT.md**: general behavior injected as a `## Behavior` section in the system prompt of all agents (compatible with opencode/claude code).
-- **`## MANDATORY:`**: fidelity rules injected at the end of the system prompt of all agents.
-- **Router permissions**: if `config.yaml` exists, only its explicit permissions are used; otherwise the router is left with just `task` (delegation is always available).
+- **AGENT.md**: comportamiento general inyectado como sección `## Behavior` en el system prompt de todos los agentes (compatibilidad con opencode/claude code).
+- **`## MANDATORY:`**: reglas de fidelidad inyectadas al final del system prompt de todos los agentes.
+- **Permisos del router**: si existe `config.yaml` se usan solo sus permisos explícitos; si no, el router queda solo con `task` (delegación siempre disponible).
 
-### Providers and models
+### Providers y modelos
 
-The supported providers are **LOCAL** (Ollama, optional), **GROQ**, **GOOGLE** (Gemini) and **OPENROUTER**. Cloud API keys are managed from the Settings panel (**Providers**): they are validated against each provider's API when saved and stored encrypted in the internal SQLite database. Once a valid key is saved, the provider becomes immediately available in the selectors; a provider only shows up if it has a saved key — for LOCAL it is enough that Ollama responds.
+Los proveedores soportados son **LOCAL** (Ollama, opcional), **GROQ**, **GOOGLE** (Gemini) y **OPENROUTER**. Las API keys cloud se gestionan desde el panel de Configuración (**Providers**): se validan contra la API de cada proveedor al guardarlas y se almacenan cifradas en la SQLite interna. Al guardar una key válida, el provider queda disponible de inmediato en los selectores; un provider solo aparece si tiene key guardada — para LOCAL basta con que Ollama responda.
 
-The model is chosen explicitly: on first launch (or if no provider is available) the initial setup screen appears, which can be skipped. With no provider configured, chat and the creators stay locked until a valid key is loaded.
+El modelo se elige explícitamente: al primer arranque (o si no hay ningún provider disponible) aparece la pantalla inicial de configuración, saltable. Sin ningún provider configurado el chat y los creadores quedan bloqueados hasta cargar una key válida.
 
-The token context window of the selected model is automatically detected and persisted, and the frontend shows a gauge with the used percentage.
+La ventana de contexto en tokens del modelo seleccionado se detecta y persiste automáticamente, y el frontend muestra un gauge con el porcentaje usado.
 
-In the creation screens (skill, tool and agent) you can choose which cloud model generates the element (provider + model + Apply). The selection is ephemeral: it only applies to that task while the tab is open.
+En las pantallas de creación (skill, tool y agente) se puede elegir con qué modelo cloud se genera el elemento (proveedor + modelo + Aplicar). La selección es efímera: vale solo para esa tarea mientras la pestaña está abierta.
 
-### Knowledge base (RAG)
+### Fuente de conocimiento (RAG)
 
-RAG collections use cloud embeddings via OpenRouter (`liquid/lfm-2.5-embedding-350m:free`, free tier). To use this section an OpenRouter API key loaded in **Providers** is required: without it, the knowledge base stays disabled (the rest of the app works normally).
+Las colecciones RAG usan embeddings en la nube vía OpenRouter (`liquid/lfm-2.5-embedding-350m:free`, capa gratis). Para usar esta sección hace falta una API key de OpenRouter cargada en **Providers**: sin ella, la fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
 
 ---
 
 ## Frontend
 
-React/Vite/TypeScript SPA with Tailwind v4 and shadcn/ui, **multi-page**: main chat, skill creation, RAG management and user documentation (`docs.html`). Includes chat with SSE streaming and tool call visualization, sidebar with conversations/settings/agent panel, context window gauge, scheduled tasks Agenda with notification bell, metrics dashboard and Telegram toggle.
+SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui, **multi-page**: chat principal, creación de skills, gestión de RAG y documentación de usuario (`docs.html`). Incluye chat con streaming SSE y visualización de tool calls, sidebar con conversaciones/configuración/panel de agentes, gauge de ventana de contexto, Agenda de tareas programadas con campanita de notificaciones, dashboard de métricas y toggle de Telegram.
 
-The color system is dual: build-time (XML placeholders replaced by the pipeline) + runtime (`frontend/public/colors.json` loaded before rendering). `synapseforge colors` edits colors live without rebuild.
+El sistema de colores es dual: build-time (placeholders XML reemplazados por el pipeline) + runtime (`frontend/public/colors.json` cargado antes de renderizar). `synapseforge colors` edita los colores en vivo sin rebuild.
 
 ---
 
 ## Telegram
 
-Telegram bot as a remote control for the agent: it long-polls the Telegram Bot API and acts as a bridge — it publishes messages to the event bus, the frontend runs the normal chat flow and the backend returns the final response to Telegram. It supports session commands (`/sesiones`, `/usar`, `/nueva`, `/borrar`), model/provider switching (`/modelo`, `/proveedor`), control (`/detener`, `/contexto`, `/actual`), skill/tool/RAG creation (`/crear`), file sending (`/archivo`) and agenda management (`/agenda`, `/agendar`, `/horario`, `/eliminar_tarea`), plus voice notes (local transcription with faster-whisper) and attachments. Scheduled task executions are always notified via Telegram, regardless of whether the bot is enabled to work.
+Bot de Telegram como control remoto del agente: hace long-polling contra la Telegram Bot API y actúa como puente — publica los mensajes en el event bus, el frontend corre el flujo normal de chat y el backend devuelve la respuesta final a Telegram. Soporta comandos de sesión (`/sesiones`, `/usar`, `/nueva`, `/borrar`), modelo/proveedor (`/modelo`, `/proveedor`), control (`/detener`, `/contexto`, `/actual`), creación de skills/tools/RAG (`/crear`), envío de archivos (`/archivo`) y gestión de la agenda (`/agenda`, `/agendar`, `/horario`, `/eliminar_tarea`), además de notas de voz (transcripción local con faster-whisper) y adjuntos. Las ejecuciones de tareas programadas se notifican por Telegram siempre, independientemente de si el bot está habilitado para trabajar.
 
-| Variable | Description |
+| Variable | Descripción |
 |----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Bot token (from BotFather). If not set, the bot stays disabled. |
-| `TELEGRAM_ALLOWED_CHAT_IDS` | List of authorized `chat_id`s (comma-separated). |
+| `TELEGRAM_BOT_TOKEN` | Token del bot (de BotFather). Si no está seteado, el bot queda deshabilitado. |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Lista de `chat_id` autorizados (separados por coma). |
 
 ---
 
 ## Docker
 
-Multi-stage `Dockerfile` (Node 20 frontend build → Python 3.12 slim runtime) + `docker-compose.yml`. The backend serves the static frontend automatically and exposes a healthcheck at `/health`.
+`Dockerfile` multi-stage (Node 20 build del frontend → runtime Python 3.12 slim) + `docker-compose.yml`. El backend sirve el frontend estático automáticamente y expone healthcheck en `/health`.
 
 ```bash
 docker compose up --build -d
-# App available at http://localhost:8000
+# App disponible en http://localhost:8000
 ```
 
 ---
 
-## Future integration — Vercel Skills
+## Integración futura — Skills Vercel
 
-Integration with the [Vercel Skills](https://github.com/vercel-labs/skills) ecosystem (`npx skills`) is planned, which allows searching, installing and managing skills from public repositories. The planned flow works in two stages:
+Está planificada la integración con el ecosistema de [Vercel Skills](https://github.com/vercel-labs/skills) (`npx skills`), que permite buscar, instalar y gestionar skills desde repositorios públicos. El flujo planeado funciona en dos etapas:
 
-1. **Search**: run `npx skills find <query>` to discover skills available in the ecosystem.
-2. **Evaluation/Installation**: an LLM evaluates the results against the user's needs, and if appropriate, installs the skill from the source.
+1. **Búsqueda**: ejecutar `npx skills find <query>` para descubrir skills disponibles en el ecosistema.
+2. **Evaluación/Instalación**: un LLM evalúa los resultados contra la necesidad del usuario, y si corresponde, instala la skill desde el source.
 
-This would make it possible to expand the skills repository without having to create them manually, leveraging the open agent skills ecosystem.
+Esto permitiría ampliar el repositorio de skills sin tener que crearlas manualmente, aprovechando el ecosistema abierto de agent skills.
 
 ---
 
-## Documentation
+## Documentación
 
-| Document | Content |
+| Documento | Contenido |
 |---|---|
-| `frontend/public/docs.html` | Product documentation for the end user (served by the app) |
-| `on_boarding/` | Onboarding guide, contribution and Git flow |
-| `docs/` | Technical project documentation (not tracked) |
+| `frontend/public/docs.html` | Documentación del producto para el usuario final (servida por la app) |
+| `on_boarding/` | Guía de onboarding, contribución y flujo Git |
+| `docs/` | Documentación técnica del proyecto (no trackeada) |
 
 ---
 
-## Tech Stack
+## Stack Tecnológico
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-3776ab?labelColor=000000&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48bGluZWFyR3JhZGllbnQgaWQ9InB5dGhvbi1vcmlnaW5hbC1hIiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgeDE9IjcwLjI1MiIgeTE9IjEyMzcuNDc2IiB4Mj0iMTcwLjY1OSIgeTI9IjExNTEuMDg5IiBncmFkaWVudFRyYW5zZm9ybT0ibWF0cml4KC41NjMgMCAwIC0uNTY4IC0yOS4yMTUgNzA3LjgxNykiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzVBOUZENCIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzMwNjk5OCIvPjwvbGluZWFyR3JhZGllbnQ+PGxpbmVhckdyYWRpZW50IGlkPSJweXRob24tb3JpZ2luYWwtYiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiIHgxPSIyMDkuNDc0IiB5MT0iMTA5OC44MTEiIHgyPSIxNzMuNjIiIHkyPSIxMTQ5LjUzNyIgZ3JhZGllbnRUcmFuc2Zvcm09Im1hdHJpeCguNTYzIDAgMCAtLjU2OCAtMjkuMjE1IDcwNy44MTcpIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNGRkQ0M0IiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNGRkU4NzMiLz48L2xpbmVhckdyYWRpZW50PjxwYXRoIGZpbGw9InVybCgjcHl0aG9uLW9yaWdpbmFsLWEpIiBkPSJNNjMuMzkxIDEuOTg4Yy00LjIyMi4wMi04LjI1Mi4zNzktMTEuOCAxLjAwNy0xMC40NSAxLjg0Ni0xMi4zNDYgNS43MS0xMi4zNDYgMTIuODM3djkuNDExaDI0LjY5M3YzLjEzN0gyOS45NzdjLTcuMTc2IDAtMTMuNDYgNC4zMTMtMTUuNDI2IDEyLjUyMS0yLjI2OCA5LjQwNS0yLjM2OCAxNS4yNzUgMCAyNS4wOTYgMS43NTUgNy4zMTEgNS45NDcgMTIuNTE5IDEzLjEyNCAxMi41MTloOC40OTFWNjcuMjM0YzAtOC4xNTEgNy4wNTEtMTUuMzQgMTUuNDI2LTE1LjM0aDI0LjY2NWM2Ljg2NiAwIDEyLjM0Ni01LjY1NCAxMi4zNDYtMTIuNTQ4VjE1LjgzM2MwLTYuNjkzLTUuNjQ2LTExLjcyLTEyLjM0Ni0xMi44MzctNC4yNDQtLjcwNi04LjY0NS0xLjAyNy0xMi44NjYtMS4wMDh6TTUwLjAzNyA5LjU1N2MyLjU1IDAgNC42MzQgMi4xMTcgNC42MzQgNC43MjEgMCAyLjU5My0yLjA4MyA0LjY5LTQuNjM0IDQuNjktMi41NiAwLTQuNjMzLTIuMDk3LTQuNjMzLTQuNjktLjAwMS0yLjYwNCAyLjA3My00LjcyMSA0LjYzMy00LjcyMXoiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMTAuMjYpIi8+PHBhdGggZmlsbD0idXJsKCNweXRob24tb3JpZ2luYWwtYikiIGQ9Ik05MS42ODIgMjguMzh2MTAuOTY2YzAgOC41LTcuMjA4IDE1LjY1NS0xNS40MjYgMTUuNjU1SDUxLjU5MWMtNi43NTYgMC0xMi4zNDYgNS43ODMtMTIuMzQ2IDEyLjU0OXYyMy41MTVjMCA2LjY5MSA1LjgxOCAxMC42MjggMTIuMzQ2IDEyLjU0NyA3LjgxNiAyLjI5NyAxNS4zMTIgMi43MTMgMjQuNjY1IDAgNi4yMTYtMS44MDEgMTIuMzQ2LTUuNDIzIDEyLjM0Ni0xMi41NDd2LTkuNDEySDYzLjkzOHYtMy4xMzhoMzcuMDEyYzcuMTc2IDAgOS44NTItNS4wMDUgMTIuMzQ4LTEyLjUxOSAyLjU3OC03LjczNSAyLjQ2Ny0xNS4xNzQgMC0yNS4wOTYtMS43NzQtNy4xNDUtNS4xNjEtMTIuNTIxLTEyLjM0OC0xMi41MjFoLTkuMjY4ek03Ny44MDkgODcuOTI3YzIuNTYxIDAgNC42MzQgMi4wOTcgNC42MzQgNC42OTIgMCAyLjYwMi0yLjA3NCA0LjcxOS00LjYzNCA0LjcxOS0yLjU1IDAtNC42MzMtMi4xMTctNC42MzMtNC43MTkgMC0yLjU5NSAyLjA4My00LjY5MiA0LjYzMy00LjY5MnoiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMTAuMjYpIi8+PHJhZGlhbEdyYWRpZW50IGlkPSJweXRob24tb3JpZ2luYWwtYyIgY3g9IjE4MjUuNjc4IiBjeT0iNDQ0LjQ1IiByPSIyNi43NDMiIGdyYWRpZW50VHJhbnNmb3JtPSJtYXRyaXgoMCAtLjI0IC0xLjA1NSAwIDUzMi45NzkgNTU3LjU3NikiIGdyYWRpZW50VW5pdHM9InVzZXJTcGFjZU9uVXNlIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNCOEI4QjgiIHN0b3Atb3BhY2l0eT0iLjQ5OCIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzdGN0Y3RiIgc3RvcC1vcGFjaXR5PSIwIi8+PC9yYWRpYWxHcmFkaWVudD48cGF0aCBvcGFjaXR5PSIuNDQ0IiBmaWxsPSJ1cmwoI3B5dGhvbi1vcmlnaW5hbC1jKSIgZD0iTTk3LjMwOSAxMTkuNTk3YzAgMy41NDMtMTQuODE2IDYuNDE2LTMzLjA5MSA2LjQxNi0xOC4yNzYgMC0zMy4wOTItMi44NzMtMzMuMDkyLTYuNDE2IDAtMy41NDQgMTQuODE1LTYuNDE3IDMzLjA5Mi02LjQxNyAxOC4yNzUgMCAzMy4wOTEgMi44NzIgMzMuMDkxIDYuNDE3eiIvPjwvc3ZnPgo=)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?labelColor=000000&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cGF0aCBkPSJNNTYuODEzIDEyNy41ODZjLTEuOTAzLS4yMjctMy44OTktLjUyLTQuNDM0LS42NTJhNDguMDc4IDQ4LjA3OCAwIDAwLTIuMzc1LS41IDM2LjA0MiAzNi4wNDIgMCAwMS0yLjcwMy0uNjMzYy00LjE0NS0xLjE4OC00LjQ0Mi0xLjI4NS03LjU2Ny0yLjU2My0yLjg3NS0xLjE3Mi04LjE3Mi0zLjkxLTkuOTg0LTUuMTU2LS40OTYtLjM0NC0uOTYtLjYyMS0xLjAzMS0uNjIxLS4wNyAwLTEuMjMtLjgxNi0yLjU3OC0xLjgxMy04LjU3LTYuMzQzLTE1LjAwNC0xNC4wNDMtMTkuNjUzLTIzLjUyNy0uOC0xLjYyOS0xLjQ1My0zLjA3NC0xLjQ1My0zLjIxIDAtLjEzNC0uMTQ0LS41MDUtLjMyLS44MTctLjM2My0uNjQ5LS44OC0yLjA0Ny0xLjI5Ny0zLjQ5MmEyMC4wNDcgMjAuMDQ3IDAgMDAtLjYyNS0xLjgxM2MtLjE5NS0uNDYtLjM1Mi0xLjAyLS4zNTItMS4yNDYgMC0uMjI3LS4xOTUtLjk2NS0uNDMzLTEuNjQ1LS4yMzgtLjY3NS0uNDMtMS40NzItLjQzLTEuNzcgMC0uMjk2LS4xODctMS4zMi0uNDE4LTIuMjc2Qy41OTggNzMuNDkyIDAgNjcuMzc5IDAgNjMuOTUzYzAtMy40MjIuNTk4LTkuNTM1IDEuMTYtMTEuODk0LjIzLS45NTcuNDE4LTIgLjQxOC0yLjMyIDAtLjMyMS4xNDUtLjk1LjMyLTEuNC4xOC0uNDQ4LjQxLTEuMjUzLjUxNi0xLjc4OC4xMS0uNTM1LjM2LTEuNDU3LjU2My0yLjA1NWwuNTktMS43MjZjLjQzMy0xLjI5My44MzUtMi4zODcgMS4wMjctMi44MTMuMTEtLjIzOC41MzktMS4yMS45NTctMi4xNi42NzYtMS41MzUgMi4xMjUtNC40MyAyLjk3Mi01Ljk0NS4zMDktLjU1NS40MjYtLjczOSAyLjA5OC0zLjM1MiAyLjY0OS00LjE0OCA3LjE3Ni05LjMwOSAxMS4zOS0xMi45ODggMS40ODUtMS4yOTcgNi40NDYtNS4wNjMgNi42NjktNS4wNjMuMDYyIDAgLjUzLS4yODEgMS4wNDMtLjYyNSAxLjM0Ny0uOTAyIDIuNjY4LTEuNjY4IDQuMzktMi41MzFhNTMuMDYgNTMuMDYgMCAwMDEuODM2LS45NTNjLjI4NS0uMTY0LjgyLS40MSAzLjU2Ny0xLjY0LjYwNS0uMjcgMS4yNTctLjUxNiAzLjEzNi0xLjE3My40MTQtLjE0NCAxLjI0Ni0uNDQ5IDEuODQtLjY3Mi41OTgtLjIyMiAxLjMwMS0uNDA2IDEuNTYzLS40MDYuMjU4IDAgLjkzNy0uMTggMS41MDgtLjQwMi41Ny0uMjIzIDEuNjA1LS40NzcgMi4zMDQtLjU2My42OTYtLjA4MiAxLjYyMS0uMjc3IDIuMDU1LS40My40My0uMTQ4IDEuNjEtLjM0IDIuNjIxLS40MjVhNzIuNTcyIDcyLjU3MiAwIDAwMy45NDEtLjQ2NWMyLjY4OC0uMzk0IDguNTMyLS4zOTQgMTEuMTkyIDBhNzUuMDIgNzUuMDIgMCAwMDMuNzgxLjQ0NWMuOTUzLjA3OSAyLjE2OC4yNzggMi43MDMuNDQyLjUzNS4xNiAxLjQ2MS4zNiAyLjA1NS40MzMuNTk0LjA3OSAxLjU5NC4zMjUgMi4yMjIuNTUxLjYzLjIzIDEuMzQ0LjQxNCAxLjU5LjQxNHMuNzU0LjEzNyAxLjEyNS4zMDljLjM3NS4xNjggMS4xNjguNDQ5IDEuNzY2LjYyNS41OTQuMTggMS42MTMuNTM1IDIuMjcuNzk3LjY1Mi4yNjEgMS41MjcuNjA1IDEuOTQ1Ljc2MS43Ny4yOSA2LjQ2IDMuMTM3IDcuMjM0IDMuNjIyIDYuMjgxIDMuOTE3IDkuNTEyIDYuNDc2IDEzLjg1NiAxMC45NjQgNS4yMzggNS40MTQgOC43MTUgMTAuNTcgMTIuMjU0IDE4LjE2LjI1LjUzNi42MzIgMS4zMjkuODUxIDEuNzU4LjIxNS40MzQuMzk1Ljk0Mi4zOTUgMS4xMyAwIC4xOS4xOC43Ni40MDIgMS4yNjkuNjAyIDEuMzgzIDEuMTE3IDIuOTU3IDEuMzYgNC4xNi4xMi41OS4zNDMgMS4zMi40OTUgMS42MjEuMTUzLjMuMzMyIDEuMDYzLjQwMyAxLjY4OC4wNy42MjQuMjc3IDEuNjQ4LjQ1MyAyLjI2OSAxLjAyIDMuNTMxIDEuNTI3IDEzLjkzNC45MSAxOC41MzUtLjE4MyAxLjM2Ny0uMzkgMy4wMi0uNDYgMy42NzItLjExOCAxLjExNy0uNzA4IDQuMDA0LTEuMjEyIDUuOTQ1bC0uNTIgMi4wNTVjLS45OCAzLjk1Ny0zLjQwMiA5LjU5NC02LjM1OSAxNC44MDktMS4xNzIgMi4wNy01LjEwMSA3LjY2OC01Ljg0MyA4LjMyNC0uMDY3LjA1OC0uMzk5LjQ1LS43MzUuODYzLS4zMzYuNDE4LTEuNDE0IDEuNTg2LTIuMzkgMi41OTQtNC4zMDEgNC40NDEtNy43NyA3LjE4Ny0xMy44NiAxMC45NjktLjcyMi40NDktNi44NDcgMy40NDEtNy45OTIgMy45MDYtLjU5NC4yMzgtMS41ODYuNjQtMi4yMDMuODktLjYxMy4yNDctMS4yOTcuNDU0LTEuNTEyLjQ1OC0uMjE1LjAwMy0uNzgxLjE5NS0xLjI1OC40MjUtLjQ3Ni4yMy0xLjA4Mi40MjItMS4zNTEuNDI2LS4yNjYuMDA0LTEuMDQzLjE5Mi0xLjcyNy40MTgtLjY4My4yMy0xLjYzMy40NzctMi4xMS41NS0uNDc2LjA3NS0xLjQ5NS4yNzgtMi4yNjkuNDUtLjc3My4xNzItMy4xMS41MDgtNS4xODcuNzQ2YTU5LjA2IDU5LjA2IDAgMDEtMTMuOTQ1LS4wMzF6bTQuNzAzLTEyLjVjLjMtLjIzNC42MDktLjcuNjkxLTEuMDI3LjE4LS43MjMgMjkuMjM0LTU4Ljk3IDI5Ljc4MS01OS43LjQ2MS0uNjE3LjUwNC0xLjYwNS4wODItMS45NTMtLjIyMi0uMTg3LTMuMDA0LS4yNDYtMTAuNDMtLjIzNC01LjU3LjAxMi0xMC4yNTMuMDE2LTEwLjQwNi4wMTItLjIyNi0uMDA4LS4yNzMtMy43My0uMjUtMTkuNjcyLjAxNi0xMC44MTctLjAzNS0xOS43NjYtLjExMy0xOS44OS0uMDc4LS4xMjYtLjM4My0uMjI3LS42OC0uMjI3LS40MTggMC0uNjEzLjE4LS44Ny44MDgtLjQ4NSAxLjE2OC0xLjgyNSAzLjgyLTguMzQ4IDE2LjQ4NWEzNTU0LjU2OSAzNTU0LjU2OSAwIDAwLTQuMDU1IDcuODljLTEuMTU2IDIuMjYyLTIuOTggNS44MTMtNC4wNDcgNy44OWE4NzUxLjI0OCA4NzUxLjI0OCAwIDAwLTguNTk4IDE2Ljc1OWMtNC45MzMgOS42MzYtNS41MyAxMC43ODUtNS43NDIgMTEuMDM5LS40MS40OTYtLjYzMyAxLjY0LS40MDIgMi4wNy4yMS4zOTQuNjI5LjQxIDExLjA0My4zOTQgNS45NTMtLjAwNyAxMC44NjMuMDI0IDEwLjkxNC4wNy4xMzcuMTQxLjA4NiAzNy4zMS0uMDU1IDM4LjE5Ni0uMDkzLjU4Mi0uMDMxLjg5LjIzNSAxLjE1Ni40Ni40NjEuNTg2LjQ1NyAxLjI1LS4wNjZ6bTAgMCIgZmlsbD0iIzA0OTY4OCIvPjwvc3ZnPgo=)
@@ -286,9 +286,9 @@ This would make it possible to expand the skills repository without having to cr
 
 ---
 
-## License
+## Licencia
 
-This project is licensed under the terms specified in the [LICENSE](./LICENSE) file located at the root of the repository.
+Este proyecto está licenciado bajo los términos especificados en el archivo [LICENSE](./LICENSE) ubicado en la raíz del repositorio.
 
 ---
 

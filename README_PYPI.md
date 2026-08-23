@@ -35,7 +35,8 @@ The generated project includes:
 - **Agent Framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), sessions (SQLite WAL), per-agent permissions, skills and sub-agent delegation
 - **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini and OpenRouter — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
 - **RAG knowledge base**: ChromaDB vector collections with local embeddings; upload files and web pages, cosine-similarity search
-- **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview, with ephemeral cloud model selection per task
+- **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview (with real tools enabled), with ephemeral cloud model selection per task
+- **Scheduled tasks**: user-defined tasks (description + time + weekdays) managed from the header Agenda or via Telegram; the backend runs them with the selected model and notifies the result in the UI bell and on Telegram
 - **Telegram bot**: remote control that bridges messages to the agent through the web UI (commands, voice transcription, attachments)
 - **Frontend**: chat with SSE streaming, config panel, sessions sidebar, context-window gauge, metrics dashboard
 - **Docker** support and **desktop app mode** (heartbeat watchdog + shutdown endpoint)

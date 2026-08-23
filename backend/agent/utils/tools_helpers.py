@@ -27,7 +27,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.config_dir import get_tools_dir
-from backend.agent.utils.create_helpers import _resolve_create_model_provider
+from backend.agent.utils.create_helpers import resolve_create_model_provider
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -80,17 +80,21 @@ def _listar_tools_locales() -> list[dict[str, Any]]:
 async def _evaluar_si_existe(
     tarea: str,
     tools_locales: list[dict[str, Any]],
+    model: str | None = None,
+    provider: str | None = None,
 ) -> dict | None:
     """Pregunta al LLM si alguna tool local cubre la tarea.
 
     Args:
         tarea: Lo que el usuario quiere hacer.
         tools_locales: Lista de tools existentes.
+        model: Modelo elegido por el usuario (opcional).
+        provider: Provider elegido por el usuario (opcional).
 
     Returns:
         ``{"exist": "Sí", "tool": ...}`` o ``{"exist": "No", "tool": None}``.
     """
-    eval_model, eval_provider = _resolve_create_model_provider()
+    eval_model, eval_provider = resolve_create_model_provider(model, provider)
     if not eval_model:
         logger.warning("Sin modelo configurado.")
         return None
@@ -130,7 +134,7 @@ async def _evaluar_si_existe(
         return None
 
     raw = result["data"].strip()
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    m = re.search(r"\{.*?\}", raw, re.DOTALL)
     if not m:
         logger.warning("LLM no devolvió JSON: %s", raw[:150])
         return None

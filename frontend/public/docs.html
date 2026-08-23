@@ -527,6 +527,17 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </ul>
           <h3>Gauge de contexto</h3>
           <p>En el header del chat hay un <strong>velocímetro</strong> que muestra el porcentaje de ventana de contexto usado por la sesión actual. Se llena de verde a rojo a medida que se acerca al límite del modelo.</p>
+          <h3>Agenda (tareas programadas)</h3>
+          <p>En el header, el botón <strong>Agenda</strong> abre el panel de tareas programadas, donde podés indicarle al agente qué hacer y cuándo, sin estar presente:</p>
+          <ul>
+            <li><strong>Agregar una tarea</strong>: descripción de lo que tiene que hacer el agente, hora (<code>HH:MM</code>) y días de la semana.</li>
+            <li><strong>Editar el horario</strong> de una tarea existente (hora y días).</li>
+            <li><strong>Eliminar</strong> tareas.</li>
+            <li><strong>Guardar</strong>: valida todas las tareas antes de confirmar (descripción presente, horario válido, al menos un día).</li>
+          </ul>
+          <p>La zona horaria se toma directamente del sistema. Las tareas se ejecutan con el modelo y proveedor seleccionados, como si las hubieras pedido desde el chat.</p>
+          <h3>Notificaciones</h3>
+          <p>Junto al botón de Agenda hay una <strong>campanita</strong> que acumula una notificación por cada ejecución de tarea programada: indica si terminó con éxito o falló, con fecha y hora. Cada ejecución también se notifica por Telegram (ver la sección Telegram).</p>
           <h3>Historial</h3>
           <p>En el panel lateral, bajo la pestaña <strong>Conversaciones</strong>, se listan todas las sesiones de chat. Podés crear nuevas conversaciones, seleccionar sesiones anteriores y eliminar conversaciones existentes.</p>
         </section>
@@ -563,19 +574,24 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>/cancelar</code></td><td>Cancela cualquier comando en espera o sale del modo de creación.</td></tr>
               <tr><td><code>/nueva</code></td><td>Crea un chat nuevo.</td></tr>
               <tr><td><code>/actual</code></td><td>Muestra la sesión actual (solo el título).</td></tr>
-              <tr><td><code>/contexto</code></td><td>Muestra la ventana de contexto actual.</td></tr>
+              <tr><td><code>/contexto</code></td><td>Muestra el uso de la ventana de contexto.</td></tr>
               <tr><td><code>/borrar</code></td><td>Borra un chat (pregunta y espera respuesta).</td></tr>
               <tr><td><code>/detener</code></td><td>Detiene la tarea en curso.</td></tr>
-              <tr><td><code>/proveedor</code></td><td>Cambia el proveedor (LOCAL, GROQ u OPENROUTER; pregunta y espera respuesta).</td></tr>
+              <tr><td><code>/proveedor</code></td><td>Cambia el proveedor (entre los disponibles; pregunta y espera respuesta).</td></tr>
               <tr><td><code>/modelo</code></td><td>Cambia el modelo (lista y espera respuesta).</td></tr>
               <tr><td><code>/skills</code></td><td>Lista skills (solo dev).</td></tr>
               <tr><td><code>/tools</code></td><td>Lista tools (solo dev).</td></tr>
               <tr><td><code>/agentes</code></td><td>Lista agentes (solo dev).</td></tr>
-              <tr><td><code>/crear</code></td><td>Crea skill o RAG (solo dev). Pregunta qué crear y guía el flujo.</td></tr>
+              <tr><td><code>/crear</code></td><td>Crea skill, tool o colección RAG (solo dev). Pregunta qué crear y guía el flujo.</td></tr>
+              <tr><td><code>/archivo</code></td><td>Envía un archivo por path (pregunta y espera respuesta).</td></tr>
+              <tr><td><code>/agenda</code></td><td>Lista las tareas programadas.</td></tr>
+              <tr><td><code>/agendar</code></td><td>Agrega una tarea programada (pregunta la tarea y el horario).</td></tr>
+              <tr><td><code>/horario</code></td><td>Cambia el horario de una tarea programada (pregunta y espera respuesta).</td></tr>
+              <tr><td><code>/eliminar_tarea</code></td><td>Elimina una tarea programada (pregunta y espera respuesta).</td></tr>
               <tr><td><code>/ayuda</code></td><td>Muestra la ayuda.</td></tr>
             </tbody>
           </table>
-          <p>Los comandos que necesitan un argumento (<code>/usar</code>, <code>/borrar</code>, <code>/proveedor</code>, <code>/modelo</code>, <code>/crear</code>) usan un sistema de <strong>pregunta y respuesta</strong>: el bot muestra la lista de opciones y espera que el usuario responda con el texto. <code>/cancelar</code> (o la palabra "cancelar") aborta la espera.</p>
+          <p>Los comandos que necesitan un argumento (<code>/usar</code>, <code>/borrar</code>, <code>/proveedor</code>, <code>/modelo</code>, <code>/crear</code>, <code>/archivo</code>, <code>/agendar</code>, <code>/horario</code>, <code>/eliminar_tarea</code>) usan un sistema de <strong>pregunta y respuesta</strong>: el bot muestra la lista de opciones y espera que el usuario responda con el texto. <code>/cancelar</code> (o la palabra "cancelar") aborta la espera.</p>
           <h3>Creación de skills y RAG por Telegram</h3>
           <p>El bot detecta la intención de crear una skill o un RAG (por ejemplo, "crear skill" o "crear rag") y entra en un <strong>modo de creación</strong>:</p>
           <ul>
@@ -588,6 +604,15 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li><strong>Adjuntos</strong>: los archivos enviados con el botón de adjuntar de Telegram se descargan y procesan igual que el backend (extracción de texto con <code>extract_text_from_bytes</code>).</li>
             <li><strong>Toggle en el frontend</strong>: el header tiene un toggle para activar/desactivar el bot (persistido en SQLite).</li>
             <li><strong>Descarte de mensajes en cola</strong>: al reactivar el bot, se descartan los mensajes que llegaron mientras estaba apagado (solo se procesan los nuevos). Al activar, el frontend muestra un contador de 3 segundos para que no envíes durante el descarte.</li>
+            <li><strong>Notificaciones de tareas programadas</strong>: cada vez que se ejecuta una tarea programada, el resultado (éxito o error, con fecha y hora) se envía a Telegram <strong>siempre</strong>, independientemente de si el bot está habilitado para trabajar.</li>
+          </ul>
+          <h3>Gestión de la agenda por Telegram</h3>
+          <p>Las tareas programadas también se gestionan desde Telegram, con el mismo flujo de pregunta y respuesta que el resto de los comandos:</p>
+          <ul>
+            <li><code>/agenda</code> lista las tareas vigentes.</li>
+            <li><code>/agendar</code> pregunta qué tiene que hacer el agente y a qué hora, y crea la tarea.</li>
+            <li><code>/horario</code> permite cambiar hora y días de una tarea existente.</li>
+            <li><code>/eliminar_tarea</code> elimina una tarea.</li>
           </ul>
         </section>
 
@@ -637,6 +662,11 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td>DELETE</td><td><code>/api/agent/mcp/{label}</code></td><td>Eliminar un servidor MCP.</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/knowledge/{collection}</code></td><td>Eliminar una colección RAG.</td></tr>
               <tr><td>GET</td><td><code>/api/events</code></td><td>Streaming SSE del event bus (Telegram → Frontend).</td></tr>
+              <tr><td>GET</td><td><code>/api/scheduler/tasks</code></td><td>Listar las tareas programadas.</td></tr>
+              <tr><td>POST</td><td><code>/api/scheduler/tasks</code></td><td>Crear una tarea programada (descripción, hora y días).</td></tr>
+              <tr><td>PUT</td><td><code>/api/scheduler/tasks/{id}</code></td><td>Actualizar una tarea programada (hora, días o descripción).</td></tr>
+              <tr><td>DELETE</td><td><code>/api/scheduler/tasks/{id}</code></td><td>Eliminar una tarea programada.</td></tr>
+              <tr><td>GET</td><td><code>/api/scheduler/runs</code></td><td>Historial de ejecuciones de tareas programadas.</td></tr>
               <tr><td>GET</td><td><code>/api/telegram/status</code></td><td>Estado del bot de Telegram.</td></tr>
               <tr><td>POST</td><td><code>/api/telegram/toggle</code></td><td>Activar/desactivar el bot de Telegram.</td></tr>
               <tr><td>GET/POST</td><td><code>/api/telegram/active-session</code></td><td>Obtener/establecer la sesión activa compartida.</td></tr>
@@ -715,9 +745,9 @@ synapseForge run .</code></pre>
           <h3>Variables de entorno para producción</h3>
           <p>Antes de generar el build, asegurate de que la configuración de producción esté lista:</p>
           <ul>
-            <li>La URL del backend debe apuntar al dominio público donde se va a servir la app.</li>
-            <li>La configuración de CORS en el backend debe permitir ese dominio.</li>
-            <li>Las claves del proveedor de modelos deben estar en variables de entorno del sistema, nunca hardcodeadas en el código.</li>
+              <li>La URL del backend debe apuntar al dominio público donde se va a servir la app.</li>
+              <li>La configuración de CORS en el backend debe permitir ese dominio.</li>
+              <li>Las API keys de los proveedores se cargan desde la app (Configuración → <strong>Providers</strong>) y quedan cifradas en la base de datos interna; nunca hardcodeadas en el código.</li>
           </ul>
           <h3>Despliegue en un servidor propio (VPS)</h3>
           <ol>

@@ -88,24 +88,6 @@ if __name__ == "__main__":
 **El scanner SOLO busca `.py` en la raíz de `tools/`. NO entra a subcarpetas.**
 Cada tool es un archivo `.py` individual. Código compartido va en `tools/lib/`.
 
-## RECURSOS DISPONIBLES (Inyección automática)
-El agente debe conocer qué herramientas, skills, subagentes, MCPs y RAG tiene disponibles para decidir qué permisos asignar.
-
-**Tools nativas y custom:**
-{tools_disponibles}
-
-**Skills:**
-{skills_disponibles}
-
-**Subagentes:**
-{subagentes_disponibles}
-
-**Servidores MCP:**
-{mcp_disponibles}
-
-**Colecciones RAG:**
-{rag_disponibles}
-
 ## DATOS QUE NECESITA LA TOOL
 
 ### Parámetros (lo que el LLM le pasa al invocarla)

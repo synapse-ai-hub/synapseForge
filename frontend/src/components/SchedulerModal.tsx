@@ -267,7 +267,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                               className={`w-7 h-7 rounded-full text-xs font-medium border transition-colors ${
                                 editDays.includes(day)
                                   ? "bg-app-primary text-white border-app-primary"
-                                  : "bg-white text-gray-500 border-gray-300 hover:border-indigo-400"
+                                  : "bg-white text-gray-500 border-gray-300 hover:border-app-primary"
                               }`}
                             >
                               {label}
@@ -284,7 +284,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                         <button
                           type="button"
                           onClick={saveEdit}
-                          className="flex items-center gap-1.5 bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:opacity-90"
+                          className="flex items-center gap-1.5 bg-gradient-to-r from-app-primary to-app-gradient-secondary text-app-primary-text text-xs font-medium px-3 py-1.5 rounded-lg hover:opacity-90"
                         >
                           <Check size={13} />
                           Guardar horario
@@ -368,7 +368,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                     className={`w-7 h-7 rounded-full text-xs font-medium border transition-colors ${
                       newDays.includes(day)
                         ? "bg-app-primary text-white border-app-primary"
-                        : "bg-white text-gray-500 border-gray-300 hover:border-indigo-400"
+                        : "bg-white text-gray-500 border-gray-300 hover:border-app-primary"
                     }`}
                   >
                     {label}
@@ -384,7 +384,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
             <button
               type="button"
               onClick={handleAdd}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-app-primary to-app-gradient-secondary text-app-primary-text text-sm font-medium px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-50"
             >
               <Plus size={14} />
               Agregar tarea
@@ -397,7 +397,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
           <button
             type="button"
             onClick={handleSaveAll}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90"
+            className="flex items-center justify-center gap-2 bg-gradient-to-r from-app-primary to-app-gradient-secondary text-app-primary-text text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90"
           >
             <Check size={15} />
             Guardar

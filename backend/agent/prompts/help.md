@@ -143,7 +143,7 @@ Las interfaces de creación (skills, tools y agentes) permiten elegir, en su pan
 2. Seleccionar modelo.
 3. Pulsar **Aplicar**.
 
-La selección es efímera: vive mientras la pestaña está abierta y se usa para esa tarea de creación. No se persiste. Si no se aplica ninguna selección, se usa el modelo por defecto.
+La selección es efímera: vive mientras la pestaña está abierta y se usa para esa tarea de creación. No se persiste. Si no se aplica ninguna selección, el sistema usa automáticamente uno de los providers cloud disponibles.
 
 ---
 
@@ -214,17 +214,23 @@ El sistema incluye un **bot de Telegram** que actúa como puente hacia el agente
 | `/cancelar` | Cancela cualquier comando en espera. |
 | `/nueva` | Crea un chat nuevo. |
 | `/actual` | Muestra la sesión actual (solo el título). |
+| `/contexto` | Muestra el uso de la ventana de contexto. |
 | `/borrar` | Borra un chat (pregunta y espera respuesta). |
 | `/detener` | Detiene la tarea en curso. |
-| `/proveedor` | Cambia el proveedor (LOCAL, GROQ u OPENROUTER; pregunta y espera respuesta). |
+| `/proveedor` | Cambia el proveedor (entre los disponibles; pregunta y espera respuesta). |
 | `/modelo` | Cambia el modelo (lista y espera respuesta). |
 | `/skills` | Lista skills (solo dev). |
 | `/tools` | Lista tools (solo dev). |
 | `/agentes` | Lista agentes (solo dev). |
-| `/crear` | Crea skill/tool/agente (solo dev, no implementado). |
+| `/crear` | Crea skill, tool o colección RAG (solo dev; pregunta qué crear y guía el flujo). |
+| `/archivo` | Envía un archivo por path (pregunta y espera respuesta). |
+| `/agenda` | Lista las tareas programadas. |
+| `/agendar` | Agrega una tarea programada (pregunta la tarea y el horario). |
+| `/horario` | Cambia el horario de una tarea programada (pregunta y espera respuesta). |
+| `/eliminar_tarea` | Elimina una tarea programada (pregunta y espera respuesta). |
 | `/ayuda` | Muestra la ayuda. |
 
-Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
+Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`, `/crear`, `/archivo`, `/agendar`, `/horario`, `/eliminar_tarea`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
 
 ### Funcionalidades
 
@@ -232,6 +238,31 @@ Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/mod
 - **Adjuntos**: los archivos enviados con el botón de adjuntar de Telegram se descargan y procesan igual que el backend (extracción de texto).
 - **Toggle en el frontend**: el header tiene un toggle para activar/desactivar el bot (persistido en SQLite).
 - **Descarte de mensajes en cola**: al reactivar el bot, se descartan los mensajes que llegaron mientras estaba apagado (solo se procesan los nuevos).
+- **Notificaciones de tareas programadas**: cada vez que se ejecuta una tarea programada, el resultado (éxito o error, con fecha y hora) se envía a Telegram **siempre**, independientemente de si el bot está habilitado para trabajar.
+
+---
+
+## Tareas programadas (Agenda)
+
+El agente puede ejecutar tareas en horarios definidos por el usuario. La zona horaria se toma directamente del sistema, sin configuración.
+
+### Configurar desde la interfaz
+
+El header tiene un botón **Agenda** que abre el panel de tareas programadas, donde se puede:
+
+1. **Agregar una tarea**: descripción de lo que debe hacer el agente, hora (`HH:MM`) y días de la semana.
+2. **Editar el horario** de una tarea existente (hora y días).
+3. **Eliminar** tareas.
+4. **Guardar**: valida todas las tareas antes de confirmar (descripción presente, horario válido, al menos un día).
+
+Las tareas se persisten en la base de datos SQLite interna.
+
+### Ejecución y notificaciones
+
+- El backend revisa periódicamente si hay tareas que corresponde ejecutar y las corre usando el modelo y proveedor seleccionados, como si el usuario las hubiera pedido desde la interfaz.
+- Cada ejecución queda registrada (tarea, estado, fecha y hora) y genera dos notificaciones:
+  - En la **interfaz**, mediante la campanita del header: indica si la tarea terminó con éxito o falló, con fecha y hora.
+  - En **Telegram**, con el mismo detalle, siempre (aunque el bot esté deshabilitado para trabajar).
 
 ---
 

@@ -30,7 +30,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.config_dir import get_skills_dir
-from backend.agent.utils.create_helpers import _resolve_create_model_provider
+from backend.agent.utils.create_helpers import resolve_create_model_provider
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -98,17 +98,21 @@ def _listar_skills_locales() -> list[dict[str, Any]]:
 async def _evaluar_si_existe(
     tarea: str,
     skills_locales: list[dict[str, Any]],
+    model: str | None = None,
+    provider: str | None = None,
 ) -> dict | None:
     """Pregunta al LLM si alguna skill local sirve.
 
     Args:
         tarea: Lo que el usuario quiere hacer.
         skills_locales: Lista de skills existentes.
+        model: Modelo elegido por el usuario (opcional).
+        provider: Provider elegido por el usuario (opcional).
 
     Returns:
         ``{"exist": "Sí", "skill": ...}`` o ``{"exist": "No", "skill": None}``.
     """
-    eval_model, eval_provider = _resolve_create_model_provider()
+    eval_model, eval_provider = resolve_create_model_provider(model, provider)
     if not eval_model:
         logger.warning("Sin modelo configurado.")
         return None
@@ -151,7 +155,7 @@ async def _evaluar_si_existe(
         return None
 
     raw = result["data"].strip()
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    m = re.search(r"\{.*?\}", raw, re.DOTALL)
     if not m:
         logger.warning("LLM no devolvió JSON: %s", raw[:150])
         return None
@@ -170,17 +174,24 @@ async def _evaluar_si_existe(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def _explicar_skill(tarea: str, skill_dir: Path) -> str | None:
+async def _explicar_skill(
+    tarea: str,
+    skill_dir: Path,
+    model: str | None = None,
+    provider: str | None = None,
+) -> str | None:
     """Pide al LLM una breve explicación de qué hace la skill.
 
     Args:
         tarea: Lo que el usuario quiere resolver.
         skill_dir: Directorio de la skill.
+        model: Modelo elegido por el usuario (opcional).
+        provider: Provider elegido por el usuario (opcional).
 
     Returns:
         Explicación breve, o None si falla.
     """
-    eval_model, eval_provider = _resolve_create_model_provider()
+    eval_model, eval_provider = resolve_create_model_provider(model, provider)
     if not eval_model:
         return None
 
@@ -230,12 +241,16 @@ async def _explicar_skill(tarea: str, skill_dir: Path) -> str | None:
 async def _generar_skill(
     conversacion: str,
     nombre: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
 ) -> dict[str, Any]:
     """Genera una skill con el LLM usando el prompt ``generar_skill``.
 
     Args:
         conversacion: Historial completo de la conversación con el usuario.
         nombre: Nombre sugerido para la skill.
+        model: Modelo elegido por el usuario (opcional).
+        provider: Provider elegido por el usuario (opcional).
 
     Returns:
         ``{"name": ..., "content": ...}``.
@@ -243,7 +258,7 @@ async def _generar_skill(
     Raises:
         RuntimeError: Si el LLM falla o no hay modelo.
     """
-    eval_model, eval_provider = _resolve_create_model_provider()
+    eval_model, eval_provider = resolve_create_model_provider(model, provider)
     if not eval_model:
         raise RuntimeError("No hay modelo configurado. Seleccioná un modelo en Configuración.")
 

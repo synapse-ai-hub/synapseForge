@@ -323,8 +323,10 @@ def refresh_providers_cache() -> None:
     # Groq — try the API
     try:
         api_key = provider_keys.resolve_api_key("GROQ")
+        print(f"[DEBUG] refresh_providers_cache GROQ: key={'OK' if api_key else 'MISSING'}")
         if api_key:
             groq_models = get_groq_models(api_key)
+            print(f"[DEBUG] refresh_providers_cache GROQ: models={len(groq_models)}")
             if groq_models:
                 cached.append({"provider": "Groq", "label": "Groq", "models": groq_models})
     except Exception as exc:
@@ -334,8 +336,10 @@ def refresh_providers_cache() -> None:
     # Google Gemini — try the API
     try:
         api_key = provider_keys.resolve_api_key("GOOGLE")
+        print(f"[DEBUG] refresh_providers_cache GOOGLE: key={'OK' if api_key else 'MISSING'}")
         if api_key:
             models = get_google_models(api_key)
+            print(f"[DEBUG] refresh_providers_cache GOOGLE: models={len(models)}")
             if models:
                 cached.append({"provider": "GOOGLE", "label": "Google Gemini", "models": models})
     except Exception as exc:
@@ -344,8 +348,11 @@ def refresh_providers_cache() -> None:
 
     # OpenRouter — public catalog, listed when a key is available
     try:
-        if provider_keys.resolve_api_key("OPENROUTER"):
+        or_key = provider_keys.resolve_api_key("OPENROUTER")
+        print(f"[DEBUG] refresh_providers_cache OPENROUTER: key={'OK' if or_key else 'MISSING'}")
+        if or_key:
             models = get_openrouter_models()
+            print(f"[DEBUG] refresh_providers_cache OPENROUTER: models={len(models)}")
             if models:
                 cached.append({"provider": "OPENROUTER", "label": "OpenRouter", "models": models})
     except Exception as exc:
@@ -354,6 +361,7 @@ def refresh_providers_cache() -> None:
 
     if session_manager is not None:
         session_manager.save_providers(cached)
+    print(f"[DEBUG] refresh_providers_cache final: {[p['provider'] for p in cached]}")
     logger.info("Providers cache refreshed: %s", [p["provider"] for p in cached])
 
 

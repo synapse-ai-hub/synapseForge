@@ -46,6 +46,7 @@ from backend.agent.utils.skills_helpers import (
 from backend.agent.utils.tools_helpers import _listar_tools_locales
 from backend.agent.utils.create_helpers import (
     stream_tool_calling_loop,
+    stream_interview_loop,
     resolve_create_model_provider,
 )
 from backend.instances import agent
@@ -252,40 +253,27 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         collected_content = ""
         tool_calls_data = None
 
-        try:
-            _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
-            async for event in agent.llm_streaming(
-                model=_create_model,
-                provider=_create_provider,
-                prompt=prompt,
-                tools=[_INTERVIEW_TOOL],
-                temperature=0.3,
-                top_p=0.8,
-                max_tokens=3000,
-                cleaned_output=True,
-            ):
-                if event["type"] == "chunk":
-                    collected_content += event.get("content", "")
-                    yield _sse({"type": "chunk", "content": event.get("content", "")})
+        _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
+        async for event in stream_interview_loop(
+            prompt=prompt,
+            interview_tool=_INTERVIEW_TOOL,
+            friendly_error=_FRIENDLY_ERROR,
+            model=_create_model,
+            provider=_create_provider,
+        ):
+            if event["type"] == "chunk":
+                collected_content += event.get("content", "")
+                yield _sse(event)
 
-                elif event["type"] == "reasoning":
-                    yield _sse({"type": "reasoning", "content": event.get("content", "")})
+            elif event["type"] == "_interview_args":
+                tool_calls_data = event.get("content") or {}
 
-                elif event["type"] == "tool_calls_detected":
-                    tcs = event["content"]
-                    if tcs:
-                        tc = tcs[0]
-                        tool_calls_data = tc.get("args", {})
-                    break
+            elif event["type"] == "aborted":
+                yield _sse(event)
+                return
 
-                elif event["type"] == "aborted":
-                    yield _sse({"type": "aborted", "content": "Stream cancelado."})
-                    return
-
-        except Exception as e:
-            logger.exception("Error en streaming interview: %s", e)
-            yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
-            return
+            else:
+                yield _sse(event)
 
         # ── Fallback: si no hubo tool call, intentar parsear JSON ──
         if not tool_calls_data:
@@ -325,7 +313,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         # ════════════════════════════════════════════════════════════════
         _SKILLS_DIR.mkdir(parents=True, exist_ok=True)
         skills_locales = _listar_skills_locales()
-        decision = await _evaluar_si_existe(task, skills_locales)
+        decision = await _evaluar_si_existe(task, skills_locales, req.model, req.provider)
 
         if decision and decision.get("exist") == "Sí":
             skill_name = decision.get("skill")
@@ -546,7 +534,9 @@ async def post_create_tool_stream(req: CreateToolRequest):
         # ════════════════════════════════════════════════════════════════
         try:
             tools_locales = _listar_tools_locales()
-            decision = await _evaluar_si_existe_tool_inline(descripcion, tools_locales, agent)
+            decision = await _evaluar_si_existe_tool_inline(
+                descripcion, tools_locales, agent, req.model, req.provider
+            )
 
             if decision and decision.get("exist") == "Sí":
                 tool_name = decision.get("tool")
@@ -596,40 +586,27 @@ async def post_create_tool_stream(req: CreateToolRequest):
         collected_content = ""
         tool_calls_data = None
 
-        try:
-            _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
-            async for event in agent.llm_streaming(
-                model=_create_model,
-                provider=_create_provider,
-                prompt=prompt,
-                tools=[_TOOL_INTERVIEW_TOOL],
-                temperature=0.3,
-                top_p=0.8,
-                max_tokens=3000,
-                cleaned_output=True,
-            ):
-                if event["type"] == "chunk":
-                    collected_content += event.get("content", "")
-                    yield _sse({"type": "chunk", "content": event.get("content", "")})
+        _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
+        async for event in stream_interview_loop(
+            prompt=prompt,
+            interview_tool=_TOOL_INTERVIEW_TOOL,
+            friendly_error=_FRIENDLY_ERROR_TOOL,
+            model=_create_model,
+            provider=_create_provider,
+        ):
+            if event["type"] == "chunk":
+                collected_content += event.get("content", "")
+                yield _sse(event)
 
-                elif event["type"] == "reasoning":
-                    yield _sse({"type": "reasoning", "content": event.get("content", "")})
+            elif event["type"] == "_interview_args":
+                tool_calls_data = event.get("content") or {}
 
-                elif event["type"] == "tool_calls_detected":
-                    tcs = event["content"]
-                    if tcs:
-                        tc = tcs[0]
-                        tool_calls_data = tc.get("args", {})
-                    break
+            elif event["type"] == "aborted":
+                yield _sse(event)
+                return
 
-                elif event["type"] == "aborted":
-                    yield _sse({"type": "aborted", "content": "Stream cancelado."})
-                    return
-
-        except Exception as e:
-            logger.exception("Error en streaming interview: %s", e)
-            yield _sse({"type": "error", "content": _FRIENDLY_ERROR_TOOL})
-            return
+            else:
+                yield _sse(event)
 
         # ── Fallback: si no hubo tool call, intentar parsear JSON ──
         if not tool_calls_data:
@@ -792,10 +769,10 @@ async def post_create_tool_stream(req: CreateToolRequest):
 
 
 # Helper para evaluar inline sin reimportar todo el módulo
-async def _evaluar_si_existe_tool_inline(tarea, tools_locales, agent):
+async def _evaluar_si_existe_tool_inline(tarea, tools_locales, agent, model=None, provider=None):
     """Wrapper sobre el helper compartido."""
     from backend.agent.utils.tools_helpers import _evaluar_si_existe
-    return await _evaluar_si_existe(tarea, tools_locales)
+    return await _evaluar_si_existe(tarea, tools_locales, model, provider)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -972,40 +949,27 @@ async def post_create_agent_stream(req: CreateAgentRequest):
         collected_content = ""
         tool_calls_data = None
 
-        try:
-            _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
-            async for event in agent.llm_streaming(
-                model=_create_model,
-                provider=_create_provider,
-                prompt=prompt,
-                tools=[_AGENT_INTERVIEW_TOOL],
-                temperature=0.3,
-                top_p=0.8,
-                max_tokens=3000,
-                cleaned_output=True,
-            ):
-                if event["type"] == "chunk":
-                    collected_content += event.get("content", "")
-                    yield _sse({"type": "chunk", "content": event.get("content", "")})
+        _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
+        async for event in stream_interview_loop(
+            prompt=prompt,
+            interview_tool=_AGENT_INTERVIEW_TOOL,
+            friendly_error=_FRIENDLY_ERROR_AGENT,
+            model=_create_model,
+            provider=_create_provider,
+        ):
+            if event["type"] == "chunk":
+                collected_content += event.get("content", "")
+                yield _sse(event)
 
-                elif event["type"] == "reasoning":
-                    yield _sse({"type": "reasoning", "content": event.get("content", "")})
+            elif event["type"] == "_interview_args":
+                tool_calls_data = event.get("content") or {}
 
-                elif event["type"] == "tool_calls_detected":
-                    tcs = event["content"]
-                    if tcs:
-                        tc = tcs[0]
-                        tool_calls_data = tc.get("args", {})
-                    break
+            elif event["type"] == "aborted":
+                yield _sse(event)
+                return
 
-                elif event["type"] == "aborted":
-                    yield _sse({"type": "aborted", "content": "Stream cancelado."})
-                    return
-
-        except Exception as e:
-            logger.exception("Error en streaming interview: %s", e)
-            yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
-            return
+            else:
+                yield _sse(event)
 
         # ── Fallback: si no hubo tool call, intentar parsear JSON ──
         if not tool_calls_data:
@@ -1062,6 +1026,11 @@ async def post_create_agent_stream(req: CreateAgentRequest):
             carpeta=carpeta,
             tools=tools_text,
             skills=skills_text,
+            tools_disponibles=tools_list_text,
+            skills_disponibles=skills_list_text,
+            subagentes_disponibles=subagents_list_text,
+            mcp_disponibles=mcp_list_text,
+            rag_disponibles=rag_list_text,
         )
 
         user_msg = (

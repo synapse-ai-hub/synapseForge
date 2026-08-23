@@ -42,6 +42,19 @@ _DEFAULT_TEMPERATURE = 0.3
 _DEFAULT_TOP_P = 0.8
 _DEFAULT_MAX_TOKENS = 3000
 
+_INTERVIEW_TOOLS_PERMS: dict[str, str] = {
+    "read": "allow",
+    "write": "allow",
+    "edit": "allow",
+    "shell": "allow",
+    "list_dir": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "websearch": "allow",
+    "webfetch": "allow",
+}
+"""Native tools enabled during creation interviews (read/explore + web)."""
+
 
 def _resolve_create_model_provider() -> tuple[str, str]:
     """Resolve the (model, provider) used by the creation flows.
@@ -98,6 +111,150 @@ def resolve_create_model_provider(
     ):
         return model_clean, prov_u
     return _resolve_create_model_provider()
+
+
+async def stream_interview_loop(
+    prompt: str,
+    interview_tool: dict[str, Any],
+    friendly_error: str,
+    model: str | None = None,
+    provider: str | None = None,
+    max_iter: int = _DEFAULT_MAX_ITERATIONS,
+    temperature: float = _DEFAULT_TEMPERATURE,
+    top_p: float = _DEFAULT_TOP_P,
+    max_tokens: int = _DEFAULT_MAX_TOKENS,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Run the interview phase of a creation flow with real tools enabled.
+
+    Streams the LLM response with the inline interview tool plus the native
+    tools in ``_INTERVIEW_TOOLS_PERMS`` (read/explore + web). When the model
+    calls one of the native tools it is executed through
+    ``agent.tools._execute_tool`` and the conversation continues so the model
+    can inspect files or search the web before answering. When the model calls
+    the interview tool the loop ends.
+
+    Args:
+        prompt: Fully formatted interview prompt (first user message).
+        interview_tool: Inline tool schema that closes the interview
+            (e.g. ``responder_interview``).
+        friendly_error: User-friendly error message yielded on failure.
+        model: Model identifier sent to the provider. If ``None``,
+            resolved via ``_resolve_create_model_provider``.
+        provider: Provider name. If ``None``, resolved via
+            ``_resolve_create_model_provider``.
+        max_iter: Maximum number of loop iterations.
+        temperature: Sampling temperature.
+        top_p: Nucleus sampling parameter.
+        max_tokens: Maximum output tokens per request.
+
+    Yields:
+        SSE event dicts: ``chunk``, ``reasoning``, ``tool_call``,
+        ``tool_result``, ``aborted``, ``error`` and finally
+        ``_interview_args`` with the interview tool arguments (or ``None``
+        if the interview tool was never called; internal event, not for
+        the client).
+    """
+    if model is None or provider is None:
+        model, provider = _resolve_create_model_provider()
+
+    interview_name = (interview_tool.get("function") or {}).get("name", "")
+    tools: list[dict[str, Any]] = [interview_tool]
+    try:
+        tools += list(agent.tools.tools_registry(_INTERVIEW_TOOLS_PERMS))
+    except Exception as e:
+        logger.warning("No se pudieron listar tools para la entrevista: %s", e)
+
+    msgs: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+
+    for _iteration in range(max_iter):
+        collected_content = ""
+        tool_calls = None
+
+        try:
+            async for event in agent.llm_streaming(
+                model=model,
+                provider=provider,
+                messages=msgs,
+                tools=tools,
+                temperature=temperature,
+                top_p=top_p,
+                max_tokens=max_tokens,
+                cleaned_output=True,
+            ):
+                if event["type"] == "chunk":
+                    collected_content += event.get("content", "")
+                    yield {"type": "chunk", "content": event.get("content", "")}
+
+                elif event["type"] == "reasoning":
+                    yield {"type": "reasoning", "content": event.get("content", "")}
+
+                elif event["type"] == "tool_calls_detected":
+                    tool_calls = event["content"]
+                    break
+
+                elif event["type"] == "aborted":
+                    yield {"type": "aborted", "content": "Stream cancelado."}
+                    return
+
+        except Exception as e:
+            logger.exception("Error en streaming interview: %s", e)
+            yield {"type": "error", "content": friendly_error}
+            return
+
+        if not tool_calls:
+            break
+
+        # Interview tool → close the phase and hand the args to the caller.
+        interview_tc = next(
+            (tc for tc in tool_calls if tc.get("name") == interview_name), None
+        )
+        if interview_tc is not None:
+            yield {"type": "_interview_args", "content": interview_tc.get("args", {})}
+            return
+
+        # Native tools → execute and keep interviewing with the results.
+        msgs.append({
+            "role": "assistant",
+            "content": collected_content,
+            "tool_calls": tool_calls,
+        })
+        for tc in tool_calls:
+            tc_id = tc.get("id", "")
+            tc_name = tc.get("name", "")
+            tc_args = tc.get("args", {})
+
+            yield {"type": "tool_call", "content": {"name": tc_name, "args": tc_args}}
+
+            try:
+                result = await agent.tools._execute_tool(tc_name, **tc_args)
+            except Exception as e:
+                logger.exception("Tool '%s' failed during interview", tc_name)
+                result = {"status": "error", "message": str(e)}
+
+            if isinstance(result, dict):
+                if result.get("status") == "error":
+                    result_content = result.get("message", "Error desconocido")
+                else:
+                    result_content = result.get("data", json.dumps(result))
+            else:
+                result_content = str(result)
+
+            if not isinstance(result_content, str):
+                result_content = json.dumps(result_content)
+
+            yield {
+                "type": "tool_result",
+                "content": {"name": tc_name, "result": result_content},
+            }
+
+            msgs.append({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": result_content,
+            })
+
+    # Interview tool never called within the iteration budget.
+    yield {"type": "_interview_args", "content": None}
 
 
 async def stream_tool_calling_loop(

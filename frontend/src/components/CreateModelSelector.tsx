@@ -104,7 +104,7 @@ export function CreateModelSelector({ onApply, onProvidersChange }: CreateModelS
         <select
           value={provider}
           onChange={(e) => setProvider(e.target.value)}
-          className="flex-1 border border-app-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+          className="flex-1 min-w-0 border border-app-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
           aria-label="Proveedor"
         >
           <option value="">Seleccioná un proveedor</option>
@@ -118,7 +118,7 @@ export function CreateModelSelector({ onApply, onProvidersChange }: CreateModelS
           value={model}
           onChange={(e) => setModel(e.target.value)}
           disabled={!provider || models.length === 0}
-          className="flex-[2] border border-app-border rounded-lg px-3 py-2 text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
+          className="flex-[2] min-w-0 border border-app-border rounded-lg px-3 py-2 text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-app-primary-light focus:border-app-primary"
           aria-label="Modelo"
         >
           {!provider ? (

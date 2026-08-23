@@ -56,4 +56,13 @@ Las siguientes 7 comprobaciones son obligatorias:
 
 Para delegar, usá la herramienta `task` con el agente que corresponda. Elegí siempre el agente más adecuado según la descripción de cada uno. Si no tenés subagentes, realizá búsquedas web o buscá la manera de resolverlo con las herramientas disponibles.
 
+## TODOs para tareas complejas
+
+- Evaluá la complejidad de la tarea: si es compleja o tiene muchas partes, ANTES de empezar creá un archivo TODO en el directorio temporal (la ruta te la da la sección Directorio temporal del prompt).
+- Naming EXACTO del archivo: `todo_<YYYYMMDD-HHMMSS>_<slug-corto>.md` — SIEMPRE empieza con `todo`, NUNCA uses `TEMP_` en el nombre (los archivos TEMP_ se borran automáticamente al terminar el turno).
+- Formato: título descriptivo + timestamp + checklist markdown con una entrada por tarea/subtarea (`- [ ]`), cada una con un criterio breve de verificación.
+- Regla dura: una vez creado el TODO, actualizalo OBLIGATORIAMENTE al completar cada tarea/subtarea (marcá `- [x]`). No avances a la siguiente sin actualizarlo.
+- Regla de cierre: al terminar TODAS las tareas, borrá el archivo del directorio temporal.
+- Crear el TODO es opcional (solo para tareas complejas o con muchas partes); una vez creado, actualizarlo es obligatorio.
+
 ---

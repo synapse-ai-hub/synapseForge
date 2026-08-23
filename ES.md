@@ -135,7 +135,7 @@ synapseForge/
 ├─ store/                        # Store de tools y skills instalables
 ├─ on_boarding/                  # Onboarding para desarrolladores
 ├─ cicd/                         # CI/CD
-├─ tests/                        # Tests
+├─ tests/                        # Tests (frontend + suite E2E declarativa en tests/e2e)
 ├─ .commands/                    # Comandos locales PowerShell
 ├─ .github/                      # Workflows y PR template
 │

@@ -1,0 +1,58 @@
+scenario: creators-list-agents
+description: >
+  El endpoint de agentes responde con contrato válido (usado por los
+  creadores y el router para descubrir agentes).
+cleanup: false
+steps:
+  - action: request
+    method: GET
+    path: /api/config/agents
+    expect:
+      http_status: 200
+
+scenario: creators-list-tools
+description: >
+  Listado de tools disponibles con contrato válido.
+cleanup: false
+steps:
+  - action: request
+    method: GET
+    path: /api/config/tools
+    expect:
+      http_status: 200
+
+scenario: creators-list-skills
+description: >
+  Listado de skills disponibles con contrato válido.
+cleanup: false
+steps:
+  - action: request
+    method: GET
+    path: /api/config/skills
+    expect:
+      http_status: 200
+
+scenario: creators-delete-nonexistent-skill
+description: >
+  Validación de error: eliminar una skill inexistente debe responder error
+  de contrato sin romper el servidor.
+cleanup: false
+steps:
+  - action: request
+    method: DELETE
+    path: /api/skills/e2e-skill-inexistente-xyz
+    expect:
+      http_status: 404
+
+scenario: creators-chat-delegates-to-agent
+description: >
+  Flujo de creador vía chat: pedirle al router que delegue en un agente.
+  Requiere agentes configurados; aserta delegación (tool task) o respuesta
+  conversacional sin errores. Marcar skip manual si no hay agentes.
+cleanup: true
+steps:
+  - action: chat
+    message: "Usá la herramienta task para saludar al agente explorer con el prompt 'decí hola'."
+    expect:
+      done: true
+      no_tool_error: true

@@ -820,6 +820,7 @@ class AgentLoop:
                     message="",
                     usage=usage_data,
                 )
+
                 # Emit the session title before [DONE] so the sidebar refreshes
                 # with the generated title even if it finished after the loop.
                 if title_queue is not None:
@@ -834,6 +835,28 @@ class AgentLoop:
                             yield f"data: {json.dumps({'type': 'session_title', 'content': t}, ensure_ascii=False)}\n\n"
                         except asyncio.QueueEmpty:
                             break
+
+                # --- 6c-bis. Index the completed turn into long-term memory ---
+                # Fire-and-forget: runs in the background, never blocks or
+                # breaks the SSE stream (failures are only logged). Scheduled
+                # after the title drain so the indexed metadata can include
+                # the session title. Only root sessions are indexed —
+                # sub-agent child sessions duplicate the parent's content and
+                # would pollute the memory index.
+                if depth == 0:
+                    try:
+                        from backend.agent.utils.rag_helpers import index_turn_fire_and_forget
+
+                        index_turn_fire_and_forget(
+                            session_id=session_id,
+                            turn_number=turn_number,
+                            user_message=user_message,
+                            assistant_message=cleaned or "",
+                        )
+                    except Exception as exc:
+                        logger.warning("Memory indexing could not be scheduled: %s", exc)
+                        log_error(str(exc), source="loop.py:run(memory_index)")
+
                 _t_before_done = _time.time()
 
                 # # logger.info("[DEBUG_TIEMPO_SSE] about to yield [DONE] — iteration=%d, t=%.3f", iteration, _t_before_done)

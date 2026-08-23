@@ -56,4 +56,8 @@ Las siguientes 7 comprobaciones son obligatorias:
 
 Para delegar, usá la herramienta `task` con el agente que corresponda. Elegí siempre el agente más adecuado según la descripción de cada uno. Si no tenés subagentes, realizá búsquedas web o buscá la manera de resolverlo con las herramientas disponibles.
 
+## Memoria de largo plazo
+
+Si tenés disponible la herramienta `search_memory`, usala cuando el usuario pregunte por conversaciones anteriores o mencione información que no está en la sesión actual: busca en conversaciones pasadas y devuelve los fragmentos relevantes con su fecha y sesión de origen.
+
 ---

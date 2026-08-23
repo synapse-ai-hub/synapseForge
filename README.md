@@ -33,7 +33,7 @@
 
 - **Full scaffolding**: `synapseforge init` creates the project from an embedded template with an interactive GUI — structure, venv, logos, `.ico`, colors and placeholder replacement.
 - **Self-contained distribution**: `synapseforge launch` generates a ready-to-deliver zip (PyInstaller + embedded Python + compiled frontend).
-- **Multi-provider LLM**: LOCAL (Ollama, optional), Groq, Google Gemini and OpenRouter. Cloud API keys are managed from the settings panel, validated against each provider's API and stored encrypted in SQLite. Skippable initial setup screen: with no provider configured the app stays locked until a key is loaded.
+- **Multi-provider LLM**: LOCAL (Ollama, optional), Groq, Google Gemini and OpenRouter. Cloud API keys are managed from the settings panel, validated against each provider's API and stored encrypted in SQLite. Skippable initial setup screen: with no provider configured the app stays locked until a key is loaded. Advanced parameters (temperature, top_p, reasoning) configurable per model from the settings panel, with "default" option that falls back to each agent's own values.
 - **Complete agent framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), per-agent permissions (allow/deny/ask + wildcards), skills and sub-agents with delegation via `task`.
 - **RAG**: vector collections in ChromaDB with OpenRouter embeddings (`liquid/lfm-2.5-embedding-350m:free`). File and web page upload, chunking with overlap and cosine similarity search. Requires an OpenRouter API key (free tier).
 - **LLM-assisted creation**: standalone interfaces to create skills, tools and agents through an iterative interview + creator agent, with ephemeral cloud model selection per task.

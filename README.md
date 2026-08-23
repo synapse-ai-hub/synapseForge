@@ -34,7 +34,7 @@
 - **Full scaffolding**: `synapseforge init` creates the project from an embedded template with an interactive GUI — structure, venv, logos, `.ico`, colors and placeholder replacement.
 - **Self-contained distribution**: `synapseforge launch` generates a ready-to-deliver zip (PyInstaller + embedded Python + compiled frontend).
 - **Multi-provider LLM**: LOCAL (Ollama, optional), Groq, Google Gemini and OpenRouter. Cloud API keys are managed from the settings panel, validated against each provider's API and stored encrypted in SQLite. Skippable initial setup screen: with no provider configured the app stays locked until a key is loaded.
-- **Complete agent framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), per-agent permissions (allow/deny/ask + wildcards), skills and sub-agents with delegation via `task`.
+- **Complete agent framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), per-agent permissions (allow/deny/ask + wildcards) enforced both when exposing tools to the model and at every execution attempt, skills and sub-agents with delegation via `task`.
 - **RAG**: vector collections in ChromaDB with OpenRouter embeddings (`liquid/lfm-2.5-embedding-350m:free`). File and web page upload, chunking with overlap and cosine similarity search. Requires an OpenRouter API key (free tier).
 - **LLM-assisted creation**: standalone interfaces to create skills, tools and agents through an iterative interview + creator agent, with ephemeral cloud model selection per task.
 - **Telegram as remote control**: the bot publishes events to the event bus and the frontend runs the same chat flow. Session commands, model/provider switching, skill/tool/RAG creation and agenda management.

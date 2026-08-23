@@ -153,6 +153,10 @@ class Tools:
         """
         self._external_tools: list[dict] = self._scan_external_tools()
         self._tools_registry: list[dict] = self._build_tools_registry()
+        # Effective tool permissions of the agent currently running (set by
+        # the loop at the start of every run() and restored after each
+        # sub-agent). Used by execute_tool for deny-by-default enforcement.
+        self._current_tool_permissions: dict = {}
 
     # --- Tool registry ----------------------------------------
 

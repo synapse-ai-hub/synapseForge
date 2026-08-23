@@ -16,6 +16,7 @@ import sessionService, {
 import configService from "./services/configService";
 import telegramService from "./services/telegramService";
 import chatService from "./services/chatService";
+import type { SchedulerNotification } from "./services/schedulerService";
 
 export type { ContentBlock };
 
@@ -127,6 +128,12 @@ function App() {
   );
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramCountdown, setTelegramCountdown] = useState<number | null>(null);
+  /* Header bell notifications: one entry per scheduled-task execution. */
+  const [notifications, setNotifications] = useState<SchedulerNotification[]>([]);
+
+  const handleClearNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
 
   /* Initial setup screen: shown on first launch only (until the user saves
    * a valid API key or skips it). Shown even when Ollama is available:
@@ -326,6 +333,20 @@ const handleTelegramToggle = useCallback((val: boolean) => {
         // every subscriber — gauge (ChatInterface), ConfigTab dropdown,
         // etc. — refreshes in lockstep.
         window.dispatchEvent(new CustomEvent("model-changed"));
+      } else if (data.type === "scheduler_run") {
+        // A scheduled task finished: push a bell notification and refresh the
+        // sidebar so the session created by the task shows up.
+        setNotifications((prev) => [
+          {
+            id: generateId(),
+            status: data.status === "success" ? "success" : "error",
+            task: data.task || "",
+            detail: data.detail || "",
+            finishedAt: data.finished_at || "",
+          },
+          ...prev,
+        ]);
+        setRefreshTrigger((t) => t + 1);
       } else if (data.type === "telegram_create") {
         // Telegram as remote control ("or"): open/close the same create window
         // (skill.html / rag.html / tool.html) the user would open from the web UI.
@@ -399,6 +420,8 @@ const handleTelegramToggle = useCallback((val: boolean) => {
           telegramEnabled={telegramEnabled}
           onTelegramToggle={handleTelegramToggle}
           onShowScheduler={() => setShowScheduler(true)}
+          notifications={notifications}
+          onClearNotifications={handleClearNotifications}
         />
       </div>
 

@@ -76,8 +76,8 @@ Configuración del loop vía variables de entorno (`.env`):
 
 ### 4. `agent.py` — Clase principal del agente
 
-Centraliza la interacción con los proveedores LLM (Groq API u Ollama local):
-- Selección automática del proveedor según variable de entorno `PROVIDER`.
+Centraliza la interacción con los proveedores LLM (Groq, Google Gemini, OpenRouter u Ollama local):
+- Selección del proveedor según la configuración persistida en DB (nunca variables de entorno).
 - Streaming de respuestas con detección nativa de tool calls.
 - Gestión de la instancia de herramientas (`Tools`).
 - Atributos runtime: `provider` (LOCAL/API), `_resolved_model` (modelo activo).

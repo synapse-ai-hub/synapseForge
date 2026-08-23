@@ -15,24 +15,12 @@ import {
   Check,
   X,
 } from "lucide-react";
-
-/** Task scheduled to run at a given local time on specific weekdays. */
-interface SchedulerTask {
-  id: string;
-  /** What the agent should do when the task fires. */
-  prompt: string;
-  /** Local time in "HH:MM" (24h). */
-  time: string;
-  /** Selected weekdays (0=Sunday ... 6=Saturday). */
-  days: number[];
-}
+import schedulerService, { SchedulerTask } from "../services/schedulerService";
 
 interface SchedulerModalProps {
   open: boolean;
   onClose: () => void;
 }
-
-const STORAGE_KEY = "schedulerTasks";
 
 const WEEKDAY_LABELS = ["D", "L", "M", "X", "J", "V", "S"];
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -43,18 +31,6 @@ function getSystemTimezone(): string {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "—";
   } catch {
     return "—";
-  }
-}
-
-/** Load persisted tasks from localStorage. */
-function loadTasks(): SchedulerTask[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
   }
 }
 
@@ -86,16 +62,25 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  /* ---- reload tasks from the backend ---- */
+  const reloadTasks = useCallback(async () => {
+    try {
+      setTasks(await schedulerService.getTasks());
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Error cargando las tareas.");
+    }
+  }, []);
+
   /* Load persisted tasks each time the modal opens */
   useEffect(() => {
     if (open) {
-      setTasks(loadTasks());
       setSavedMsg(null);
       setSaveError(null);
       setFormError(null);
       setEditingId(null);
+      reloadTasks();
     }
-  }, [open]);
+  }, [open, reloadTasks]);
 
   /* Auto-dismiss the saved confirmation */
   useEffect(() => {
@@ -104,24 +89,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
     return () => clearTimeout(timer);
   }, [savedMsg]);
 
-  /* ---- persist to localStorage ---- */
-  const persist = useCallback((next: SchedulerTask[]) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      /* storage unavailable: keep in-memory only */
-    }
-  }, []);
-
-  const updateTasks = useCallback(
-    (next: SchedulerTask[]) => {
-      setTasks(next);
-      persist(next);
-    },
-    [persist],
-  );
-
-  /* ---- global save: validate every task, then persist ---- */
+  /* ---- global save: validate every task, then confirm ---- */
   const handleSaveAll = useCallback(() => {
     setSaveError(null);
     for (const task of tasks) {
@@ -138,12 +106,11 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
         return;
       }
     }
-    persist(tasks);
     setSavedMsg("Tareas guardadas correctamente.");
-  }, [tasks, persist]);
+  }, [tasks]);
 
   /* ---- add task ---- */
-  const handleAdd = useCallback(() => {
+  const handleAdd = useCallback(async () => {
     setFormError(null);
     const prompt = newPrompt.trim();
     if (!prompt) {
@@ -158,25 +125,29 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
       setFormError("Seleccioná al menos un día.");
       return;
     }
-    const task: SchedulerTask = {
-      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      prompt,
-      time: newTime,
-      days: [...newDays].sort((a, b) => a - b),
-    };
-    updateTasks([...tasks, task]);
-    setNewPrompt("");
-    setNewTime("09:00");
-    setNewDays(ALL_DAYS);
-  }, [newPrompt, newTime, newDays, tasks, updateTasks]);
+    try {
+      await schedulerService.createTask(prompt, newTime, [...newDays].sort((a, b) => a - b));
+      setNewPrompt("");
+      setNewTime("09:00");
+      setNewDays(ALL_DAYS);
+      await reloadTasks();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "No se pudo crear la tarea.");
+    }
+  }, [newPrompt, newTime, newDays, reloadTasks]);
 
   /* ---- delete task ---- */
   const handleDelete = useCallback(
-    (id: string) => {
-      updateTasks(tasks.filter((t) => t.id !== id));
-      if (editingId === id) setEditingId(null);
+    async (id: string) => {
+      try {
+        await schedulerService.deleteTask(id);
+        if (editingId === id) setEditingId(null);
+        await reloadTasks();
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : "No se pudo eliminar la tarea.");
+      }
     },
-    [tasks, updateTasks, editingId],
+    [editingId, reloadTasks],
   );
 
   /* ---- edit schedule (inline) ---- */
@@ -192,7 +163,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
     setEditError(null);
   }, []);
 
-  const saveEdit = useCallback(() => {
+  const saveEdit = useCallback(async () => {
     setEditError(null);
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(editTime)) {
       setEditError("Horario inválido.");
@@ -202,15 +173,18 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
       setEditError("Seleccioná al menos un día.");
       return;
     }
-    updateTasks(
-      tasks.map((t) =>
-        t.id === editingId
-          ? { ...t, time: editTime, days: [...editDays].sort((a, b) => a - b) }
-          : t,
-      ),
-    );
-    setEditingId(null);
-  }, [editTime, editDays, tasks, editingId, updateTasks]);
+    if (!editingId) return;
+    try {
+      await schedulerService.updateTask(editingId, {
+        time: editTime,
+        days: [...editDays].sort((a, b) => a - b),
+      });
+      setEditingId(null);
+      await reloadTasks();
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "No se pudo actualizar la tarea.");
+    }
+  }, [editTime, editDays, editingId, reloadTasks]);
 
   const toggleDay = useCallback(
     (list: number[], day: number, setter: (days: number[]) => void) => {

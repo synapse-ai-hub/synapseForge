@@ -115,6 +115,13 @@ except ImportError as e:
     conversation_router = None
     logging.warning("backend.routes.conversation could not be imported.")
 
+try:
+    from backend.routes.scheduler import router as scheduler_router
+except ImportError as e:
+    log_error(str(e), source="main.py:scheduler_import")
+    scheduler_router = None
+    logging.warning("backend.routes.scheduler could not be imported.")
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -225,6 +232,15 @@ async def lifespan(app: FastAPI):
         log_error(str(exc), source="main.py:lifespan(telegram)")
         logger.warning("Failed to start Telegram bot: %s", exc)
 
+    # Start the scheduler loop (agenda): checks due tasks and executes them.
+    try:
+        from backend.agent.utils.scheduler_helpers import scheduler_service
+
+        await scheduler_service.start()
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(scheduler)")
+        logger.warning("Failed to start scheduler service: %s", exc)
+
     logger.info("<descripcion>Nombre del proyecto</descripcion> API started successfully.")
 
     # Pre-create the RAG vector DB (OpenRouter embeddings) once at startup,
@@ -247,6 +263,13 @@ async def lifespan(app: FastAPI):
         logger.warning("Failed to pre-init RAG vector DB: %s", exc)
 
     yield
+    try:
+        from backend.agent.utils.scheduler_helpers import scheduler_service
+
+        await scheduler_service.stop()
+    except Exception as exc:
+        log_error(str(exc), source="main.py:lifespan(scheduler_stop)")
+        logger.warning("Failed to stop scheduler service: %s", exc)
     try:
         from backend.telegram.instance import telegram_bot
 
@@ -314,6 +337,9 @@ if rag_router is not None:
 
 if conversation_router is not None:
     app.include_router(conversation_router, prefix="/api")
+
+if scheduler_router is not None:
+    app.include_router(scheduler_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

@@ -18,10 +18,14 @@ import {
   LogOut,
   BookOpen,
   AlarmClock,
+  Bell,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import LogoImage from "../assets/logo_cliente.png";
 import chatService from "../services/chatService";
 import configService from "../services/configService";
+import type { SchedulerNotification } from "../services/schedulerService";
 import { Button } from "../components/ui/button";
 import { FileChip, FileWarningBanner, MessageRow } from "../components/chatBlocks";
 import { ContextGauge } from "../components/ContextGauge";
@@ -96,6 +100,9 @@ interface ChatInterfaceProps {
   telegramEnabled: boolean;
   onTelegramToggle: (val: boolean) => void;
   onShowScheduler?: () => void;
+  /** Bell notifications: one entry per scheduled-task execution. */
+  notifications?: SchedulerNotification[];
+  onClearNotifications?: () => void;
 }
 
 export interface ChatInterfaceHandle {
@@ -133,6 +140,8 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
       telegramEnabled,
       onTelegramToggle,
       onShowScheduler,
+      notifications = [],
+      onClearNotifications,
     }: ChatInterfaceProps,
     ref: ForwardedRef<ChatInterfaceHandle>,
   ) {
@@ -145,6 +154,8 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   const [tokensUsed, setTokensUsed] = useState<number | null>(null);
   const [vramGb, setVramGb] = useState<number | null>(null);
   const [ollamaDefaultContext, setOllamaDefaultContext] = useState<number | null>(null);
+  /* Bell dropdown: scheduled-task execution notifications. */
+  const [showNotifications, setShowNotifications] = useState(false);
 
   /* ---- refs ---- */
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -916,6 +927,91 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
             <AlarmClock size={16} />
             <span className="hidden sm:inline">Agenda</span>
           </Button>
+
+          {/* Notificaciones de tareas programadas — campanita con badge */}
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowNotifications((v) => !v)}
+              className="relative gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
+              title="Notificaciones de tareas programadas"
+            >
+              <Bell size={16} />
+              {notifications.length > 0 && (
+                <span
+                  className={`absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-semibold leading-4 text-white ${
+                    notifications.some((n) => n.status === "error")
+                      ? "bg-red-500"
+                      : "bg-app-primary"
+                  }`}
+                >
+                  {notifications.length > 9 ? "9+" : notifications.length}
+                </span>
+              )}
+            </Button>
+
+            {showNotifications && (
+              <>
+                {/* Click-away overlay */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowNotifications(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 z-50 w-80 max-w-[calc(100vw-2rem)] bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200">
+                    <span className="text-sm font-medium text-app-text">
+                      Notificaciones
+                    </span>
+                    {notifications.length > 0 && onClearNotifications && (
+                      <button
+                        type="button"
+                        onClick={onClearNotifications}
+                        className="text-xs text-app-text-secondary hover:text-app-primary transition-colors"
+                        title="Limpiar notificaciones"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <p className="text-sm text-app-text-secondary px-4 py-6 text-center">
+                        Sin notificaciones todavía.
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100">
+                        {notifications.map((n) => (
+                          <li key={n.id} className="flex gap-2.5 px-4 py-3">
+                            {n.status === "success" ? (
+                              <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-green-600" />
+                            ) : (
+                              <XCircle size={16} className="shrink-0 mt-0.5 text-red-500" />
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-app-text break-words">
+                                {n.task}
+                              </p>
+                              <p className="text-xs text-app-text-secondary">
+                                {n.finishedAt}
+                                {" · "}
+                                {n.status === "success" ? "Ejecutada con éxito" : "Falló"}
+                              </p>
+                              {n.detail && (
+                                <p className="text-xs text-app-text-secondary mt-1 line-clamp-3 break-words">
+                                  {n.detail}
+                                </p>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           <Button
             variant="ghost"

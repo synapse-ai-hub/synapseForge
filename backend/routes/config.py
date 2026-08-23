@@ -500,8 +500,8 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     """List available models for the current provider.
 
     Uses the explicit ``provider`` query param if supplied. Otherwise it uses
-    the selected provider from persisted config or the ``PROVIDER`` env
-    variable.
+    the selected provider from persisted config (never environment
+    variables).
 
     - ``LOCAL`` → models from the startup cache (Ollama).
     - ``GROQ`` → models from the startup cache (Groq).

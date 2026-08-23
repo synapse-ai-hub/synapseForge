@@ -121,7 +121,7 @@ El modelo y proveedor se configuran desde el panel de Configuración en la inter
 2. **Modelo**: elegir entre los modelos disponibles para ese proveedor.
 3. Los cambios persisten en la base de datos SQLite y se aplican al siguiente mensaje.
 
-No hay modelo por defecto: hay que elegir proveedor + modelo y pulsar **Aplicar**.
+El modelo se elige explícitamente: seleccioná proveedor + modelo y pulsá **Aplicar**.
 
 Soportados:
 - **Groq**: modelos de API (Llama, Qwen, etc.).
@@ -131,7 +131,7 @@ Soportados:
 
 ### API keys de los providers
 
-Las API keys de los providers cloud (Groq, Google, OpenRouter) se configuran en el panel de Configuración, sección **Providers**. Cada key es opcional: si no se carga una key para un provider, ese provider no aparece como disponible. Las keys se guardan cifradas en la base de datos SQLite interna y nunca se muestran nuevamente en la interfaz después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el provider queda disponible de inmediato. Las variables de entorno (`GROQ_API_KEY`, etc.) **no** se consultan: las keys se resuelven únicamente desde la base de datos.
+Las API keys de los providers cloud (Groq, Google, OpenRouter) se configuran en el panel de Configuración, sección **Providers**. Cada key es opcional: si no se carga una key para un provider, ese provider no aparece como disponible. Las keys se guardan cifradas en la base de datos SQLite interna y nunca se muestran nuevamente en la interfaz después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el provider queda disponible de inmediato.
 
 ---
 
@@ -143,7 +143,7 @@ Las interfaces de creación (skills, tools y agentes) permiten elegir, en su pan
 2. Seleccionar modelo.
 3. Pulsar **Aplicar**.
 
-La selección es efímera: vive mientras la pestaña está abierta y se usa para esa tarea de creación. No se persiste. Si no se aplica ninguna selección, el sistema usa automáticamente uno de los providers cloud disponibles.
+La selección es efímera: vive mientras la pestaña está abierta y se usa para esa tarea de creación. Si no se aplica ninguna selección, el sistema usa automáticamente uno de los providers cloud disponibles.
 
 ---
 
@@ -196,7 +196,7 @@ Los servidores MCP se configuran en `~/.config/synapseForge/mcp.json` como un ar
 
 ## Telegram
 
-El sistema incluye un **bot de Telegram** que actúa como puente hacia el agente. El bot hace long-polling contra la Telegram Bot API, pero **no ejecuta el agent loop**: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía `/api/events` y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.
+El sistema incluye un **bot de Telegram** que actúa como puente hacia el agente. El bot hace long-polling contra la Telegram Bot API y publica cada mensaje en el event bus; el frontend lo recibe vía `/api/events` y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.
 
 ### Variables de entorno
 
@@ -270,7 +270,7 @@ Las tareas se persisten en la base de datos SQLite interna.
 
 El sistema soporta **colecciones RAG** (bases de conocimiento vectoriales con ChromaDB) que se crean desde la interfaz de creación (pestaña **RAG**). Cada colección vive en `~/.config/synapseForge/knowledge/` y se construye subiendo archivos y URLs, que se procesan y almacenan como documentos vectoriales.
 
-- Los embeddings se calculan en la nube vía OpenRouter (`liquid/lfm-2.5-embedding-350m:free`): no se instala ningún modelo local.
+- Los embeddings se calculan en la nube vía OpenRouter (`liquid/lfm-2.5-embedding-350m:free`).
 - **Requiere una API key de OpenRouter** cargada en **Providers**: sin ella, la sección de fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
 - Las colecciones se listan y consultan desde la interfaz.
 - Sirven para darle al agente acceso a conocimiento específico del dominio (documentos, manuales, bases de datos de texto) mediante búsqueda semántica.

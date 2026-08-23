@@ -34,7 +34,7 @@ The generated project includes:
 
 - **Agent Framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), sessions (SQLite WAL), per-agent permissions, skills and sub-agent delegation
 - **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini and OpenRouter — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
-- **RAG knowledge base**: ChromaDB vector collections with local embeddings; upload files and web pages, cosine-similarity search
+- **RAG knowledge base**: ChromaDB vector collections with cloud embeddings via OpenRouter; upload files and web pages, cosine-similarity search
 - **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview (with real tools enabled), with ephemeral cloud model selection per task
 - **Scheduled tasks**: user-defined tasks (description + time + weekdays) managed from the header Agenda or via Telegram; the backend runs them with the selected model and notifies the result in the UI bell and on Telegram
 - **Telegram bot**: remote control that bridges messages to the agent through the web UI (commands, voice transcription, attachments)
@@ -120,16 +120,21 @@ GUI editor for `frontend/public/colors.json`. Refresh the browser (F5) to see ch
 
 ![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-3-003b57?logo=sqlite&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-000000?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGcgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJhMi4yIDIuMiAwIDAxMi4yIDIuMnY0LjZhMi4yIDIuMiAwIDExLTQuNCAwVjQuMkEyLjIgMi4yIDAgMDExMiAyeiIvPjxwYXRoIGQ9Ik0yMiAxMmEyLjIgMi4yIDAgMDEtMi4yIDIuMmgtNC42YTIuMiAyLjIgMCAxMTAtNC40aDQuNkEyLjIgMi4yIDAgMDEyMiAxMnoiLz48cGF0aCBkPSJNMTIgMjJhMi4yIDIuMiAwIDAxLTIuMi0yLjJ2LTQuNmEyLjIgMi4yIDAgMTE0LjQgMHY0LjZBMi4yIDIuMiAwIDAxMTIgMjJ6Ii8+PHBhdGggZD0iTTIgMTJhMi4yIDIuMiAwIDAxMi4yLTIuMmg0LjZhMi4yIDIuMiAwIDExMCA0LjRINC4yQTIuMiAyLjIgMCAwMTIgMTJ6Ii8+PC9nPjwvc3ZnPg==)
 ![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)
 ![Tailwind](https://img.shields.io/badge/Tailwind-4-06b6d4?logo=tailwindcss&logoColor=white)
-![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-000000?logo=chroma&logoColor=white)
+![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-UI-000000?logo=shadcnui&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)
 ![PyInstaller](https://img.shields.io/badge/PyInstaller-6-3776ab?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
-![Groq](https://img.shields.io/badge/Groq-API-f97316?logo=groq&logoColor=white)
-![Google Gemini](https://img.shields.io/badge/Google_Gemini-API-4285F4?logo=google&logoColor=white)
-![OpenRouter](https://img.shields.io/badge/OpenRouter-API-6467F2)
+![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)
+![PyPI](https://img.shields.io/badge/PyPI-synapseforge-3775A9?logo=pypi&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-API-f97316?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTIuMDM2IDJjLTMuODUzLS4wMzUtNyAzLTcuMDM2IDYuNzgxLS4wMzUgMy43ODIgMy4wNTUgNi44NzIgNi45MDggNi45MDdoMi40MnYtMi41NjZoLTIuMjkyYy0yLjQwNy4wMjgtNC4zOC0xLjg2Ni00LjQwOC00LjIzLS4wMjktMi4zNjIgMS45MDEtNC4yOTggNC4zMDgtNC4zMjZoLjFjMi40MDcgMCA0LjM1OCAxLjkxNSA0LjM2NSA0LjI3OHY2LjMwNWMwIDIuMzQyLTEuOTQ0IDQuMjUtNC4zMjMgNC4yNzlhNC4zNzUgNC4zNzUgMCAwMS0zLjAzMy0xLjI1MmwtMS44NTEgMS44MThBNyA3IDAgMDAxMi4wMjkgMjJoLjA5MmMzLjgwMy0uMDU2IDYuODU4LTMuMDgzIDYuODc5LTYuODE2di02LjVDMTguOTA3IDQuOTYzIDE1LjgxNyAyIDEyLjAzNiAyeiIvPjwvc3ZnPg==)
+![Google Gemini](https://img.shields.io/badge/Google_Gemini-API-4285F4?logo=googlegemini&logoColor=white)
+![OpenRouter](https://img.shields.io/badge/OpenRouter-API-6467F2?logo=openrouter&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-Local-000000?logo=ollama&logoColor=white)
 
 ---

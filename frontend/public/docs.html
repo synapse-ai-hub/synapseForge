@@ -508,9 +508,9 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>Panel de configuración</h3>
           <p>En el panel lateral, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
           <h4>Proveedor y modelo</h4>
-          <p>Podés seleccionar el proveedor de modelos (Ollama local, Groq, Google Gemini u OpenRouter) y el modelo específico a utilizar. La selección se persiste entre sesiones. No hay modelo por defecto: al primer arranque aparece una pantalla inicial de configuración (que podés saltar) para cargar tus API keys; sin ningún proveedor disponible, el chat y los creadores quedan bloqueados hasta configurar uno.</p>
+          <p>Podés seleccionar el proveedor de modelos (Ollama local, Groq, Google Gemini u OpenRouter) y el modelo específico a utilizar. La selección se persiste entre sesiones y se aplica con el botón <strong>Aplicar</strong>. Al primer arranque aparece una pantalla inicial de configuración (que podés saltar) para cargar tus API keys; sin ningún proveedor disponible, el chat y los creadores quedan bloqueados hasta configurar uno.</p>
           <h4>Providers (API keys)</h4>
-          <p>En la sección <strong>Providers</strong> podés cargar la API key de cada proveedor cloud (Groq, Google Gemini, OpenRouter). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el proveedor queda disponible de inmediato en los selectores. Las variables de entorno (<code>GROQ_API_KEY</code>, etc.) no se consultan: las keys se resuelven únicamente desde la base de datos.</p>
+          <p>En la sección <strong>Providers</strong> podés cargar la API key de cada proveedor cloud (Groq, Google Gemini, OpenRouter). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el proveedor queda disponible de inmediato en los selectores.</p>
           <h4>Contexto (turnos)</h4>
           <p>Controla cuántos turnos de conversación se mantienen en el contexto del modelo. <code>-1</code> significa todo el historial. Reducir este número ayuda a controlar el uso de tokens y el costo.</p>
           <h4>Modo verbose</h4>
@@ -545,7 +545,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
         <section id="telegram">
           <h2>Telegram</h2>
           <h3>¿Qué es?</h3>
-          <p>El template incluye un <strong>bot de Telegram</strong> que actúa como control remoto del agente. El bot hace <strong>long-polling</strong> contra la Telegram Bot API, pero <strong>no ejecuta el agent loop</strong>: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía <code>/api/events</code> y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.</p>
+          <p>El template incluye un <strong>bot de Telegram</strong> que actúa como control remoto del agente. El bot hace <strong>long-polling</strong> contra la Telegram Bot API y actúa como puente: cuando llega un mensaje lo publica en el event bus, el frontend lo recibe vía <code>/api/events</code> y corre el mismo flujo de chat que si hubieras escrito en la web. Cuando el backend termina, envía la respuesta final de vuelta a Telegram.</p>
           <h3>Arquitectura</h3>
           <ul>
             <li>El bot <strong>solo emite eventos</strong> (<code>telegram_message</code>, <code>telegram_command</code>, <code>telegram_create</code>) al event bus.</li>
@@ -719,7 +719,7 @@ synapseForge run .</code></pre>
           <h3>Configurar las claves de tu proveedor</h3>
           <p>Para usar la app necesitás al menos una API key de un proveedor cloud. Al primer arranque aparece una pantalla de configuración donde podés cargarlas directamente (también desde Configuración → <strong>Providers</strong>). Recomendaciones con capa gratis: <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">OpenRouter</a>, <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google Gemini</a> y <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>. Ollama es opcional: solo si querés correr modelos locales.</p>
           <blockquote><p><strong>Importante:</strong> la base de conocimiento necesita específicamente una API key de OpenRouter (capa gratis). Sin ella esa sección queda deshabilitada; el resto funciona con cualquier proveedor.</p></blockquote>
-          <p>Las keys se guardan cifradas en la base de datos SQLite interna, se validan contra la API del proveedor al guardarlas y no se vuelven a mostrar. Las variables de entorno (<code>GROQ_API_KEY</code>, etc.) no se consultan.</p>
+          <p>Las keys se guardan cifradas en la base de datos SQLite interna, se validan contra la API del proveedor al guardarlas y no se vuelven a mostrar.</p>
           <h3>Probar en otra máquina de la red</h3>
           <p>Si querés acceder desde otra computadora o dispositivo:</p>
           <ol>
@@ -742,7 +742,7 @@ synapseForge run .</code></pre>
             <li><strong>Compila el frontend</strong> en archivos estáticos optimizados para producción.</li>
             <li><strong>Empaqueta todo</strong> en un zip distribuible: el ejecutable, el frontend compilado, el entorno virtual, el launcher, la configuración, la licencia, el README y la documentación.</li>
           </ol>
-          <h3>Variables de entorno para producción</h3>
+          <h3>Checklist previo al build</h3>
           <p>Antes de generar el build, asegurate de que la configuración de producción esté lista:</p>
           <ul>
               <li>La URL del backend debe apuntar al dominio público donde se va a servir la app.</li>

@@ -198,9 +198,9 @@ parameters:
 
 ### Providers y modelos
 
-Los proveedores soportados son **LOCAL** (Ollama, opcional), **GROQ**, **GOOGLE** (Gemini) y **OPENROUTER**. Las API keys cloud se gestionan desde el panel de Configuración (**Providers**): se validan contra la API de cada proveedor al guardarlas y se almacenan cifradas en la SQLite interna — las variables de entorno no se consultan. Al guardar una key válida, el provider queda disponible de inmediato en los selectores; un provider solo aparece si tiene key guardada — para LOCAL basta con que Ollama responda.
+Los proveedores soportados son **LOCAL** (Ollama, opcional), **GROQ**, **GOOGLE** (Gemini) y **OPENROUTER**. Las API keys cloud se gestionan desde el panel de Configuración (**Providers**): se validan contra la API de cada proveedor al guardarlas y se almacenan cifradas en la SQLite interna. Al guardar una key válida, el provider queda disponible de inmediato en los selectores; un provider solo aparece si tiene key guardada — para LOCAL basta con que Ollama responda.
 
-No hay modelo por defecto: al primer arranque (o si no hay ningún provider disponible) aparece la pantalla inicial de configuración, saltable. Sin ningún provider configurado el chat y los creadores quedan bloqueados hasta cargar una key válida.
+El modelo se elige explícitamente: al primer arranque (o si no hay ningún provider disponible) aparece la pantalla inicial de configuración, saltable. Sin ningún provider configurado el chat y los creadores quedan bloqueados hasta cargar una key válida.
 
 La ventana de contexto en tokens del modelo seleccionado se detecta y persiste automáticamente, y el frontend muestra un gauge con el porcentaje usado.
 
@@ -208,7 +208,7 @@ En las pantallas de creación (skill, tool y agente) se puede elegir con qué mo
 
 ### Fuente de conocimiento (RAG)
 
-Las colecciones RAG usan embeddings en la nube vía OpenRouter (`liquid/lfm-2.5-embedding-350m:free`, capa gratis) — no se instala ningún modelo local de embeddings. Para usar esta sección hace falta una API key de OpenRouter cargada en **Providers**: sin ella, la fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
+Las colecciones RAG usan embeddings en la nube vía OpenRouter (`liquid/lfm-2.5-embedding-350m:free`, capa gratis). Para usar esta sección hace falta una API key de OpenRouter cargada en **Providers**: sin ella, la fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
 
 ---
 
@@ -222,7 +222,7 @@ El sistema de colores es dual: build-time (placeholders XML reemplazados por el 
 
 ## Telegram
 
-Bot de Telegram como control remoto del agente: hace long-polling contra la Telegram Bot API pero **no ejecuta el agent loop** — publica los mensajes en el event bus, el frontend corre el flujo normal de chat y el backend devuelve la respuesta final a Telegram. Soporta comandos de sesión (`/sesiones`, `/usar`, `/nueva`, `/borrar`), modelo/proveedor (`/modelo`, `/proveedor`), control (`/detener`, `/contexto`, `/actual`), creación de skills/tools/RAG (`/crear`), envío de archivos (`/archivo`) y gestión de la agenda (`/agenda`, `/agendar`, `/horario`, `/eliminar_tarea`), además de notas de voz (transcripción local con faster-whisper) y adjuntos. Las ejecuciones de tareas programadas se notifican por Telegram siempre, independientemente de si el bot está habilitado para trabajar.
+Bot de Telegram como control remoto del agente: hace long-polling contra la Telegram Bot API y actúa como puente — publica los mensajes en el event bus, el frontend corre el flujo normal de chat y el backend devuelve la respuesta final a Telegram. Soporta comandos de sesión (`/sesiones`, `/usar`, `/nueva`, `/borrar`), modelo/proveedor (`/modelo`, `/proveedor`), control (`/detener`, `/contexto`, `/actual`), creación de skills/tools/RAG (`/crear`), envío de archivos (`/archivo`) y gestión de la agenda (`/agenda`, `/agendar`, `/horario`, `/eliminar_tarea`), además de notas de voz (transcripción local con faster-whisper) y adjuntos. Las ejecuciones de tareas programadas se notifican por Telegram siempre, independientemente de si el bot está habilitado para trabajar.
 
 | Variable | Descripción |
 |----------|-------------|
@@ -268,16 +268,20 @@ Esto permitiría ampliar el repositorio de skills sin tener que crearlas manualm
 ![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003b57?logo=sqlite&logoColor=white)
-![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-000000?logo=chroma&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-vector-000000?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGcgZmlsbD0iI2ZmZiI+PHBhdGggZD0iTTEyIDJhMi4yIDIuMiAwIDAxMi4yIDIuMnY0LjZhMi4yIDIuMiAwIDExLTQuNCAwVjQuMkEyLjIgMi4yIDAgMDExMiAyeiIvPjxwYXRoIGQ9Ik0yMiAxMmEyLjIgMi4yIDAgMDEtMi4yIDIuMmgtNC42YTIuMiAyLjIgMCAxMTAtNC40aDQuNkEyLjIgMi4yIDAgMDEyMiAxMnoiLz48cGF0aCBkPSJNMTIgMjJhMi4yIDIuMiAwIDAxLTIuMi0yLjJ2LTQuNmEyLjIgMi4yIDAgMTE0LjQgMHY0LjZBMi4yIDIuMiAwIDAxMTIgMjJ6Ii8+PHBhdGggZD0iTTIgMTJhMi4yIDIuMiAwIDAxMi4yLTIuMmg0LjZhMi4yIDIuMiAwIDExMCA0LjRINC4yQTIuMiAyLjIgMCAwMTIgMTJ6Ii8+PC9nPjwvc3ZnPg==)
 ![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5-646cff?logo=vite&logoColor=white)
 ![Tailwind](https://img.shields.io/badge/Tailwind-4-06b6d4?logo=tailwindcss&logoColor=white)
+![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-UI-000000?logo=shadcnui&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=nodedotjs&logoColor=white)
 ![PyInstaller](https://img.shields.io/badge/PyInstaller-6-3776ab?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
-![Groq](https://img.shields.io/badge/Groq-API-f97316?logo=groq&logoColor=white)
-![Google Gemini](https://img.shields.io/badge/Google_Gemini-API-4285F4?logo=google&logoColor=white)
-![OpenRouter](https://img.shields.io/badge/OpenRouter-API-6467F2)
+![Telegram](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram&logoColor=white)
+![PyPI](https://img.shields.io/badge/PyPI-synapseforge-3775A9?logo=pypi&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-API-f97316?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTIuMDM2IDJjLTMuODUzLS4wMzUtNyAzLTcuMDM2IDYuNzgxLS4wMzUgMy43ODIgMy4wNTUgNi44NzIgNi45MDggNi45MDdoMi40MnYtMi41NjZoLTIuMjkyYy0yLjQwNy4wMjgtNC4zOC0xLjg2Ni00LjQwOC00LjIzLS4wMjktMi4zNjIgMS45MDEtNC4yOTggNC4zMDgtNC4zMjZoLjFjMi40MDcgMCA0LjM1OCAxLjkxNSA0LjM2NSA0LjI3OHY2LjMwNWMwIDIuMzQyLTEuOTQ0IDQuMjUtNC4zMjMgNC4yNzlhNC4zNzUgNC4zNzUgMCAwMS0zLjAzMy0xLjI1MmwtMS44NTEgMS44MThBNyA3IDAgMDAxMi4wMjkgMjJoLjA5MmMzLjgwMy0uMDU2IDYuODU4LTMuMDgzIDYuODc5LTYuODE2di02LjVDMTguOTA3IDQuOTYzIDE1LjgxNyAyIDEyLjAzNiAyeiIvPjwvc3ZnPg==)
+![Google Gemini](https://img.shields.io/badge/Google_Gemini-API-4285F4?logo=googlegemini&logoColor=white)
+![OpenRouter](https://img.shields.io/badge/OpenRouter-API-6467F2?logo=openrouter&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-Local-000000?logo=ollama&logoColor=white)
 
 ---

@@ -3,12 +3,22 @@ import { Settings, Server, Cpu, Database, Globe, Trash2, Upload, KeyRound } from
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import configService from "../services/configService";
-import type { ProviderKeyStatus } from "../services/configService";
+import type { ProviderKeyStatus, AdvancedParams } from "../services/configService";
 import contextFilesService, { type ContextFile } from "../services/contextFilesService";
 
 interface ConfigTabProps {
   verboseMode: boolean;
   onVerboseModeChange: (val: boolean) => void;
+}
+
+const DEFAULT_PARAMS: AdvancedParams = {
+  temperature: null,
+  top_p: null,
+  reasoning: null,
+};
+
+function paramsEqual(a: AdvancedParams, b: AdvancedParams): boolean {
+  return a.temperature === b.temperature && a.top_p === b.top_p && a.reasoning === b.reasoning;
 }
 
 export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) {
@@ -22,6 +32,12 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const [loading, setLoading] = useState(true);
   const [savingModel, setSavingModel] = useState(false);
   const [savingContext, setSavingContext] = useState(false);
+
+  /* ---- advanced parameters (temperature / top_p / reasoning) ---- */
+  const [pendingParams, setPendingParams] = useState<AdvancedParams>(DEFAULT_PARAMS);
+  const [savedParams, setSavedParams] = useState<AdvancedParams>(DEFAULT_PARAMS);
+  const [reasoningSupported, setReasoningSupported] = useState<boolean | null>(null);
+  const [applyMessage, setApplyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
   const [uploadingContext, setUploadingContext] = useState(false);
   const contextFileInputRef = useRef<HTMLInputElement>(null);
@@ -98,13 +114,19 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       const tProv = "[ConfigTab] getProviders " + Date.now();
       const tModels = "[ConfigTab] getModels " + Date.now();
       const tCW = "[ConfigTab] getContextWindow " + Date.now();
+      const tParams = "[ConfigTab] getParameters " + Date.now();
       console.time(tProv);
       console.time(tModels);
       console.time(tCW);
-      const [provResp, m, cw] = await Promise.all([
+      console.time(tParams);
+      const [provResp, m, cw, prm] = await Promise.all([
         configService.getProviders().finally(() => console.timeEnd(tProv)),
         configService.getModels(prov).finally(() => console.timeEnd(tModels)),
         configService.getContextWindow().finally(() => console.timeEnd(tCW)),
+        configService
+          .getParameters()
+          .catch(() => null)
+          .finally(() => console.timeEnd(tParams)),
       ]);
       setProviders(provResp.providers || []);
       setModels(m.models || []);
@@ -128,6 +150,17 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       const effective = prov || provider;
       setSelectedProvider(effective);
       setMaxTurns(typeof cw.max_turns === "number" ? cw.max_turns : -1);
+      // Advanced parameters: null = "default" (agent frontmatter value).
+      if (prm && prm.status === "success") {
+        const p: AdvancedParams = {
+          temperature: prm.temperature,
+          top_p: prm.top_p,
+          reasoning: prm.reasoning,
+        };
+        setPendingParams(p);
+        setSavedParams(p);
+        setReasoningSupported(prm.reasoning_supported);
+      }
     } catch (err) {
       console.error("Error cargando configuración:", err);
     } finally {
@@ -164,18 +197,57 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
     setPendingModel(value);
   };
 
+  /* ---- advanced parameter handlers ---- */
+
+  const handleTemperatureDefault = (useDefault: boolean) => {
+    setPendingParams((prev) => ({
+      ...prev,
+      temperature: useDefault ? null : prev.temperature ?? 0,
+    }));
+  };
+
+  const handleTemperatureChange = (value: number) => {
+    setPendingParams((prev) => ({ ...prev, temperature: value }));
+  };
+
+  const handleTopPDefault = (useDefault: boolean) => {
+    setPendingParams((prev) => ({
+      ...prev,
+      top_p: useDefault ? null : prev.top_p ?? 0.5,
+    }));
+  };
+
+  const handleTopPChange = (value: number) => {
+    setPendingParams((prev) => ({ ...prev, top_p: value }));
+  };
+
+  const handleReasoningChange = (value: string) => {
+    setPendingParams((prev) => ({
+      ...prev,
+      reasoning: value === "" ? null : value === "yes",
+    }));
+  };
+
   const handleApplyModel = async () => {
-    // Enable if provider OR model differs from current (not both equal)
-    const isSame = pendingModel === currentModel && selectedProvider === currentProvider;
+    // Enable if provider, model OR parameters differ from current (not all equal)
+    const isSame =
+      pendingModel === currentModel &&
+      selectedProvider === currentProvider &&
+      paramsEqual(pendingParams, savedParams);
     if (!pendingModel || isSame || savingModel) return;
     try {
       setSavingModel(true);
-      await configService.selectModel(pendingModel, selectedProvider);
+      setApplyMessage(null);
+      await configService.selectModel(pendingModel, selectedProvider, pendingParams);
       setCurrentModel(pendingModel);
       setCurrentProvider(selectedProvider);
+      setSavedParams(pendingParams);
       window.dispatchEvent(new Event("model-changed"));
+      setApplyMessage({ type: "success", text: "Configuración aplicada correctamente." });
     } catch (err) {
-      console.error("Error seleccionando modelo:", err);
+      const msg = err instanceof Error ? err.message : "Error al aplicar la configuración.";
+      console.error("Error aplicando configuración:", err);
+      setApplyMessage({ type: "error", text: msg });
     } finally {
       setSavingModel(false);
     }
@@ -184,12 +256,15 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const handleSelectModel = async (model: string) => {
     try {
       setSavingModel(true);
-      await configService.selectModel(model, selectedProvider);
+      setApplyMessage(null);
+      await configService.selectModel(model, selectedProvider, savedParams);
       setCurrentModel(model);
       setPendingModel(model);
       window.dispatchEvent(new Event("model-changed"));
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error al seleccionar el modelo.";
       console.error("Error seleccionando modelo:", err);
+      setApplyMessage({ type: "error", text: msg });
     } finally {
       setSavingModel(false);
     }
@@ -285,7 +360,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
         </select>
         <Button
           onClick={handleApplyModel}
-          disabled={savingModel || !pendingModel || (pendingModel === currentModel && selectedProvider === currentProvider)}
+          disabled={
+            savingModel ||
+            !pendingModel ||
+            (pendingModel === currentModel &&
+              selectedProvider === currentProvider &&
+              paramsEqual(pendingParams, savedParams))
+          }
           variant="gradient"
           className="mt-2 w-full"
         >
@@ -317,6 +398,118 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             "Aplicar"
           )}
         </Button>
+        {applyMessage && (
+          <div
+            className={`mt-2 text-xs rounded-lg px-3 py-2 border ${
+              applyMessage.type === "success"
+                ? "text-green-700 bg-green-50 border-green-200"
+                : "text-red-600 bg-red-50 border-red-200"
+            }`}
+          >
+            {applyMessage.text}
+          </div>
+        )}
+      </div>
+
+      {/* Parámetros avanzados */}
+      <div>
+        <div className="text-xs font-medium text-app-text-secondary">
+          Par&aacute;metros avanzados
+        </div>
+        <p className="text-[11px] text-app-text-secondary mt-1">
+          Se aplican junto con el modelo al presionar &quot;Aplicar&quot;. Con &quot;Default&quot; se usan los valores de cada agente.
+        </p>
+        <div className="mt-2 space-y-3 rounded-lg border border-app-border bg-white p-2.5">
+          {/* Temperature */}
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-app-text">Temperature</label>
+              <label className="flex items-center gap-1 text-[11px] text-app-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pendingParams.temperature === null}
+                  onChange={(e) => handleTemperatureDefault(e.target.checked)}
+                  className="accent-app-primary"
+                />
+                Default
+              </label>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                type="range"
+                min={0}
+                max={2}
+                step={0.1}
+                value={pendingParams.temperature ?? 0}
+                disabled={pendingParams.temperature === null}
+                onChange={(e) => handleTemperatureChange(Number(e.target.value))}
+                className="flex-1 accent-app-primary disabled:opacity-40"
+              />
+              <span className="w-9 text-right text-xs text-app-text-secondary tabular-nums">
+                {pendingParams.temperature === null ? "—" : pendingParams.temperature.toFixed(1)}
+              </span>
+            </div>
+          </div>
+
+          {/* Top P */}
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-app-text">Top P</label>
+              <label className="flex items-center gap-1 text-[11px] text-app-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pendingParams.top_p === null}
+                  onChange={(e) => handleTopPDefault(e.target.checked)}
+                  className="accent-app-primary"
+                />
+                Default
+              </label>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={pendingParams.top_p ?? 0.5}
+                disabled={pendingParams.top_p === null}
+                onChange={(e) => handleTopPChange(Number(e.target.value))}
+                className="flex-1 accent-app-primary disabled:opacity-40"
+              />
+              <span className="w-9 text-right text-xs text-app-text-secondary tabular-nums">
+                {pendingParams.top_p === null ? "—" : pendingParams.top_p.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          {/* Reasoning */}
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-app-text">Reasoning</label>
+            <select
+              value={
+                pendingParams.reasoning === null
+                  ? ""
+                  : pendingParams.reasoning
+                    ? "yes"
+                    : "no"
+              }
+              disabled={reasoningSupported === false}
+              title={
+                reasoningSupported === false
+                  ? "El modelo actual no soporta reasoning."
+                  : undefined
+              }
+              onChange={(e) => handleReasoningChange(e.target.value)}
+              className={`rounded-lg border border-app-border bg-white px-2 py-1 text-xs text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light ${
+                reasoningSupported === false ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+            >
+              <option value="">Default</option>
+              <option value="yes">S&iacute;</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* API keys de providers */}

@@ -173,6 +173,38 @@ def _load_router_permissions() -> dict | None:
     return perms if isinstance(perms, dict) else None
 
 
+def _read_param_override(key: str) -> Any:
+    """Read a global advanced-parameter override from ``config_kv``.
+
+    Reads the value persisted by ``POST /api/config/models/select``
+    (keys ``param_temperature``, ``param_top_p``, ``param_reasoning``).
+    The literal string ``"null"`` (or a missing/unparseable key) means
+    "default" → returns ``None`` so the caller falls back to the next
+    level of the precedence chain.
+
+    Args:
+        key: ``config_kv`` key to read.
+
+    Returns:
+        The parsed override value (``float`` for temperature/top_p,
+        ``bool`` for reasoning) or ``None`` when there is no explicit
+        override.
+    """
+    try:
+        raw = session_manager.get_config(key)
+    except Exception as exc:
+        logger.warning("No se pudo leer el parámetro %s: %s", key, exc)
+        return None
+    if raw is None or raw.strip().lower() == "null":
+        return None
+    try:
+        if key == "param_reasoning":
+            return raw.strip().lower() == "true"
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 class AgentLoop:
     """Agent loop with native tool calling.
 
@@ -287,18 +319,37 @@ class AgentLoop:
             # --- 0. Model (resuelto por el endpoint /api/config/models) ---
             model = agent._resolved_model
 
-            # --- 0a. Resolve model parameters (temperature, top_p, model override) ---
-            # parameters dict comes from agent frontmatter (via task tool or router)
+            # --- 0a. Resolve model parameters (temperature, top_p, reasoning, model override) ---
+            # Precedence per parameter: explicit global override (persisted via
+            # /api/config/models/select, non-null) → agent frontmatter
+            # (`parameters`, via task tool or router) → hardcoded fallback.
             temperature = 0.0
             top_p = 0.5
+            reasoning = True
             max_tokens = 8192
             if parameters:
-                temperature = parameters.get("temperature", temperature)
-                top_p = parameters.get("top_p", top_p)
+                if parameters.get("temperature") is not None:
+                    temperature = parameters["temperature"]
+                if parameters.get("top_p") is not None:
+                    top_p = parameters["top_p"]
+                if isinstance(parameters.get("reasoning"), bool):
+                    reasoning = parameters["reasoning"]
                 # model override from frontmatter (optional)
                 if parameters.get("model"):
                     model = parameters["model"]
                 max_tokens = parameters.get("max_tokens", max_tokens)
+
+            # Explicit global overrides win over frontmatter values; a "null"
+            # (default) override never masks the agent's own frontmatter.
+            override_temperature = _read_param_override("param_temperature")
+            if override_temperature is not None:
+                temperature = override_temperature
+            override_top_p = _read_param_override("param_top_p")
+            if override_top_p is not None:
+                top_p = override_top_p
+            override_reasoning = _read_param_override("param_reasoning")
+            if override_reasoning is not None:
+                reasoning = override_reasoning
 
             # Resolve this loop's effective provider. If the agent's frontmatter
             # sets `parameters.provider`, use it for this loop only (passed
@@ -309,8 +360,8 @@ class AgentLoop:
                 effective_provider = parameters["provider"]
 
             logger.info(
-                "Agent loop started — model: %s, provider: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s",
-                model, effective_provider, session_id, agent_name, depth, temperature, top_p,
+                "Agent loop started — model: %s, provider: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s, reasoning: %s",
+                model, effective_provider, session_id, agent_name, depth, temperature, top_p, reasoning,
             )
 
             # --- Liberate parent model only when both parent and child run on
@@ -546,6 +597,7 @@ class AgentLoop:
                             model=model, messages=messages, tools=tools,
                             stream_cancel_event=stream_cancel_event,
                             temperature=temperature, top_p=top_p, max_tokens=max_tokens,
+                            reasoning=reasoning,
                             provider=effective_provider,
                         ):
                             if event["type"] == "chunk":
@@ -573,6 +625,7 @@ class AgentLoop:
                                     session_manager.save_message(
                                         session_id, "assistant", content=collected_content,
                                         reasoning=collected_reasoning or None,
+                                        model=model,
                                         turn_number=turn_number, step=step
                                     )
                                 yield "data: [DONE]\n\n"

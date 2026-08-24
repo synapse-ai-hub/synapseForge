@@ -638,7 +638,7 @@ export function ToolInterface() {
             }}
           />
           <span className="text-lg sm:text-2xl font-semibold" style={{ color: "#111827" }}>
-            synapseForge — Creador de tools
+            <span className="brand-word">synapseForge</span> — Creador de tools
           </span>
         </div>
 

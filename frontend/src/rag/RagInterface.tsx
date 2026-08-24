@@ -287,7 +287,7 @@ export function RagInterface() {
             }}
           />
           <span className="text-lg sm:text-2xl font-semibold" style={{ color: "#111827" }}>
-            synapseForge — Base de conocimiento
+            <span className="brand-word">synapseForge</span> — Base de conocimiento
           </span>
         </div>
         <div className="sm:w-44"></div>

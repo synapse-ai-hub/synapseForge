@@ -594,7 +594,7 @@ export function SkillInterface() {
             }}
           />
           <span className="text-lg sm:text-2xl font-semibold" style={{ color: "#111827" }}>
-            synapseForge — Creador de skills
+            <span className="brand-word">synapseForge</span> — Creador de skills
           </span>
         </div>
 

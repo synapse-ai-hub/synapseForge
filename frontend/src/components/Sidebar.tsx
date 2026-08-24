@@ -174,7 +174,7 @@ export function Sidebar({
             {/* @ts-ignore */}
             <empresa>nombre_empresa</empresa>
           </span>
-          <span className="text-xs text-app-text-secondary truncate leading-tight">synapseForge</span>
+          <span className="text-xs text-app-text-secondary truncate leading-tight"><span className="brand-word">synapseForge</span></span>
         </div>
       </header>
 

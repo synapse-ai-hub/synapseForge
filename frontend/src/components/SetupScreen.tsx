@@ -112,7 +112,7 @@ export function SetupScreen({ onDone }: SetupScreenProps) {
             }}
           />
           <span className="text-lg sm:text-2xl font-semibold" style={{ color: "#111827" }}>
-            synapseForge — Configuración inicial
+            <span className="brand-word">synapseForge</span> — Configuración inicial
           </span>
         </div>
 
@@ -127,7 +127,7 @@ export function SetupScreen({ onDone }: SetupScreenProps) {
             <>
               <div>
                 <h2 className="text-xl font-semibold text-app-text mb-2">
-                  Bienvenido a synapseForge
+                  Bienvenido a <span className="brand-word">synapseForge</span>
                 </h2>
                 <p className="text-sm text-gray-600 leading-relaxed">
                   Para usar el asistente necesit&aacute;s una clave (API key) de alg&uacute;n proveedor de inteligencia artificial. Es gratis sacarlas y pod&eacute;s empezar con la capa gratuita de cualquiera de estos:

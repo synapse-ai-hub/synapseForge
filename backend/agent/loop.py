@@ -582,11 +582,11 @@ class AgentLoop:
                                 session_manager.save_message(
                                     session_id, "assistant", content=collected_content,
                                     reasoning=collected_reasoning or None,
+                                    model=model,
                                     turn_number=turn_number, step=step
                                 )
                             yield "data: [DONE]\n\n"
                             return
-
                         # Fatal errors keep the current behavior: no retry.
                         if error_category == "fatal":
                             # Guardar respuesta parcial antes de terminar con error
@@ -594,11 +594,12 @@ class AgentLoop:
                                 session_manager.save_message(
                                     session_id, "assistant", content=collected_content,
                                     reasoning=collected_reasoning or None,
+                                    model=model,
                                     turn_number=turn_number, step=step
                                 )
                             else:
                                 session_manager.save_message(
-                                    session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", turn_number=turn_number, step=step
+                                    session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", model=model, turn_number=turn_number, step=step
                                 )
                             yield f"data: {json.dumps({'type': 'chunk', 'content': 'Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.'}, ensure_ascii=False)}\n\n"
                             yield "data: [DONE]\n\n"
@@ -632,11 +633,12 @@ class AgentLoop:
                             session_manager.save_message(
                                 session_id, "assistant", content=collected_content,
                                 reasoning=collected_reasoning or None,
+                                model=model,
                                 turn_number=turn_number, step=step
                             )
                         else:
                             session_manager.save_message(
-                                session_id, "assistant", content=final_msg, turn_number=turn_number, step=step
+                                session_id, "assistant", content=final_msg, model=model, turn_number=turn_number, step=step
                             )
                         yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
                         yield "data: [DONE]\n\n"
@@ -672,6 +674,7 @@ class AgentLoop:
                         content=collected_content,
                         reasoning=collected_reasoning or None,
                         tool_calls=tool_calls,
+                        model=model,
                         turn_number=turn_number,
                         step=step,
                         status="success",
@@ -897,6 +900,7 @@ class AgentLoop:
                 session_manager.save_message(
                     session_id, "assistant", content=cleaned,
                     reasoning=collected_reasoning or None,
+                    model=model,
                     turn_number=turn_number, step=step,
                     status="success",
                     message="",

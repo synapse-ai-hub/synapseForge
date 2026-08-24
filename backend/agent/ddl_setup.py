@@ -52,6 +52,7 @@ def setup_database(conn: sqlite3.Connection) -> None:
             total_time REAL,
             tool_call_id TEXT,
             tool_name TEXT,
+            model TEXT,
             turn_number INTEGER,
             step INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,

@@ -3,6 +3,8 @@
 Endpoints:
 - ``POST /api/rag/collections`` — Create a collection.
 - ``GET /api/rag/collections`` — List collections.
+- ``GET /api/rag/collections/embedding-compatibility`` — Classify collections by embedding-model compatibility.
+- ``POST /api/rag/collections/{name}/reindex`` — Reindex a collection with the current embedding model.
 - ``DELETE /api/rag/collections/{name}`` — Delete a collection.
 - ``POST /api/rag/collections/{name}/files`` — Upload files (extract text, chunk and store).
 - ``POST /api/rag/collections/{name}/urls`` — Add a web page (fetch, chunk, store and keep URL+HTML in metadata).
@@ -12,6 +14,7 @@ All responses follow the unified contract (``contract.py``).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -40,6 +43,7 @@ from backend.agent.utils.rag_helpers import (
     MAX_BYTES,
     MAX_FILES,
     fetch_url_content,
+    reindex_collection,
     validar_nombre_coleccion,
 )
 from backend.agent.utils.vector_db import VectorDB, get_vector_db
@@ -136,6 +140,75 @@ async def list_collections():
     except Exception:
         logger.exception("Error listando colecciones")
         return make_error_response(message="No se pudieron listar las colecciones.")
+
+
+@router.get("/collections/embedding-compatibility")
+async def get_embedding_compatibility():
+    """Classify collections by embedding-model compatibility.
+
+    Collections created with an older local embedding model hold vectors
+    incompatible with the current OpenRouter embedding function and must be
+    reindexed (``POST /api/rag/collections/{name}/reindex``).
+
+    Returns:
+        Contract with the per-collection classification.
+    """
+    try:
+        db = _get_db()
+        return validate_response(
+            make_success_response(
+                message="Compatibilidad de embeddings obtenida.",
+                data={"collections": db.get_embedding_compatibility()},
+                usage=zero_usage(),
+            )
+        )
+    except Exception:
+        logger.exception("Error clasificando compatibilidad de embeddings")
+        return make_error_response(
+            message="No se pudo obtener la compatibilidad de embeddings."
+        )
+
+
+@router.post("/collections/{name}/reindex")
+async def reindex_collection_endpoint(name: str):
+    """Reindex a collection with the current embedding model.
+
+    Reads every stored chunk, embeds everything up front (an embedding
+    failure aborts before anything is deleted), recreates the collection
+    and re-inserts the chunks. Vectors are regenerated from the texts,
+    never converted.
+
+    Args:
+        name: Name of the collection to reindex.
+
+    Returns:
+        Contract with the reindex report.
+    """
+    try:
+        error = validar_nombre_coleccion(name)
+        if error:
+            return make_error_response(message=error)
+
+        db = _get_db()
+        report = await asyncio.to_thread(reindex_collection, db, name)
+        message = (
+            f"Colección '{name}' reindexada con el modelo actual "
+            f"({report['reindexed']}/{report['documents']} chunk(s))."
+        )
+        if report["failed_batches"]:
+            message += " Algunos lotes fallaron: revisá los logs o volvé a subir las fuentes."
+        return validate_response(
+            make_success_response(
+                message=message,
+                data=report,
+                usage=zero_usage(),
+            )
+        )
+    except ValueError as exc:
+        return make_error_response(message=str(exc))
+    except Exception:
+        logger.exception("Error reindexando colección")
+        return make_error_response(message="No se pudo reindexar la colección.")
 
 
 @router.delete("/collections/{name}")

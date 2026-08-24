@@ -836,6 +836,7 @@ class Agent():
                              tools: list | None = None,
                              stream_cancel_event=None,
                              provider: str | None = None,
+                             reasoning: bool = True,
                              **kwargs):
         """Async generator that streams LLM response chunks.
 
@@ -866,6 +867,12 @@ class Agent():
                       callers keep their current behavior. Pass an explicit value
                       from the agent loop when a sub-agent overrides the provider
                       in its frontmatter.
+            reasoning: Whether to allow the model to reason (thinking). When
+                       ``False``, reasoning is disabled on providers that support
+                       it (Ollama skips the ``think=True`` attempt, Groq
+                       ``reasoning_effort="none"``) with a fallback so models
+                       that don't support the flag are not broken. Mirrors the
+                       handling in :meth:`llm_process`.
             **kwargs: Forwarded to the provider client.
 
         Yields:
@@ -913,6 +920,11 @@ class Agent():
                 # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
                 # lo rechaza, reintentar sin el campo (igual que en llm_process).
                 oa_kwargs["reasoning_format"] = "parsed"
+                if not reasoning:
+                    # Disable reasoning. Only some Groq models accept this field
+                    # (Qwen: "none"; GPT-OSS: low/medium/high). If the model
+                    # rejects it, fall back to a request without the field.
+                    oa_kwargs["reasoning_effort"] = "none"
             else:
                 # OpenRouter: pedir el usage en el último chunk del stream.
                 oa_kwargs["stream_options"] = {"include_usage": True}
@@ -921,6 +933,9 @@ class Agent():
             except Exception as _ex:
                 if is_groq and "reasoning_format" in str(_ex):
                     oa_kwargs.pop("reasoning_format", None)
+                    stream = await client.chat.completions.create(**oa_kwargs)
+                elif is_groq and not reasoning and "reasoning_effort" in str(_ex):
+                    oa_kwargs.pop("reasoning_effort", None)
                     stream = await client.chat.completions.create(**oa_kwargs)
                 else:
                     raise
@@ -1031,7 +1046,8 @@ class Agent():
                       'num_thread', 'num_gpu', 'stop'):
                 if k in kwargs:
                     options[k] = kwargs.pop(k)
-            # Ollama: intentar con think=True (modelos con thinking), fallback sin el flag
+            # Ollama: intentar con think=True (modelos con thinking), fallback sin el flag.
+            # Con reasoning=False se saltea el intento con think (igual que en llm_process).
             chat_kwargs = dict(model=model, messages=msgs, stream=True,
                                tools=tools if tools else None,
                                options=options, keep_alive=-1)
@@ -1048,7 +1064,7 @@ class Agent():
             stream = None
             usage_data: dict[str, Any] | None = None
             try:
-                stream = await _try_stream(use_think=True)
+                stream = await _try_stream(use_think=reasoning)
                 async for chunk in stream:
                     if stream_cancel_event and stream_cancel_event.is_set():
                         yield {'type': 'aborted'}

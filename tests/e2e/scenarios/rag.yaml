@@ -1,0 +1,61 @@
+scenario: rag-create-list-delete-collection
+description: >
+  Ciclo completo de colección RAG: creación, listado (con metadata de
+  compatibilidad de embeddings) y borrado.
+cleanup: true
+steps:
+  - action: request
+    method: POST
+    path: /api/rag/collections
+    body:
+      name: e2e-coleccion-test
+      description: Colección creada por el runner E2E
+    expect:
+      http_status: 200
+      json_status: success
+
+  - action: request
+    method: GET
+    path: /api/rag/collections/embedding-compatibility
+    expect:
+      http_status: 200
+      json_status: success
+      json_path_exists:
+        - data.collections
+
+  - action: request
+    method: DELETE
+    path: /api/rag/collections/e2e-coleccion-test
+    expect:
+      http_status: 200
+      json_status: success
+
+scenario: rag-rejects-invalid-name
+description: >
+  Validación de error: nombre de colección inválido debe rechazarse con
+  contrato de error (HTTP 200 + status "error", como responde el router).
+cleanup: false
+steps:
+  - action: request
+    method: POST
+    path: /api/rag/collections
+    body:
+      name: "nombre invalido con espacios"
+    expect:
+      http_status: 200
+      json_status: error
+
+scenario: rag-chat-search-memory-available
+description: >
+  Memoria de largo plazo: el router (sin config.yaml) tiene search_memory
+  entre sus tools por defecto. El bot pregunta por una conversación vieja;
+  se aserta stream completo sin errores de tools. La recuperación real
+  requiere OpenRouter key y conversaciones previas indexadas.
+cleanup: true
+steps:
+  - action: chat
+    message: "¿De qué hablamos en conversaciones anteriores? Si no tenés registros, decilo."
+    expect:
+      done: true
+      nonempty: true
+      no_tool_error: true

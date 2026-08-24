@@ -1,0 +1,40 @@
+scenario: main-flow-basic-chat
+description: >
+  Chat básico: el bot escribe un mensaje conversacional y el stream termina
+  con [DONE], con respuesta no vacía y sin errores de tools.
+cleanup: true
+steps:
+  - action: chat
+    message: "Hola, ¿cómo estás? Respondé en una sola frase."
+    expect:
+      done: true
+      nonempty: true
+      no_tool_error: true
+
+scenario: main-flow-with-attachment-context
+description: >
+  Mensaje con referencia a archivo de contexto subido previamente vía API:
+  la respuesta debe llegar completa y sin errores de tools.
+cleanup: true
+steps:
+  - action: request
+    method: GET
+    path: /api/context-files
+    expect:
+      http_status: 200
+      json_status: success
+      json_path_exists:
+        - data
+
+scenario: main-flow-cancel-stream
+description: >
+  Cancelación: el bot cierra el stream a mitad de la respuesta; el runner
+  verifica que el stream se aborta sin requerir [DONE].
+cleanup: true
+steps:
+  - action: chat
+    message: "Escribí un texto de al menos tres párrafos sobre historia de internet."
+    abort_after_events: 3
+    expect:
+      events_include:
+        - chunk

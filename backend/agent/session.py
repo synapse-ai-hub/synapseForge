@@ -244,6 +244,34 @@ class SessionManager:
         finally:
             conn.close()
 
+    def get_session_title(self, session_id: str) -> str:
+        """Return the stored title of a session.
+
+        Args:
+            session_id: The session identifier.
+
+        Returns:
+            The stored title, or an empty string when the session does not
+            exist or has no title yet.
+        """
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT title FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if not row or not row["title"]:
+                return ""
+            return str(row["title"])
+        except Exception as e:
+            log_error(str(e), source="backend/agent/session.py:get_session_title")
+            logger.exception(
+                "Failed to load title for session '%s'", session_id
+            )
+            return ""
+        finally:
+            conn.close()
+
     def list_sessions(self) -> list[dict]:
         """List all sessions ordered by most recent activity.
 
@@ -320,6 +348,7 @@ class SessionManager:
         usage: dict | None = None,
         tool_call_id: str | None = None,
         tool_name: str | None = None,
+        model: str | None = None,
         turn_number: int | None = None,
         step: int = 0,
     ) -> dict:
@@ -342,6 +371,8 @@ class SessionManager:
                 "total_time"}``. Stored in dedicated columns.
             tool_call_id: Tool call ID (Groq format, for ``role: "tool"``).
             tool_name: Tool name (Ollama format, for ``role: "tool"``).
+            model: LLM model identifier that produced the message
+                (assistant messages only; ``None`` otherwise).
             turn_number: Turn number for grouping messages by
                 conversation turn.
 
@@ -363,8 +394,8 @@ class SessionManager:
                     "INSERT INTO messages "
                     "(session_id, role, content, reasoning, tool_calls, tool_results, "
                     "status, message, prompt_tokens, completion_tokens, total_tokens, total_time, "
-                    "tool_call_id, tool_name, turn_number, step, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "tool_call_id, tool_name, model, turn_number, step, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         role,
@@ -380,6 +411,7 @@ class SessionManager:
                         (usage or {}).get("total_time"),
                         tool_call_id,
                         tool_name,
+                        model,
                         turn_number,
                         step,
                         now,

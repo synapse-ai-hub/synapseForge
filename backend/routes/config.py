@@ -44,6 +44,7 @@ from backend.agent.utils.model_resolver import (
     get_openrouter_context_window,
     get_vram_gb,
     ollama_default_context,
+    model_supports_reasoning,
 )
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.agent_helpers import get_skills_list, get_tools_list, get_agents_list, get_mcp_list
@@ -476,6 +477,118 @@ async def delete_provider_key(provider: str) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
+# Advanced parameters (temperature / top_p / reasoning)
+# ---------------------------------------------------------------------------
+
+_PARAM_KEYS = {
+    "temperature": "param_temperature",
+    "top_p": "param_top_p",
+    "reasoning": "param_reasoning",
+}
+"""Mapping of parameter name → ``config_kv`` key. Persisted values use the
+literal string ``"null"`` for "default" (no override)."""
+
+
+def _parse_optional_float(raw: Any, low: float, high: float) -> tuple[float | None, str | None]:
+    """Parse an optional float parameter (``None`` = default).
+
+    Args:
+        raw: Raw value from the request body (float, int or ``None``).
+        low: Minimum accepted value (inclusive).
+        high: Maximum accepted value (inclusive).
+
+    Returns:
+        Tuple ``(value, error)`` — exactly one of the two is ``None``.
+    """
+    if raw is None:
+        return None, None
+    if isinstance(raw, bool):
+        return None, f"must be a number between {low} and {high}, or null."
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None, f"must be a number between {low} and {high}, or null."
+    if value < low or value > high:
+        return None, f"must be a number between {low} and {high}, or null."
+    return value, None
+
+
+def _persist_param(key: str, value: Any) -> None:
+    """Persist one advanced parameter in ``config_kv``.
+
+    Args:
+        key: ``config_kv`` key (see ``_PARAM_KEYS``).
+        value: Parameter value; ``None`` is stored as the literal string
+            ``"null"`` (= default / no override).
+    """
+    if session_manager is None:
+        return
+    stored = "null" if value is None else str(value)
+    session_manager.set_config(key, stored)
+
+
+def _read_param(key: str) -> Any:
+    """Read one advanced parameter from ``config_kv``.
+
+    Args:
+        key: ``config_kv`` key (see ``_PARAM_KEYS``).
+
+    Returns:
+        The parsed value (``float`` for temperature/top_p, ``bool`` for
+        reasoning) or ``None`` when unset/"null" (default).
+    """
+    if session_manager is None:
+        return None
+    raw = session_manager.get_config(key)
+    if raw is None or raw.strip().lower() == "null":
+        return None
+    try:
+        if key == _PARAM_KEYS["reasoning"]:
+            return raw.strip().lower() == "true"
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+@router.get("/parameters")
+async def get_parameters() -> JSONResponse:
+    """Return the persisted advanced parameters (``null`` = default).
+
+    Also reports whether the currently selected model declaratively supports
+    reasoning (``reasoning_supported``): ``true``/``false`` per the provider
+    catalog, or ``null`` when capability is unknown.
+    """
+    try:
+        current_model = agent._resolved_model if agent is not None else None
+        current_provider = agent.provider if agent is not None else ""
+        reasoning_supported: bool | None = None
+        if current_model and current_provider:
+            # Catalog lookup can hit the network (OpenRouter) — run it in a
+            # thread so the event loop is never blocked.
+            reasoning_supported = await asyncio.to_thread(
+                model_supports_reasoning, current_provider, current_model
+            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "temperature": _read_param(_PARAM_KEYS["temperature"]),
+                "top_p": _read_param(_PARAM_KEYS["top_p"]),
+                "reasoning": _read_param(_PARAM_KEYS["reasoning"]),
+                "model": current_model,
+                "provider": current_provider or "",
+                "reasoning_supported": reasoning_supported,
+            },
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:get_parameters")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Error leyendo parámetros: {exc}"},
+        )
+
+
+# ---------------------------------------------------------------------------
 # Model selection
 # ---------------------------------------------------------------------------
 
@@ -585,9 +698,19 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
 
     Request body::
 
-        {"model": "llama3.2", "provider": "LOCAL"}
+        {"model": "llama3.2", "provider": "LOCAL",
+         "temperature": 0.7, "top_p": 0.9, "reasoning": true}
 
-    The selection is stored in the agent singleton and persisted in SQLite.
+    ``temperature``, ``top_p`` and ``reasoning`` are optional advanced
+    parameters; ``null`` (or omitted) means "default" (the agent's
+    frontmatter value, or the hardcoded fallback). The selection and the
+    parameters are stored in the agent singleton / persisted in SQLite
+    (``config_kv`` keys ``param_temperature``, ``param_top_p``,
+    ``param_reasoning``).
+
+    If ``reasoning=true`` is sent for a model that declaratively does not
+    support reasoning (per the provider catalog), the request is rejected
+    with a contract error response.
     """
     model = data.get("model", "").strip()
     provider = data.get("provider", "").strip().upper()
@@ -610,6 +733,29 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             },
         )
 
+    # --- Optional advanced parameters (None = default) ---
+    temperature, temp_err = _parse_optional_float(data.get("temperature"), 0.0, 2.0)
+    if temp_err:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"temperature {temp_err}"},
+        )
+    top_p, top_p_err = _parse_optional_float(data.get("top_p"), 0.0, 1.0)
+    if top_p_err:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"top_p {top_p_err}"},
+        )
+    reasoning = data.get("reasoning", None)
+    if reasoning is not None and not isinstance(reasoning, bool):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": "reasoning must be a boolean or null (default).",
+            },
+        )
+
     if agent is None:
         return JSONResponse(
             status_code=503,
@@ -618,6 +764,29 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
                 "message": "Agent not initialised.",
             },
         )
+
+    # --- Reasoning capacity validation (declarative catalog check) ---
+    if reasoning:
+        try:
+            # Catalog lookup can hit the network (OpenRouter) — run it in a
+            # thread so the event loop is never blocked.
+            supports_reasoning = await asyncio.to_thread(
+                model_supports_reasoning, provider, model
+            )
+        except Exception as exc:
+            log_error(str(exc), source="backend/routes/config.py:select_model(reasoning_check)")
+            supports_reasoning = None
+        if supports_reasoning is False:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": (
+                        f"Model '{model}' does not support reasoning. "
+                        "Set reasoning to default/no or pick another model."
+                    ),
+                },
+            )
 
     # Liberar modelo anterior si es LOCAL (Ollama) y cambió
     modelo_anterior = agent._resolved_model
@@ -637,6 +806,11 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
         if session_manager is not None:
             session_manager.set_config("selected_model", model)
             session_manager.set_config("selected_provider", provider)
+            # Persist advanced parameters together with the model
+            # ("null" = default / no override).
+            _persist_param(_PARAM_KEYS["temperature"], temperature)
+            _persist_param(_PARAM_KEYS["top_p"], top_p)
+            _persist_param(_PARAM_KEYS["reasoning"], reasoning)
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo persistir el modelo o proveedor seleccionado: %s", exc)
@@ -667,6 +841,9 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             "message": f"Model '{model}' selected.",
             "model": model,
             "provider": provider,
+            "temperature": temperature,
+            "top_p": top_p,
+            "reasoning": reasoning,
         },
     )
 

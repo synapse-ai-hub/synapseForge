@@ -42,12 +42,28 @@ except ImportError as e:
     logger.debug("backend.agent.session not yet available")
 
 
-try:
-    from backend.agent.loop import AgentLoop
-except ImportError as e:
-    log_error(str(e), source="agent/__init__.py(loop)")
-    AgentLoop = None  # type: ignore
-    logger.debug("backend.agent.loop not yet available")
+def __getattr__(name: str):
+    """Lazily resolve attributes that cannot be imported eagerly.
+
+    ``AgentLoop`` is resolved lazily because ``backend.agent.loop``
+    imports ``backend.instances``, which in turn imports this package.
+    Importing the loop module eagerly here would create a circular
+    import during ``backend.instances`` initialization.
+
+    Args:
+        name: Attribute name being accessed on the package.
+
+    Returns:
+        The requested attribute.
+
+    Raises:
+        AttributeError: If the attribute is not exposed by the package.
+    """
+    if name == "AgentLoop":
+        from backend.agent.loop import AgentLoop
+
+        return AgentLoop
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "CompactionConfig",

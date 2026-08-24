@@ -1,12 +1,12 @@
-"""Endpoints para listar y eliminar skills, tools, agents, MCP y RAG.
+"""List and delete skills, tools, agents, MCP servers and RAG collections.
 
 Endpoints:
-- ``GET /agent/knowledge`` — Lista colecciones vectoriales.
-- ``DELETE /agent/skills/{name}`` — Elimina una skill (directorio completo).
-- ``DELETE /agent/tools/{name}`` — Elimina una tool externa (.py).
-- ``DELETE /agent/agents/{name}`` — Elimina un agente (.md).
-- ``DELETE /agent/mcp/{label}`` — Elimina un servidor MCP de la config.
-- ``DELETE /agent/knowledge/{collection}`` — Elimina una colección vectorial.
+- ``GET /api/knowledge`` — List vector collections.
+- ``DELETE /api/skills/{name}`` — Delete a skill (whole directory).
+- ``DELETE /api/tools/{name}`` — Delete an external tool (.py).
+- ``DELETE /api/agents/{name}`` — Delete an agent (.md).
+- ``DELETE /api/mcp/{label}`` — Delete an MCP server from the config.
+- ``DELETE /api/knowledge/{collection}`` — Delete a vector collection.
 """
 
 from __future__ import annotations

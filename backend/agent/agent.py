@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Ensure the project root is in sys.path so absolute imports (backend.*)
-# resolve correctly regardless of how the file is invoked.
-# agent.py is at backend/utils/ -> need 3 dirname() calls to reach root.
+# resolve correctly regardless of where the file is invoked from.
 # ---------------------------------------------------------------------------
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))

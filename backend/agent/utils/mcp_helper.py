@@ -6,7 +6,7 @@ the MCP protocol using the official ``mcp`` SDK (same approach as opencode).
 
 Usage::
 
-    from backend.utils.mcp_helper import get_mcp_tools, execute_mcp_tool
+    from backend.agent.utils.mcp_helper import get_mcp_tools, execute_mcp_tool
 
     # Get all MCP tools as function schemas (works for both providers)
     mcp_tools = get_mcp_tools()

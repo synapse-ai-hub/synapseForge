@@ -1,0 +1,68 @@
+scenario: scheduler-create-toggle-delete
+description: >
+  Ciclo completo de tarea programada: alta, guardado del ID, toggle
+  enabled/disabled y borrado usando el ID propagado entre pasos.
+cleanup: true
+steps:
+  - action: request
+    method: POST
+    path: /api/scheduler/tasks
+    body:
+      prompt: "Tarea E2E: decí hola"
+      time: "03:00"
+      days: [1]
+    save:
+      task_id: task.id
+    expect:
+      http_status: 200
+      json_status: success
+
+  - action: request
+    method: PUT
+    path: /api/scheduler/tasks/{task_id}
+    body:
+      enabled: false
+    expect:
+      http_status: 200
+      json_status: success
+
+  - action: request
+    method: GET
+    path: /api/scheduler/tasks
+    expect:
+      http_status: 200
+      json_status: success
+
+  - action: request
+    method: DELETE
+    path: /api/scheduler/tasks/{task_id}
+    expect:
+      http_status: 200
+      json_status: success
+
+scenario: scheduler-rejects-invalid-task
+description: >
+  Validación de error: una tarea sin prompt debe rechazarse con 400 y
+  contrato de error.
+cleanup: false
+steps:
+  - action: request
+    method: POST
+    path: /api/scheduler/tasks
+    body:
+      time: "03:00"
+      days: [1]
+    expect:
+      http_status: 400
+
+scenario: scheduler-delete-nonexistent
+description: >
+  Validación de error: borrar una tarea inexistente responde 404 sin romper
+  el servidor.
+cleanup: false
+steps:
+  - action: request
+    method: DELETE
+    path: /api/scheduler/tasks/e2e-id-inexistente-xyz
+    expect:
+      http_status: 404

@@ -33,14 +33,14 @@
 
 - **Full scaffolding**: `synapseforge init` creates the project from an embedded template with an interactive GUI — structure, venv, logos, `.ico`, colors and placeholder replacement.
 - **Self-contained distribution**: `synapseforge launch` generates a ready-to-deliver zip (PyInstaller + embedded Python + compiled frontend).
-- **Multi-provider LLM**: LOCAL (Ollama, optional), Groq, Google Gemini and OpenRouter. Cloud API keys are managed from the settings panel, validated against each provider's API and stored encrypted in SQLite. Skippable initial setup screen: with no provider configured the app stays locked until a key is loaded.
+- **Multi-provider LLM**: LOCAL (Ollama, optional), Groq, Google Gemini and OpenRouter. Cloud API keys are managed from the settings panel, validated against each provider's API and stored encrypted in SQLite. Skippable initial setup screen: with no provider configured the app stays locked until a key is loaded. Advanced parameters (temperature, top_p, reasoning) configurable per model from the settings panel, with "default" option that falls back to each agent's own values.
 - **Complete agent framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), per-agent permissions (allow/deny/ask + wildcards) enforced both when exposing tools to the model and at every execution attempt, skills and sub-agents with delegation via `task`.
-- **RAG**: vector collections in ChromaDB with OpenRouter embeddings (`liquid/lfm-2.5-embedding-350m:free`). File and web page upload, chunking with overlap and cosine similarity search. Requires an OpenRouter API key (free tier).
+- **RAG**: vector collections in ChromaDB with OpenRouter embeddings (`liquid/lfm-2.5-embedding-350m:free`). File and web page upload, chunking with overlap and cosine similarity search. Requires an OpenRouter API key (free tier). Long-term conversation memory: every turn is indexed automatically and all agents can search past conversations with the `search_memory` tool. Collections created with an older embedding model are detected via the API and can be reindexed in place.
 - **LLM-assisted creation**: standalone interfaces to create skills, tools and agents through an iterative interview + creator agent, with ephemeral cloud model selection per task.
 - **Telegram as remote control**: the bot publishes events to the event bus and the frontend runs the same chat flow. Session commands, model/provider switching, skill/tool/RAG creation and agenda management.
 - **Scheduled tasks**: the user defines tasks (description + time + days) from the header Agenda or via Telegram; the backend runs them with the selected model and notifies the result in the UI notification bell and via Telegram (always, even if the bot is disabled).
 - **Context files**: document upload (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) → text extraction → injection into the agent's system prompt.
-- **Usage metrics**: sessions, tools, errors and overview, with a dashboard in the frontend.
+- **Usage metrics**: sessions, tools, models, errors and overview, with a dashboard in the frontend.
 - **Desktop app mode**: heartbeat watchdog + shutdown endpoint to distribute the app as a product.
 
 ---

@@ -11,7 +11,11 @@ export interface ToolMetrics {
   tool_usage: { name: string; count: number }[];
   total_tool_calls: number;
   top_subagents: { name: string; count: number }[];
-  json_tool_calls: number;
+}
+
+export interface ModelMetrics {
+  models: { model: string; count: number }[];
+  total_model_calls: number;
 }
 
 export interface ErrorMetrics {
@@ -29,65 +33,73 @@ export interface MetricsOverview {
   sessions_by_day: { date: string; count: number }[];
 }
 
+/**
+ * Fetch a metrics endpoint and unwrap the unified contract response.
+ *
+ * Args:
+ *   path: API path relative to the base URL (e.g. "/api/metrics/sessions").
+ *   errorMessage: Message used when the backend reports an error status.
+ *
+ * Returns:
+ *   The ``data`` payload of the contract response.
+ *
+ * Throws:
+ *   Error: When the HTTP request fails or the backend returns
+ *     ``status: "error"``.
+ */
+async function fetchMetric<T>(path: string, errorMessage: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "GET",
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  const result = await response.json();
+  if (result.status === "error") {
+    throw new Error(result.message || errorMessage);
+  }
+  return result.data as T;
+}
+
 const metricsService = {
   /** Get session-level metrics. */
   async getSessionMetrics(): Promise<SessionMetrics> {
-    const response = await fetch(`${API_BASE_URL}/api/metrics/sessions`, {
-      method: "GET",
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const result = await response.json();
-    if (result.status === "error") {
-      throw new Error(result.message || "Error fetching session metrics");
-    }
-    return result.data;
+    return fetchMetric<SessionMetrics>(
+      "/api/metrics/sessions",
+      "Error fetching session metrics",
+    );
   },
 
   /** Get tool usage metrics. */
   async getToolMetrics(): Promise<ToolMetrics> {
-    const response = await fetch(`${API_BASE_URL}/api/metrics/tools`, {
-      method: "GET",
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const result = await response.json();
-    if (result.status === "error") {
-      throw new Error(result.message || "Error fetching tool metrics");
-    }
-    return result.data;
+    return fetchMetric<ToolMetrics>(
+      "/api/metrics/tools",
+      "Error fetching tool metrics",
+    );
+  },
+
+  /** Get LLM usage metrics grouped by model. */
+  async getModelMetrics(): Promise<ModelMetrics> {
+    return fetchMetric<ModelMetrics>(
+      "/api/metrics/models",
+      "Error fetching model metrics",
+    );
   },
 
   /** Get error metrics. */
   async getErrorMetrics(): Promise<ErrorMetrics> {
-    const response = await fetch(`${API_BASE_URL}/api/metrics/errors`, {
-      method: "GET",
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const result = await response.json();
-    if (result.status === "error") {
-      throw new Error(result.message || "Error fetching error metrics");
-    }
-    return result.data;
+    return fetchMetric<ErrorMetrics>(
+      "/api/metrics/errors",
+      "Error fetching error metrics",
+    );
   },
 
   /** Get a combined overview of all metrics. */
   async getOverview(): Promise<MetricsOverview> {
-    const response = await fetch(`${API_BASE_URL}/api/metrics/overview`, {
-      method: "GET",
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const result = await response.json();
-    if (result.status === "error") {
-      throw new Error(result.message || "Error fetching metrics overview");
-    }
-    return result.data;
+    return fetchMetric<MetricsOverview>(
+      "/api/metrics/overview",
+      "Error fetching metrics overview",
+    );
   },
 };
 

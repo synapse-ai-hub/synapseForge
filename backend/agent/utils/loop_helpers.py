@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -345,3 +346,59 @@ async def execute_tool(agent, tc: dict[str, Any]) -> Any:
         data=result,
         usage=zero_usage(),
     )
+
+
+_RATE_LIMIT_PATTERNS = (
+    "rate limit",
+    "too many requests",
+    "request too large",
+    "tokens per min",
+    "tpm",
+)
+"""Case-insensitive substrings that identify a rate-limit / quota error."""
+
+_RATE_LIMIT_CODES = ("429", "413")
+"""HTTP status codes (word-boundary matched) that identify a rate-limit error."""
+
+_TRANSIENT_PATTERNS = (
+    "connection",
+    "timed out",
+    "timeout",
+    "overloaded",
+    "temporarily unavailable",
+)
+"""Case-insensitive substrings that identify a transient (retryable) error."""
+
+_TRANSIENT_CODES = ("500", "502", "503", "504")
+"""HTTP status codes (word-boundary matched) that identify a transient error."""
+
+
+def classify_llm_error(exc: Exception) -> str:
+    """Classify an LLM streaming exception into a retry category.
+
+    Providers wrap HTTP errors differently (Groq/OpenRouter/Ollama), so the
+    classification is tolerant: it inspects ``str(exc)`` looking for known
+    rate-limit and transient-failure markers. Numeric status codes are
+    matched with word boundaries so they never match inside other numbers.
+
+    Args:
+        exc: The exception raised while consuming the LLM stream.
+
+    Returns:
+        One of ``"rate_limit"`` (429/413, quota or tokens-per-minute errors),
+        ``"transient"`` (timeouts, connection errors, 5xx, overloaded) or
+        ``"fatal"`` (anything else: auth, bad request, etc.).
+    """
+    message = str(exc).lower()
+
+    if any(pattern in message for pattern in _RATE_LIMIT_PATTERNS):
+        return "rate_limit"
+    if any(re.search(rf"\b{code}\b", message) for code in _RATE_LIMIT_CODES):
+        return "rate_limit"
+
+    if any(pattern in message for pattern in _TRANSIENT_PATTERNS):
+        return "transient"
+    if any(re.search(rf"\b{code}\b", message) for code in _TRANSIENT_CODES):
+        return "transient"
+
+    return "fatal"

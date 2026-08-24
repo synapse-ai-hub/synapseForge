@@ -5,25 +5,41 @@ This module centralises the non-endpoint logic used by
 the SSRF-protected URL fetching (DNS pinning, private-IP blocking, redirect
 handling and response size caps).
 
+It also hosts the long-term conversation memory helpers (branch
+``feat/memoria-largo-plazo``): indexing of completed turns into the dedicated
+``conversaciones`` Chroma collection, following the pattern proven in
+ProspectingAgent (one document per turn = user message + final assistant
+answer, with session/date metadata), fire-and-forget so an indexing failure
+can never break the chat stream.
+
 Keeping this logic in ``utils`` (instead of inline in the route) follows the
 project convention of separating helpers from endpoints.
 
-Imported by ``backend/routes/rag.py``.
+Imported by ``backend/routes/rag.py`` and ``backend/agent/loop.py``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import os
 import re
 import socket
 import sys
+from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpcore
 import httpx
+
+from backend.agent.utils.contract import (
+    make_error_response,
+    make_success_response,
+    zero_usage,
+)
+from backend.agent.utils.error_logger import log_error
 
 # ---------------------------------------------------------------------------
 # Ensure the project root is in sys.path for absolute imports
@@ -43,6 +59,24 @@ MAX_FILES = 20
 MAX_REDIRECTS = 5
 # Maximum response size when fetching a URL (avoids memory DoS).
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+
+# ---------------------------------------------------------------------------
+# Long-term conversation memory (feat/memoria-largo-plazo)
+# ---------------------------------------------------------------------------
+
+# Dedicated Chroma collection holding one document per conversation turn.
+MEMORY_COLLECTION = "conversaciones"
+
+# Turns are usually short, so a turn is a single document. Only when the
+# document exceeds this size is the existing chunking helper applied.
+MAX_TURN_DOC_CHARS = 4000
+
+# Chunk size used when a turn document must be split (chars).
+TURN_CHUNK_SIZE_CHARS = 2000
+
+# Strong references to fire-and-forget indexing tasks (prevents garbage
+# collection of tasks still running after the loop returns).
+_background_index_tasks: set[asyncio.Task] = set()
 
 # Private / loopback / link-local / metadata networks blocked for SSRF.
 _PRIVATE_NETS = [
@@ -296,3 +330,378 @@ async def fetch_url_content(url: str) -> tuple[str, str]:
         text = re.sub(r"\s+", " ", text).strip()
 
     return text, html
+
+
+# ---------------------------------------------------------------------------
+# Reindexing of collections created with an incompatible embedding model
+# ---------------------------------------------------------------------------
+
+# Transient markers (case-insensitive) that justify an embedding retry.
+_EMBED_TRANSIENT_MARKERS = (
+    "429",
+    "rate limit",
+    "too many requests",
+    "timeout",
+    "timed out",
+    "connection",
+)
+
+
+def _embed_with_retry(embed_func, texts: list[str], max_retries: int = 3) -> list[list[float]]:
+    """Embed texts with a simple retry for transient (rate-limit) failures.
+
+    Args:
+        embed_func: Callable (Chroma embedding function) that maps texts to
+            vectors.
+        texts: Texts to embed.
+        max_retries: Maximum retries after the first attempt fails with a
+            transient error. Waits grow exponentially (2s, 4s, 8s).
+
+    Returns:
+        The embedding vectors (one per input text).
+
+    Raises:
+        RuntimeError: Propagated from ``embed_func`` when the failure is not
+            transient or retries are exhausted.
+    """
+    import time as _time
+
+    delay = 2.0
+    for attempt in range(max_retries + 1):
+        try:
+            return embed_func(texts)
+        except Exception as exc:
+            message = str(exc).lower()
+            transient = any(marker in message for marker in _EMBED_TRANSIENT_MARKERS)
+            if not transient or attempt == max_retries:
+                raise
+            logger.warning(
+                "Embedding fallo (intento %d/%d), reintentando en %.0fs: %s",
+                attempt + 1,
+                max_retries,
+                delay,
+                exc,
+            )
+            log_error(str(exc), source="rag_helpers.py:_embed_with_retry")
+            _time.sleep(delay)
+            delay *= 2
+    raise RuntimeError("Unreachable: embedding retry loop exhausted.")
+
+
+def reindex_collection(db, name: str) -> dict:
+    """Reindex a collection with the current embedding model.
+
+    Reads every stored chunk (documents + metadatas) from the existing
+    collection — the chunk texts are the recoverable source — embeds them
+    ALL up front (so an embedding failure aborts before anything is
+    deleted), then recreates the collection and re-inserts everything.
+    Vectors are never converted; they are regenerated from the texts.
+
+    Args:
+        db: Shared ``VectorDB`` instance (current embedding function).
+        name: Name of the collection to reindex.
+
+    Returns:
+        Dict report: ``{"name", "reindexed", "documents", "failed_batches",
+        "sanity_ok"}``.
+
+    Raises:
+        ValueError: If the collection does not exist or is already
+            compatible with the current embedding model.
+        RuntimeError: If the upfront embedding fails (the original
+            collection is left untouched).
+    """
+    try:
+        old = db.get_collection(name)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"No se pudo acceder a la colección '{name}'.") from exc
+
+    meta = getattr(old, "metadata", None) or {}
+    from backend.agent.utils.vector_db import _DEFAULT_MODEL
+
+    if meta.get("embedding_model") == _DEFAULT_MODEL:
+        raise ValueError(
+            f"La colección '{name}' ya usa el modelo de embeddings actual."
+        )
+
+    # 1. Read every stored chunk (paginated via col.get offset/limit).
+    all_ids: list[str] = []
+    all_documents: list[str] = []
+    all_metadatas: list[dict] = []
+    batch_size = 256
+    offset = 0
+    while True:
+        page = old.get(limit=batch_size, offset=offset)
+        ids = page.get("ids") or []
+        if not ids:
+            break
+        all_ids.extend(ids)
+        all_documents.extend(page.get("documents") or [])
+        all_metadatas.extend(page.get("metadatas") or [])
+        if len(ids) < batch_size:
+            break
+        offset += batch_size
+
+    if not all_documents:
+        # Nothing to re-embed: just recreate with the current model metadata.
+        db.delete_collection(name)
+        db.create_collection(name, metadata=dict(meta))
+        return {
+            "name": name,
+            "reindexed": 0,
+            "documents": 0,
+            "failed_batches": [],
+            "sanity_ok": True,
+        }
+
+    # 2. Embed EVERYTHING up front. If this fails, the original collection
+    #    is untouched (no data loss).
+    logger.info(
+        "Reindexando '%s': embebiendo %d chunk(s) con el modelo actual...",
+        name,
+        len(all_documents),
+    )
+    vectors = _embed_with_retry(db.embed_func, all_documents)
+
+    # 3. Recreate the collection with the current embedding model.
+    db.delete_collection(name)
+    db.create_collection(name, metadata={"description": meta.get("description")})
+
+    # 4. Re-insert in batches using the precomputed vectors (no further API
+    #    calls, so this step cannot fail for rate-limit reasons).
+    insert_batch = 128
+    failed_batches: list[dict] = []
+    for start in range(0, len(all_ids), insert_batch):
+        end = start + insert_batch
+        try:
+            db.add_documents(
+                name,
+                ids=all_ids[start:end],
+                documents=all_documents[start:end],
+                metadatas=all_metadatas[start:end],
+                embeddings=vectors[start:end],
+            )
+        except Exception as exc:
+            logger.exception("Batch de reinsert falló en '%s'", name)
+            log_error(str(exc), source=f"rag_helpers.py:reindex_collection({name})")
+            failed_batches.append({"from": start, "to": min(end, len(all_ids))})
+
+    # 5. Sanity query: retrieve one known document as top result.
+    sanity_ok = False
+    try:
+        sample = all_documents[0][:500]
+        results = db.query(name, sample, n_results=1)
+        sanity_ok = bool((results.get("ids") or [[]])[0])
+    except Exception as exc:
+        logger.warning("Query de sanidad falló para '%s': %s", name, exc)
+        log_error(str(exc), source=f"rag_helpers.py:reindex_collection(sanity:{name})")
+
+    return {
+        "name": name,
+        "reindexed": len(all_ids) - sum(b["to"] - b["from"] for b in failed_batches),
+        "documents": len(all_ids),
+        "failed_batches": failed_batches,
+        "sanity_ok": sanity_ok,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Long-term conversation memory — indexing (pattern from ProspectingAgent)
+# ---------------------------------------------------------------------------
+
+
+def build_turn_document(user_message: str, assistant_message: str) -> str:
+    """Build the indexable document for one conversation turn.
+
+    Follows the ProspectingAgent pattern: a single document containing the
+    user message and the final assistant answer.
+
+    Args:
+        user_message: The user message of the turn.
+        assistant_message: The final assistant response of the turn.
+
+    Returns:
+        The document text.
+    """
+    return (
+        f"**Usuario**:\n\n{(user_message or '').strip()}\n\n"
+        f"**Asistente**:\n\n{(assistant_message or '').strip()}"
+    )
+
+
+def _turn_metadata(
+    session_id: str,
+    session_title: str,
+    turn_number: int,
+) -> dict[str, Any]:
+    """Build the metadata dict stored with every indexed turn.
+
+    Args:
+        session_id: Identifier of the session the turn belongs to.
+        session_title: Human-readable title of the session.
+        turn_number: Turn number inside the session.
+
+    Returns:
+        Metadata dict with ``session_id``, ``session_title``, ``turn_number``,
+        ``role``, ``created_at`` (ISO) and ``date`` (human-readable).
+    """
+    now = datetime.now()
+    return {
+        "session_id": session_id,
+        "session_title": session_title or "",
+        "turn_number": int(turn_number),
+        "role": "turn",
+        "created_at": now.isoformat(timespec="seconds"),
+        "date": now.strftime("%d/%m/%Y %H:%M"),
+    }
+
+
+def _index_turn_sync(
+    session_id: str,
+    turn_number: int,
+    user_message: str,
+    assistant_message: str,
+) -> dict:
+    """Index one completed conversation turn into Chroma (blocking).
+
+    Resolves the session title from SQLite, builds the turn document and
+    stores it in the ``conversaciones`` collection using the shared VectorDB
+    (OpenRouter embeddings). If the document exceeds ``MAX_TURN_DOC_CHARS``
+    it is split with the existing chunking helper.
+
+    Args:
+        session_id: Session identifier.
+        turn_number: Turn number inside the session.
+        user_message: User message of the turn.
+        assistant_message: Final assistant response of the turn.
+
+    Returns:
+        Contract response dict (``{status, message, data, usage}``).
+    """
+    try:
+        if not (user_message or "").strip() and not (assistant_message or "").strip():
+            return make_success_response(
+                message="Turno vacío: nada que indexar.",
+                data=None,
+                usage=zero_usage(),
+            )
+
+        # Lazy imports avoid circular dependencies at module load time.
+        from backend.instances import session_manager
+        from backend.agent.utils.vector_db import get_vector_db
+
+        session_title = session_manager.get_session_title(session_id)
+        document = build_turn_document(user_message, assistant_message)
+        metadata = _turn_metadata(session_id, session_title, turn_number)
+        doc_id = f"{session_id}__turn_{turn_number}"
+
+        db = get_vector_db()
+        db.get_or_create_collection(MEMORY_COLLECTION)
+
+        if len(document) <= MAX_TURN_DOC_CHARS:
+            db.add_documents(
+                MEMORY_COLLECTION,
+                ids=[doc_id],
+                documents=[document],
+                metadatas=[metadata],
+            )
+            indexed = 1
+        else:
+            from backend.agent.utils.chunking import chunk_file_content
+
+            chunks = chunk_file_content(
+                f"{doc_id}.md",
+                document,
+                chunk_size_chars=TURN_CHUNK_SIZE_CHARS,
+            )
+            ids = [f"{doc_id}_c{c['chunk_number']}" for c in chunks]
+            documents = [c["chunk_text"] for c in chunks]
+            metadatas = [dict(metadata, chunk=f"{i + 1}/{len(chunks)}") for i in range(len(chunks))]
+            db.add_documents(
+                MEMORY_COLLECTION,
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+            )
+            indexed = len(chunks)
+
+        return make_success_response(
+            message=f"Turno {turn_number} indexado en '{MEMORY_COLLECTION}'.",
+            data={"indexed_documents": indexed},
+            usage=zero_usage(),
+        )
+    except Exception as e:
+        log_error(str(e), source="rag_helpers.py:_index_turn_sync")
+        logger.warning("Could not index turn %s#%s: %s", session_id, turn_number, e)
+        return make_error_response(
+            message=f"No se pudo indexar el turno: {e}",
+            usage=zero_usage(),
+        )
+
+
+async def index_turn_async(
+    session_id: str,
+    turn_number: int,
+    user_message: str,
+    assistant_message: str,
+) -> dict:
+    """Index one completed turn without blocking the event loop.
+
+    Runs the blocking Chroma/embedding work in a worker thread. Never
+    raises: any failure is logged via ``log_error`` and returned as an
+    error contract response.
+
+    Args:
+        session_id: Session identifier.
+        turn_number: Turn number inside the session.
+        user_message: User message of the turn.
+        assistant_message: Final assistant response of the turn.
+
+    Returns:
+        Contract response dict (``{status, message, data, usage}``).
+    """
+    try:
+        return await asyncio.to_thread(
+            _index_turn_sync,
+            session_id,
+            turn_number,
+            user_message,
+            assistant_message,
+        )
+    except Exception as e:
+        log_error(str(e), source="rag_helpers.py:index_turn_async")
+        return make_error_response(
+            message=f"Error indexando la conversación: {e}",
+            usage=zero_usage(),
+        )
+
+
+def index_turn_fire_and_forget(
+    session_id: str,
+    turn_number: int,
+    user_message: str,
+    assistant_message: str,
+) -> None:
+    """Schedule background indexing of a completed turn (never raises).
+
+    Called by the agent loop right after persisting the final assistant
+    message. The task runs independently of the SSE stream: failures are
+    only logged. A strong reference is kept so the task is not garbage
+    collected mid-flight.
+
+    Args:
+        session_id: Session identifier.
+        turn_number: Turn number inside the session.
+        user_message: User message of the turn.
+        assistant_message: Final assistant response of the turn.
+    """
+    try:
+        task = asyncio.create_task(
+            index_turn_async(session_id, turn_number, user_message, assistant_message)
+        )
+        _background_index_tasks.add(task)
+        task.add_done_callback(_background_index_tasks.discard)
+    except Exception as e:
+        log_error(str(e), source="rag_helpers.py:index_turn_fire_and_forget")

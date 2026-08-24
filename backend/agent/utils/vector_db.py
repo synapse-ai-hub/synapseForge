@@ -31,6 +31,7 @@ from chromadb import Documents, EmbeddingFunction, Embeddings
 
 from backend.agent.utils import provider_keys
 from backend.agent.utils.config_dir import get_knowledge_dir
+from backend.agent.utils.error_logger import log_error
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,40 @@ class VectorDB:
             for c in collections
         ]
 
+    def get_embedding_compatibility(self) -> list[dict[str, Any]]:
+        """Classify every collection by embedding-model compatibility.
+
+        A collection is **compatible** when its ``embedding_model`` metadata
+        equals :data:`_DEFAULT_MODEL`. Collections created with an older
+        local embedding model (or missing metadata) hold vectors that are
+        incompatible with the current embedding function and must be
+        reindexed before they can be searched reliably.
+
+        Returns:
+            List of dicts with ``name``, ``embedding_model``, ``compatible``
+            and ``documents`` (chunk count, ``None`` when unreadable).
+        """
+        result: list[dict[str, Any]] = []
+        for entry in self.list_collections():
+            name = entry["name"]
+            meta = entry.get("metadata") or {}
+            model = meta.get("embedding_model")
+            count: int | None = None
+            try:
+                count = self._client.get_collection(name=name).count()
+            except Exception as e:
+                logger.warning("No se pudo contar '%s': %s", name, e)
+                log_error(str(e), source="vector_db.py:get_embedding_compatibility")
+            result.append(
+                {
+                    "name": name,
+                    "embedding_model": model,
+                    "compatible": model == _DEFAULT_MODEL,
+                    "documents": count,
+                }
+            )
+        return result
+
     def delete_collection(self, name: str) -> None:
         """Delete a collection and all its data.
 
@@ -276,6 +311,7 @@ class VectorDB:
         ids: list[str],
         documents: list[str],
         metadatas: list[dict[str, Any]] | None = None,
+        embeddings: list[list[float]] | None = None,
     ) -> None:
         """Add documents to a collection.
 
@@ -284,12 +320,16 @@ class VectorDB:
             ids: List of unique IDs (strings).
             documents: List of texts to index.
             metadatas: Optional metadata per document.
+            embeddings: Optional precomputed vectors. When provided, no
+                embedding API call is made (used by the reindex flow, which
+                embeds everything up front before touching the collection).
         """
         col = self.get_collection(collection_name)
         col.add(
             ids=ids,
             documents=documents,
             metadatas=metadatas,
+            embeddings=embeddings,
         )
         logger.info(
             "%d documento(s) agregados a '%s'.",

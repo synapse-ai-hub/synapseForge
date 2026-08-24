@@ -109,8 +109,10 @@ back-off waits of 2s, 4s, 8s, 16s and 32s (62s total).
 LLM_BACKOFF_BASE_SECONDS = 2.0
 """Base delay (seconds) for the exponential back-off between LLM retries."""
 
-# Tool schema for the router agent (agent_name=None). The router's only job
-# is to delegate — it does NOT have direct access to any other tool.
+# Tool schema for the router agent (agent_name=None). The router delegates
+# via ``task``, reads its own documentation via ``help`` and can search past
+# conversations via ``search_memory``. Without ``config.yaml`` these three
+# are the router's only tools; with it, the yaml permissions apply.
 _ROUTER_TOOLS = [
     {
         "type": "function",
@@ -143,9 +145,35 @@ _ROUTER_TOOLS = [
                 "properties": {}
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_memory",
+            "description": (
+                "Busca en conversaciones anteriores del usuario (memoria de "
+                "largo plazo). Úsala cuando el usuario pregunte por "
+                "conversaciones previas o mencione información que no está "
+                "en la sesión actual."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Consulta en lenguaje natural sobre conversaciones pasadas."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Cantidad máxima de resultados (default 5)."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
-"""Tool schema list for the router agent (``task`` + ``help``)."""
+"""Tool schema list for the router agent (``task`` + ``help`` + ``search_memory``)."""
 
 
 def _load_router_permissions() -> dict | None:
@@ -439,10 +467,15 @@ class AgentLoop:
             # --- 3. Resolve tools ---
             if agent_name is None:
                 # Router: si existe config.yaml con permissions, se aplican.
-                # Si no existe, solo task. Task siempre presente.
+                # Si no existe, defaults: task + help + search_memory.
                 router_perms = _load_router_permissions()
                 if router_perms is None:
                     tools = _ROUTER_TOOLS
+                    tool_permissions = {
+                        "task": "allow",
+                        "help": "allow",
+                        "search_memory": "allow",
+                    }
                 else:
                     tool_permissions = dict(router_perms.get("tool", {}))
                     task_perms = router_perms.get("task")
@@ -462,6 +495,10 @@ class AgentLoop:
                     log_error(str(e), source="loop.py:run(tools)")
                     tools = []
             logger.info("Tools available: %d", len(tools))
+
+            # Expose the effective permissions to the execution layer so
+            # execute_tool can enforce them (deny by default) on every call.
+            agent.tools._current_tool_permissions = tool_permissions or {}
 
           
 
@@ -883,6 +920,7 @@ class AgentLoop:
                         agent.tools._current_session_id = session_id
                         agent.tools._current_depth = depth
                         agent.tools._stream_cancel_event = stream_cancel_event
+                        agent.tools._current_tool_permissions = tool_permissions or {}
 
                         # --- Re-resolve model after subagent (task tool) ---
                         # The subagent may have used a different model and liberated it.

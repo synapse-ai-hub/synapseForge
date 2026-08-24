@@ -14,7 +14,7 @@ import ctypes
 
 _HERE = Path(__file__).resolve().parent
 _ICO_PATH = _HERE / "logo.ico"
-_LOGO_PNG_PATH = _HERE / "logo.png"   # <--- Logo local
+_LOGO_PNG_PATH = _HERE / "logo_transparente.png"   # <--- Logo local
 
 try:
     from PIL import Image, ImageTk
@@ -178,7 +178,7 @@ class ColorsApp:
     # Logo (cargado desde archivo local)
     # ------------------------------------------------------------------
     def _load_logo_local(self) -> None:
-        """Carga el logo desde logo.png (local) y lo muestra en la ventana."""
+        """Carga el logo desde logo_transparente.png (local) y lo muestra en la ventana."""
         if Image is None or ImageTk is None:
             return
         if not _LOGO_PNG_PATH.is_file():

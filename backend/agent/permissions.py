@@ -425,6 +425,77 @@ def evaluate(
     return "ask"
 
 
+def is_tool_allowed(
+    tool_perms: dict[str, Any] | None,
+    tool_name: str,
+    tool_args: dict[str, Any] | None = None,
+) -> bool:
+    """Return whether a tool call is explicitly allowed (deny by default).
+
+    Runtime enforcement counterpart of :func:`filter_tools`: while
+    ``filter_tools`` decides which tools are *shown* to the LLM, this
+    function validates each *execution* attempt against the same
+    permission semantics, so a tool that was filtered out cannot be
+    invoked anyway.
+
+    Supported formats (mirroring ``filter_tools``):
+
+    - **Flat** (``{"read": "allow"}``): allowed when the name matches the
+      key (wildcard) and the value is exactly ``"allow"``.
+    - **Nested group with exact match** (``{"task": {"explorer": "allow"}}``):
+      for the single tool named like the group key (``task``), the first
+      relevant argument (``agent_name`` for ``task``) must match one of the
+      allowed sub-keys.
+    - **Nested group with prefix** (``{"notebooklm": {"*": "allow"}}``):
+      tools named ``<group>_<sub>`` are allowed when the group has
+      ``"*": "allow"`` or the sub-tool name is explicitly allowed.
+
+    Args:
+        tool_perms: Effective tool permission dict of the running agent.
+            ``None``/empty → not allowed (deny by default).
+        tool_name: Name of the tool being invoked.
+        tool_args: Arguments of the call (used to resolve the sub-key of
+            grouped tools such as ``task``).
+
+    Returns:
+        ``True`` only when the call resolves to an explicit ``"allow"``.
+    """
+    if not tool_perms or not tool_name:
+        return False
+
+    # --- Nested permission (group): exact match or prefix ---
+    for key, sub in tool_perms.items():
+        if not isinstance(sub, dict):
+            continue
+        if tool_name == key:
+            # Single tool constrained to allowed sub-keys (e.g. task →
+            # agent_name). Resolve the discriminating argument.
+            arg_name = "agent_name" if key == "task" else None
+            if arg_name is None:
+                # Unknown grouping argument: require the catch-all.
+                return sub.get("*") == "allow"
+            value = (tool_args or {}).get(arg_name, "")
+            for sub_key, action in sub.items():
+                if isinstance(action, str) and action == "allow" and wildcard_match(sub_key, str(value)):
+                    return True
+            return False
+        if tool_name.startswith(key + "_"):
+            if sub.get("*") == "allow":
+                return True
+            sub_tool = tool_name[len(key) + 1:]
+            for sub_key, action in sub.items():
+                if isinstance(action, str) and action == "allow" and wildcard_match(sub_key, sub_tool):
+                    return True
+            return False
+
+    # --- Flat permission (e.g. read: allow) ---
+    ruleset = dict_to_ruleset(tool_perms)
+    if ruleset and evaluate(tool_name, "*", ruleset) == "allow":
+        return True
+
+    return False
+
+
 def filter_tools(
     tools: list[dict[str, Any]],
     tool_perms: dict[str, Any] | None,

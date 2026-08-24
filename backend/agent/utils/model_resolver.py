@@ -319,6 +319,41 @@ def get_openrouter_model_details(model: str) -> dict | None:
     return None
 
 
+def model_supports_reasoning(provider: str, model: str) -> bool | None:
+    """Return whether a model supports reasoning (thinking), or ``None`` if unknown.
+
+    Capability source per provider:
+
+    - ``OPENROUTER`` → the public catalog's ``supported_parameters`` field
+      (via :func:`get_openrouter_model_details`). Authoritative.
+    - ``GROQ`` / ``GOOGLE`` / ``LOCAL`` → no machine-readable capability
+      catalog is available in this codebase, so ``None`` (unknown) is
+      returned and callers should let the provider accept/ignore/reject
+      the reasoning flag.
+
+    Args:
+        provider: Provider name (``"LOCAL"``, ``"GROQ"``, ``"GOOGLE"`` or
+            ``"OPENROUTER"``).
+        model: The model name/ID.
+
+    Returns:
+        ``True`` if the model declaratively supports reasoning, ``False``
+        if it declaratively does not, ``None`` when capability is unknown.
+    """
+    if not provider or not model:
+        return None
+    try:
+        if provider.strip().upper() == "OPENROUTER":
+            details = get_openrouter_model_details(model)
+            if details is None:
+                return None
+            return bool(details.get("reasoning"))
+    except Exception as e:
+        log_error(str(e), source="model_resolver.py:model_supports_reasoning")
+        return None
+    return None
+
+
 def get_openrouter_context_window(model: str, api_key: str | None = None) -> int | None:
     """Return the context window (tokens) for an OpenRouter model.
 

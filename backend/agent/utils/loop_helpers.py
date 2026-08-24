@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -27,7 +28,7 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(_current_dir)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from backend.agent.permissions import get_agent_prompt, list_agents
+from backend.agent.permissions import get_agent_prompt, is_tool_allowed, list_agents
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.skill_loader import format_skills_section
 from backend.agent.utils.contract import make_error_response, make_success_response, zero_usage
@@ -279,7 +280,13 @@ def build_initial_messages(
 
 
 async def execute_tool(agent, tc: dict[str, Any]) -> Any:
-    """Execute a tool call by name.
+    """Execute a tool call by name, enforcing runtime permissions.
+
+    Defense in depth: ``filter_tools`` decides which tools are *shown* to
+    the LLM, but every *execution* is re-validated here against the
+    effective permissions of the running agent (deny by default). A denied
+    attempt returns a permission error as a contract response — the loop
+    keeps running and the LLM can react to the error.
 
     Delegates to ``agent.tools._execute_tool`` which handles both native
     and external tools and returns the unified contract
@@ -300,6 +307,23 @@ async def execute_tool(agent, tc: dict[str, Any]) -> Any:
     """
     tool_name = tc["name"]
     tool_args = tc.get("args", {})
+
+    # --- Runtime permission check (deny by default) ---
+    effective_perms = getattr(agent.tools, "_current_tool_permissions", None)
+    if not is_tool_allowed(effective_perms, tool_name, tool_args):
+        logger.warning(
+            "Permission denied: tool '%s' is not explicitly allowed for the "
+            "running agent.",
+            tool_name,
+        )
+        log_error(
+            f"Permission denied for tool '{tool_name}'.",
+            source="loop_helpers.py:execute_tool(permission)",
+        )
+        return make_error_response(
+            message=f"Permission denied for tool '{tool_name}'.",
+            usage=zero_usage(),
+        )
 
     try:
         result = await agent.tools._execute_tool(tool_name, **tool_args)
@@ -322,3 +346,59 @@ async def execute_tool(agent, tc: dict[str, Any]) -> Any:
         data=result,
         usage=zero_usage(),
     )
+
+
+_RATE_LIMIT_PATTERNS = (
+    "rate limit",
+    "too many requests",
+    "request too large",
+    "tokens per min",
+    "tpm",
+)
+"""Case-insensitive substrings that identify a rate-limit / quota error."""
+
+_RATE_LIMIT_CODES = ("429", "413")
+"""HTTP status codes (word-boundary matched) that identify a rate-limit error."""
+
+_TRANSIENT_PATTERNS = (
+    "connection",
+    "timed out",
+    "timeout",
+    "overloaded",
+    "temporarily unavailable",
+)
+"""Case-insensitive substrings that identify a transient (retryable) error."""
+
+_TRANSIENT_CODES = ("500", "502", "503", "504")
+"""HTTP status codes (word-boundary matched) that identify a transient error."""
+
+
+def classify_llm_error(exc: Exception) -> str:
+    """Classify an LLM streaming exception into a retry category.
+
+    Providers wrap HTTP errors differently (Groq/OpenRouter/Ollama), so the
+    classification is tolerant: it inspects ``str(exc)`` looking for known
+    rate-limit and transient-failure markers. Numeric status codes are
+    matched with word boundaries so they never match inside other numbers.
+
+    Args:
+        exc: The exception raised while consuming the LLM stream.
+
+    Returns:
+        One of ``"rate_limit"`` (429/413, quota or tokens-per-minute errors),
+        ``"transient"`` (timeouts, connection errors, 5xx, overloaded) or
+        ``"fatal"`` (anything else: auth, bad request, etc.).
+    """
+    message = str(exc).lower()
+
+    if any(pattern in message for pattern in _RATE_LIMIT_PATTERNS):
+        return "rate_limit"
+    if any(re.search(rf"\b{code}\b", message) for code in _RATE_LIMIT_CODES):
+        return "rate_limit"
+
+    if any(pattern in message for pattern in _TRANSIENT_PATTERNS):
+        return "transient"
+    if any(re.search(rf"\b{code}\b", message) for code in _TRANSIENT_CODES):
+        return "transient"
+
+    return "fatal"

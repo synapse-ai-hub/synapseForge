@@ -8,8 +8,10 @@ ProspectingAgent. The logic is:
    (delimiters ``.``, ``!``, ``?`` and space).
 3. The next base chunk starts where the previous base chunk ended.
 
-The defaults (500/60) are smaller than Prospecting's because this system
-targets local embedding models.
+The defaults (500/60) produce chunks of roughly 125-150 tokens, well within
+the 512-token document window of the current embedding model
+(``liquid/lfm-2.5-embedding-350m:free``, served via OpenRouter) while
+keeping retrieval granularity fine-grained.
 
 Typical usage::
 

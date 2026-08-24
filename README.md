@@ -40,7 +40,7 @@
 - **Telegram as remote control**: the bot publishes events to the event bus and the frontend runs the same chat flow. Session commands, model/provider switching, skill/tool/RAG creation and agenda management.
 - **Scheduled tasks**: the user defines tasks (description + time + days) from the header Agenda or via Telegram; the backend runs them with the selected model and notifies the result in the UI notification bell and via Telegram (always, even if the bot is disabled).
 - **Context files**: document upload (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) → text extraction → injection into the agent's system prompt.
-- **Usage metrics**: sessions, tools, errors and overview, with a dashboard in the frontend.
+- **Usage metrics**: sessions, tools, models, errors and overview, with a dashboard in the frontend.
 - **Desktop app mode**: heartbeat watchdog + shutdown endpoint to distribute the app as a product.
 
 ---

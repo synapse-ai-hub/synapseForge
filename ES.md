@@ -40,7 +40,7 @@
 - **Telegram como control remoto**: el bot emite eventos al event bus y el frontend ejecuta el mismo flujo de chat. Comandos de sesión, modelo/proveedor, creación de skills/tools/RAG y gestión de la agenda.
 - **Tareas programadas**: el usuario define tareas (descripción + hora + días) desde la Agenda del header o por Telegram; el backend las ejecuta con el modelo seleccionado y notifica el resultado en la campanita de la UI y por Telegram (siempre, aunque el bot esté deshabilitado).
 - **Archivos de contexto**: subida de documentos (PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY) → extracción de texto → inyección en el system prompt del agente.
-- **Métricas de uso**: sesiones, tools, errores y overview, con dashboard en el frontend.
+- **Métricas de uso**: sesiones, tools, modelos, errores y overview, con dashboard en el frontend.
 - **Modo desktop app**: heartbeat watchdog + endpoint de shutdown para distribuir la app como producto.
 
 ---

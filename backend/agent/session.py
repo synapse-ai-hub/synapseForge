@@ -348,6 +348,7 @@ class SessionManager:
         usage: dict | None = None,
         tool_call_id: str | None = None,
         tool_name: str | None = None,
+        model: str | None = None,
         turn_number: int | None = None,
         step: int = 0,
     ) -> dict:
@@ -370,6 +371,8 @@ class SessionManager:
                 "total_time"}``. Stored in dedicated columns.
             tool_call_id: Tool call ID (Groq format, for ``role: "tool"``).
             tool_name: Tool name (Ollama format, for ``role: "tool"``).
+            model: LLM model identifier that produced the message
+                (assistant messages only; ``None`` otherwise).
             turn_number: Turn number for grouping messages by
                 conversation turn.
 
@@ -391,8 +394,8 @@ class SessionManager:
                     "INSERT INTO messages "
                     "(session_id, role, content, reasoning, tool_calls, tool_results, "
                     "status, message, prompt_tokens, completion_tokens, total_tokens, total_time, "
-                    "tool_call_id, tool_name, turn_number, step, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "tool_call_id, tool_name, model, turn_number, step, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         role,
@@ -408,6 +411,7 @@ class SessionManager:
                         (usage or {}).get("total_time"),
                         tool_call_id,
                         tool_name,
+                        model,
                         turn_number,
                         step,
                         now,

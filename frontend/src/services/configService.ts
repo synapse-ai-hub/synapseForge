@@ -60,6 +60,24 @@ export interface SetupCompletedResponse {
   completed: boolean;
 }
 
+/** Advanced parameters (null = "default": use the agent's frontmatter value). */
+export interface AdvancedParams {
+  temperature: number | null;
+  top_p: number | null;
+  reasoning: boolean | null;
+}
+
+export interface ParametersResponse {
+  status: string;
+  temperature: number | null;
+  top_p: number | null;
+  reasoning: boolean | null;
+  model: string | null;
+  provider: string;
+  /** Whether the current model declaratively supports reasoning (null = unknown). */
+  reasoning_supported: boolean | null;
+}
+
 export const configService = {
   /** List available models and the currently selected one. */
   async getModels(provider?: string): Promise<ModelsResponse> {
@@ -75,20 +93,43 @@ export const configService = {
     return response.json();
   },
 
-  /** Select a model for the running agent. */
-  async selectModel(model: string, provider: string): Promise<void> {
+  /** Select a model for the running agent, together with the advanced parameters. */
+  async selectModel(
+    model: string,
+    provider: string,
+    params?: AdvancedParams
+  ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/config/models/select`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, provider }),
+      body: JSON.stringify({
+        model,
+        provider,
+        temperature: params ? params.temperature : null,
+        top_p: params ? params.top_p : null,
+        reasoning: params ? params.reasoning : null,
+      }),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(
+        (result && result.message) || `HTTP ${response.status}: ${response.statusText}`
+      );
+    }
+    if (result && result.status === "error") {
+      throw new Error(result.message || "Error al seleccionar el modelo");
+    }
+  },
+
+  /** Get the persisted advanced parameters (null = default). */
+  async getParameters(): Promise<ParametersResponse> {
+    const response = await fetch(`${API_BASE_URL}/api/config/parameters`, {
+      method: "GET",
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    const result = await response.json();
-    if (result && result.status === "error") {
-      throw new Error(result.message || "Error al seleccionar el modelo");
-    }
+    return response.json();
   },
 
   /** Get the current context-window turn limit. */

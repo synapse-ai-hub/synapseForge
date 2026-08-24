@@ -10,4 +10,5 @@
 ### Checklist obligatorio antes de responder
 
 - [ ] ¿Estoy inventando, modificando o agregando algo al objetivo del usuario? Si sí → volvé al objetivo original y corregí.
+- [ ] Si creaste un archivo TODO, ¿actualizaste el checklist (`- [x]`) de la subtarea recién completada? Si no → actualizalo antes de avanzar.
 - [ ] ¿Ya cumplí el objetivo del usuario? Si no → llamá a una `tool` o a `task` para avanzar (repetí hasta cumplirlo). Si sí → respondé con el resultado.

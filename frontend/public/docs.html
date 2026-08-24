@@ -8,9 +8,18 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Raleway:wght@600;700;800&display=swap" rel="stylesheet">
   <style>
     * { font-family: 'Inter', system-ui, sans-serif; }
+    .brand-word {
+      font-family: 'Raleway', sans-serif;
+      font-weight: 700;
+      letter-spacing: 2px;
+      background: linear-gradient(95deg, #8b5cf6 0%, #c026d3 52%, #f97316 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
     body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; }
     article h2 { font-size: 1.875rem; font-weight: 700; margin-top: 3rem; margin-bottom: 1.25rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; color: #111827; scroll-margin-top: 7rem; }
     article h2:first-child { margin-top: 0; }
@@ -67,7 +76,7 @@
     <!-- Center: logo + title -->
     <div class="flex-1 flex items-center justify-center gap-2 sm:gap-3">
       <img src="https://github.com/synapse-ai-hub/sources/raw/main/logo_transparente.png" alt="Logo" class="h-9 sm:h-[95px] w-auto" onerror="this.style.display='none'">
-      <span class="text-lg sm:text-2xl font-semibold" style="color:#111827">synapseForge</span>
+      <span class="text-lg sm:text-2xl font-semibold"><span class="brand-word">synapseForge</span></span>
     </div>
 
     <!-- Right: GitHub -->

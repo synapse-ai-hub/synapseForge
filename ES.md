@@ -280,6 +280,30 @@ Esto permitiría ampliar el repositorio de skills sin tener que crearlas manualm
 
 ---
 
+## Testing
+
+Los tests end-to-end viven en `tests/e2e/`: una suite declarativa en YAML que maneja la aplicación real — un bot escribe mensajes por el mismo endpoint SSE que usa el frontend, más llamadas directas a la API — y aserta sobre estructura y contratos (nunca sobre texto exacto del modelo).
+
+**Requisitos:**
+
+- El backend corriendo (`uvicorn backend.main:app` o la app empaquetada).
+- Dependencias del proyecto instaladas (`requests` y `pyyaml` ya son dependencias).
+- Los escenarios de chat necesitan un provider configurado (Ollama corriendo o una API key cloud); los escenarios de API pura (scheduler, validaciones) funcionan sin nada.
+
+**Ejecución:**
+
+```bash
+python -m tests.e2e.runner                # todos los escenarios
+python -m tests.e2e.runner --only rag     # un escenario por nombre
+python -m tests.e2e.runner --base-url http://127.0.0.1:8000
+```
+
+Cada escenario imprime pass/fail con el detalle de cada aserción; se genera un reporte JSON en `tests/e2e/reports/`. El exit code es `0` si todo pasó.
+
+**Archivos de escenarios** (`tests/e2e/scenarios/*.yaml`): `main_flow` (chat, contexto de adjuntos, cancelación de stream), `creators` (listados + validaciones de error), `scheduler` (alta/toggle/borrado con propagación de ID), `rag` (colecciones, compatibilidad de embeddings, memoria de largo plazo). Las sesiones que crean los tests usan el prefijo `e2e-` y se borran en el cleanup, así tu historial queda intacto.
+
+---
+
 ## Licencia
 
 Este proyecto está licenciado bajo los términos especificados en el archivo [LICENSE](./LICENSE) ubicado en la raíz del repositorio.

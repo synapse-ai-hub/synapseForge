@@ -280,6 +280,30 @@ This would make it possible to expand the skills repository without having to cr
 
 ---
 
+## Testing
+
+End-to-end tests live in `tests/e2e/`: a declarative YAML suite that drives the real application — a bot writes messages through the same SSE chat endpoint the frontend uses, plus direct API calls — asserting on structure and contracts (never on exact model text).
+
+**Prerequisites:**
+
+- The backend running (`uvicorn backend.main:app` or the packaged app).
+- Project dependencies installed (`requests` and `pyyaml` are already project deps).
+- Chat scenarios need a configured provider (Ollama running or a cloud API key); pure-API scenarios (scheduler, validations) work without any.
+
+**Run:**
+
+```bash
+python -m tests.e2e.runner                # all scenarios
+python -m tests.e2e.runner --only rag     # single scenario by name
+python -m tests.e2e.runner --base-url http://127.0.0.1:8000
+```
+
+Each scenario prints pass/fail with per-assertion detail; a JSON report is written to `tests/e2e/reports/`. Exit code is `0` when everything passes.
+
+**Scenario files** (`tests/e2e/scenarios/*.yaml`): `main_flow` (chat, attachments context, stream cancellation), `creators` (listings + error validations), `scheduler` (create/toggle/delete with ID propagation), `rag` (collections, embedding compatibility, long-term memory). Sessions created by tests use an `e2e-` prefix and are deleted on cleanup, so your history stays untouched.
+
+---
+
 ## License
 
 This project is licensed under the terms specified in the [LICENSE](./LICENSE) file located at the root of the repository.

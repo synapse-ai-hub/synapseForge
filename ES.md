@@ -16,7 +16,7 @@
 
 ---
 
-<h3 align="center">CLI + Framework + Template para crear y distribuir proyectos de agentes IA full-stack</h3>
+<h3 align="center">Framework open source para construir, orquestar y desplegar agentes de IA: multi-provider, tool calling, memoria RAG y distribución desktop</h3>
 
 ---
 

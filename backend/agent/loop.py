@@ -10,12 +10,18 @@ Pattern
    a. Call LLM with ``messages`` + ``tools`` (no streaming).
    b. If response has ``tool_calls`` → execute each tool,
       append results as ``role: "tool"`` messages, continue.
-   c. If no ``tool_calls`` → yield content as chunk and break.
+   c. If no ``tool_calls`` → yield content as chunk and break (an empty
+      response is retried up to ``MAX_EMPTY_RESPONSE_RETRIES`` times).
 6. Persist every message in SQLite.
 
 Both Groq (``client.chat.completions.create``) and Ollama
 (``ollama.chat``) support the ``tools`` parameter with JSON Schema
 definitions. Tool calls arrive as structured data, not as text to parse.
+
+LLM streaming errors are classified (rate-limit / transient / fatal) and
+rate-limit or transient failures are retried with exponential back-off
+(up to ``MAX_LLM_RETRIES`` retries); fatal errors and user cancellation
+are never retried.
 
 Sub-agent delegation
 --------------------
@@ -66,6 +72,7 @@ from backend.instances import agent, session_manager
 from backend.agent.utils.loop_helpers import (
     build_initial_messages,
     build_system_prompt,
+    classify_llm_error,
     execute_tool,
     fetch_context_window_turns,
 )
@@ -88,6 +95,19 @@ MAX_ITERATIONS = 25
 
 MAX_SUBAGENT_DEPTH = 3
 """Maximum nesting depth for sub-agent delegation (recursion guard)."""
+
+MAX_EMPTY_RESPONSE_RETRIES = 2
+"""Maximum retries when the final LLM response is empty (no content, no tool_calls)."""
+
+MAX_LLM_RETRIES = 5
+"""Maximum retries for the LLM streaming call on rate-limit/transient errors.
+
+The first attempt plus up to ``MAX_LLM_RETRIES`` retries, with exponential
+back-off waits of 2s, 4s, 8s, 16s and 32s (62s total).
+"""
+
+LLM_BACKOFF_BASE_SECONDS = 2.0
+"""Base delay (seconds) for the exponential back-off between LLM retries."""
 
 # Tool schema for the router agent (agent_name=None). The router's only job
 # is to delegate — it does NOT have direct access to any other tool.
@@ -151,6 +171,38 @@ def _load_router_permissions() -> dict | None:
         return None
     perms = data.get("permissions")
     return perms if isinstance(perms, dict) else None
+
+
+def _read_param_override(key: str) -> Any:
+    """Read a global advanced-parameter override from ``config_kv``.
+
+    Reads the value persisted by ``POST /api/config/models/select``
+    (keys ``param_temperature``, ``param_top_p``, ``param_reasoning``).
+    The literal string ``"null"`` (or a missing/unparseable key) means
+    "default" → returns ``None`` so the caller falls back to the next
+    level of the precedence chain.
+
+    Args:
+        key: ``config_kv`` key to read.
+
+    Returns:
+        The parsed override value (``float`` for temperature/top_p,
+        ``bool`` for reasoning) or ``None`` when there is no explicit
+        override.
+    """
+    try:
+        raw = session_manager.get_config(key)
+    except Exception as exc:
+        logger.warning("No se pudo leer el parámetro %s: %s", key, exc)
+        return None
+    if raw is None or raw.strip().lower() == "null":
+        return None
+    try:
+        if key == "param_reasoning":
+            return raw.strip().lower() == "true"
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 class AgentLoop:
@@ -267,18 +319,37 @@ class AgentLoop:
             # --- 0. Model (resuelto por el endpoint /api/config/models) ---
             model = agent._resolved_model
 
-            # --- 0a. Resolve model parameters (temperature, top_p, model override) ---
-            # parameters dict comes from agent frontmatter (via task tool or router)
+            # --- 0a. Resolve model parameters (temperature, top_p, reasoning, model override) ---
+            # Precedence per parameter: explicit global override (persisted via
+            # /api/config/models/select, non-null) → agent frontmatter
+            # (`parameters`, via task tool or router) → hardcoded fallback.
             temperature = 0.0
             top_p = 0.5
+            reasoning = True
             max_tokens = 8192
             if parameters:
-                temperature = parameters.get("temperature", temperature)
-                top_p = parameters.get("top_p", top_p)
+                if parameters.get("temperature") is not None:
+                    temperature = parameters["temperature"]
+                if parameters.get("top_p") is not None:
+                    top_p = parameters["top_p"]
+                if isinstance(parameters.get("reasoning"), bool):
+                    reasoning = parameters["reasoning"]
                 # model override from frontmatter (optional)
                 if parameters.get("model"):
                     model = parameters["model"]
                 max_tokens = parameters.get("max_tokens", max_tokens)
+
+            # Explicit global overrides win over frontmatter values; a "null"
+            # (default) override never masks the agent's own frontmatter.
+            override_temperature = _read_param_override("param_temperature")
+            if override_temperature is not None:
+                temperature = override_temperature
+            override_top_p = _read_param_override("param_top_p")
+            if override_top_p is not None:
+                top_p = override_top_p
+            override_reasoning = _read_param_override("param_reasoning")
+            if override_reasoning is not None:
+                reasoning = override_reasoning
 
             # Resolve this loop's effective provider. If the agent's frontmatter
             # sets `parameters.provider`, use it for this loop only (passed
@@ -289,8 +360,8 @@ class AgentLoop:
                 effective_provider = parameters["provider"]
 
             logger.info(
-                "Agent loop started — model: %s, provider: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s",
-                model, effective_provider, session_id, agent_name, depth, temperature, top_p,
+                "Agent loop started — model: %s, provider: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s, reasoning: %s",
+                model, effective_provider, session_id, agent_name, depth, temperature, top_p, reasoning,
             )
 
             # --- Liberate parent model only when both parent and child run on
@@ -485,6 +556,8 @@ class AgentLoop:
             # --- 6. Agent loop (while True) ---
             iteration = 0
             step = 0
+            empty_response_retries = 0
+            empty_response_hint: dict[str, str] | None = None
             while iteration < self.max_iterations:
                 iteration += 1
                 step += 1
@@ -501,65 +574,135 @@ class AgentLoop:
                 )
 
                 # ---- 6a. Call LLM with streaming (single API call, detects tool_calls) ----
+                # Retry loop: on rate-limit (429/413) or transient errors the
+                # stream consumption is retried with exponential back-off
+                # (MAX_LLM_RETRIES times). Fatal errors and user cancellation
+                # are never retried.
                 collected_content = ""
                 collected_reasoning = ""
                 tool_calls = None
+                usage_data: dict[str, Any] | None = None
 
-                try:
+                llm_attempt = 0
+                while True:
+                    # Reset partial state before every attempt so content from
+                    # a failed attempt never leaks into the next one.
+                    collected_content = ""
+                    collected_reasoning = ""
+                    tool_calls = None
+                    usage_data = None
 
-                    usage_data: dict[str, Any] | None = None
-                    async for event in agent.llm_streaming(
-                        model=model, messages=messages, tools=tools,
-                        stream_cancel_event=stream_cancel_event,
-                        temperature=temperature, top_p=top_p, max_tokens=max_tokens,
-                        provider=effective_provider,
-                    ):
-                        if event["type"] == "chunk":
-                            collected_content += event.get("content", "")
-                            yield f"data: {json.dumps({'type': 'chunk', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
-                        elif event["type"] == "reasoning":
-                            collected_reasoning += event.get("content", "")
-                            yield f"data: {json.dumps({'type': 'reasoning', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
-                        elif event["type"] == "tool_calls_detected":
-                            tool_calls = event["content"]
-                            break
-                        elif event["type"] == "usage":
-                            usage_data = event.get("content")
-                            logger.info(
-                                "USAGE [%s] prompt=%s completion=%s total=%s time=%ss",
-                                model,
-                                event.get("content", {}).get("prompt_tokens"),
-                                event.get("content", {}).get("completion_tokens"),
-                                event.get("content", {}).get("total_tokens"),
-                                event.get("content", {}).get("total_time"),
-                            )
-                        elif event["type"] == "aborted":
-                            # Guardar respuesta parcial antes de terminar (patrón ProspectingAgent/opencode)
+                    try:
+                        async for event in agent.llm_streaming(
+                            model=model, messages=messages, tools=tools,
+                            stream_cancel_event=stream_cancel_event,
+                            temperature=temperature, top_p=top_p, max_tokens=max_tokens,
+                            reasoning=reasoning,
+                            provider=effective_provider,
+                        ):
+                            if event["type"] == "chunk":
+                                collected_content += event.get("content", "")
+                                yield f"data: {json.dumps({'type': 'chunk', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
+                            elif event["type"] == "reasoning":
+                                collected_reasoning += event.get("content", "")
+                                yield f"data: {json.dumps({'type': 'reasoning', 'content': event.get('content', '')}, ensure_ascii=False)}\n\n"
+                            elif event["type"] == "tool_calls_detected":
+                                tool_calls = event["content"]
+                                break
+                            elif event["type"] == "usage":
+                                usage_data = event.get("content")
+                                logger.info(
+                                    "USAGE [%s] prompt=%s completion=%s total=%s time=%ss",
+                                    model,
+                                    event.get("content", {}).get("prompt_tokens"),
+                                    event.get("content", {}).get("completion_tokens"),
+                                    event.get("content", {}).get("total_tokens"),
+                                    event.get("content", {}).get("total_time"),
+                                )
+                            elif event["type"] == "aborted":
+                                # Guardar respuesta parcial antes de terminar (patrón ProspectingAgent/opencode)
+                                if collected_content:
+                                    session_manager.save_message(
+                                        session_id, "assistant", content=collected_content,
+                                        reasoning=collected_reasoning or None,
+                                        model=model,
+                                        turn_number=turn_number, step=step
+                                    )
+                                yield "data: [DONE]\n\n"
+                                return
+                    except Exception as e:
+                        error_category = classify_llm_error(e)
+                        logger.exception("Error in agent streaming: %s", e)
+                        log_error(str(e), source="loop.py:run(llm_stream)")
+
+                        # User cancellation always wins: never retry.
+                        if stream_cancel_event is not None and stream_cancel_event.is_set():
                             if collected_content:
                                 session_manager.save_message(
                                     session_id, "assistant", content=collected_content,
                                     reasoning=collected_reasoning or None,
+                                    model=model,
                                     turn_number=turn_number, step=step
                                 )
                             yield "data: [DONE]\n\n"
                             return
-                except Exception as e:
-                    logger.exception("Error in agent streaming: %s", e)
-                    log_error(str(e), source="loop.py:run(llm_stream)")
-                    # Guardar respuesta parcial antes de terminar con error
-                    if collected_content:
-                        session_manager.save_message(
-                            session_id, "assistant", content=collected_content,
-                            reasoning=collected_reasoning or None,
-                            turn_number=turn_number, step=step
-                        )
-                    else:
-                        session_manager.save_message(
-                            session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", turn_number=turn_number, step=step
-                        )
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': 'Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.'}, ensure_ascii=False)}\n\n"
-                    yield "data: [DONE]\n\n"
-                    return
+                        # Fatal errors keep the current behavior: no retry.
+                        if error_category == "fatal":
+                            # Guardar respuesta parcial antes de terminar con error
+                            if collected_content:
+                                session_manager.save_message(
+                                    session_id, "assistant", content=collected_content,
+                                    reasoning=collected_reasoning or None,
+                                    model=model,
+                                    turn_number=turn_number, step=step
+                                )
+                            else:
+                                session_manager.save_message(
+                                    session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", model=model, turn_number=turn_number, step=step
+                                )
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': 'Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.'}, ensure_ascii=False)}\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
+
+                        # Rate-limit / transient: retry with exponential back-off
+                        # while attempts remain.
+                        if llm_attempt < MAX_LLM_RETRIES:
+                            await asyncio.sleep(LLM_BACKOFF_BASE_SECONDS * (2 ** llm_attempt))
+                            logger.warning(
+                                "LLM %s error (attempt %d/%d): %s — retrying in %.0fs",
+                                error_category, llm_attempt + 1, MAX_LLM_RETRIES + 1,
+                                e, LLM_BACKOFF_BASE_SECONDS * (2 ** llm_attempt),
+                            )
+                            log_error(str(e), source="loop.py:run(llm_retry)")
+                            if error_category == "rate_limit":
+                                retry_msg = f"\n\n*Rate limit alcanzado, reintentando (intento {llm_attempt + 1} de {MAX_LLM_RETRIES})...*"
+                            else:
+                                retry_msg = "\n\n*Error transitorio, reintentando...*"
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': retry_msg}, ensure_ascii=False)}\n\n"
+                            llm_attempt += 1
+                            continue
+
+                        # Attempts exhausted: user-friendly final message.
+                        if error_category == "rate_limit":
+                            final_msg = "*Se alcanzó el límite de peticiones del proveedor después de varios reintentos. Probá de nuevo en un minuto o cambiá a otro modelo desde la configuración.*"
+                        else:
+                            final_msg = "*El proveedor no respondió después de varios reintentos. Probá de nuevo en unos momentos.*"
+                        log_error(str(e), source="loop.py:run(llm_retry)")
+                        if collected_content:
+                            session_manager.save_message(
+                                session_id, "assistant", content=collected_content,
+                                reasoning=collected_reasoning or None,
+                                model=model,
+                                turn_number=turn_number, step=step
+                            )
+                        else:
+                            session_manager.save_message(
+                                session_id, "assistant", content=final_msg, model=model, turn_number=turn_number, step=step
+                            )
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                    break  # Stream consumed successfully
 
                 # Emit token counter after each LLM call (prompt_tokens is cumulative)
                 if usage_data:
@@ -573,6 +716,15 @@ class AgentLoop:
                     "LLM response — tool_calls: %s, content_length: %d",
                     len(tool_calls) if tool_calls else 0, len(collected_content),
                 )
+
+                # Remove the ephemeral "empty response" hint once the iteration
+                # produces real content or tool calls (keeps the context clean).
+                if empty_response_hint is not None and (tool_calls or collected_content.strip()):
+                    try:
+                        messages.remove(empty_response_hint)
+                    except ValueError:
+                        pass
+                    empty_response_hint = None
 
                 
                 # ---- 6b. Process tool_calls (LLM wants to continue) ----
@@ -590,6 +742,7 @@ class AgentLoop:
                         content=collected_content,
                         reasoning=collected_reasoning or None,
                         tool_calls=tool_calls,
+                        model=model,
                         turn_number=turn_number,
                         step=step,
                         status="success",
@@ -811,15 +964,78 @@ class AgentLoop:
                     continue  # back to while loop
 
                 # ---- 6c. No tool_calls → final response ----
-                cleaned = agent.clean(collected_content) if collected_content else None
+                # Empty response guard: an empty final answer (no content, no
+                # tool_calls) is treated as an invalid iteration and retried,
+                # up to MAX_EMPTY_RESPONSE_RETRIES times. The guard consumes
+                # normal iterations (no extra logic beyond its own counter).
+                if not collected_content.strip():
+                    if empty_response_retries < MAX_EMPTY_RESPONSE_RETRIES:
+                        empty_response_retries += 1
+                        logger.warning(
+                            "Empty LLM response (no content, no tool_calls) — retry %d/%d",
+                            empty_response_retries, MAX_EMPTY_RESPONSE_RETRIES,
+                        )
+                        log_error(
+                            "Empty LLM response, retrying",
+                            source="loop.py:empty_response_guard",
+                        )
+                        # Ephemeral system message guiding the model to produce
+                        # real content; removed once the iteration succeeds.
+                        # Remove any previous hint first so consecutive empty
+                        # responses never stack duplicates in the context.
+                        if empty_response_hint is not None:
+                            try:
+                                messages.remove(empty_response_hint)
+                            except ValueError:
+                                pass
+                        empty_response_hint = {
+                            "role": "system",
+                            "content": (
+                                "Tu respuesta anterior llegó vacía. DEBES responder "
+                                "con contenido real para el usuario; no devuelvas "
+                                "texto vacío."
+                            ),
+                        }
+                        messages.append(empty_response_hint)
+                        continue
+
+                    final_msg = "*El modelo devolvió una respuesta vacía después de varios intentos. Probá reformular tu mensaje.*"
+                    logger.warning(
+                        "Empty LLM response persisted after exhausting %d retries",
+                        MAX_EMPTY_RESPONSE_RETRIES,
+                    )
+                    log_error(
+                        "Empty LLM response after exhausting retries",
+                        source="loop.py:empty_response_guard",
+                    )
+                    session_manager.save_message(
+                        session_id, "assistant", content=final_msg,
+                        model=model,
+                        turn_number=turn_number, step=step,
+                    )
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    if parent_model and model != parent_model and parent_is_local and child_is_local:
+                        ctx = get_error_context()
+                        await asyncio.to_thread(
+                            liberar_modelo, model,
+                            ctx.get("session_id") if ctx else None,
+                            ctx.get("turn_number") if ctx else None,
+                            ctx.get("parent_id") if ctx else None,
+                        )
+                    return
+
+                cleaned = agent.clean(collected_content)
                 session_manager.save_message(
                     session_id, "assistant", content=cleaned,
                     reasoning=collected_reasoning or None,
+                    model=model,
                     turn_number=turn_number, step=step,
                     status="success",
                     message="",
                     usage=usage_data,
                 )
+
                 # Emit the session title before [DONE] so the sidebar refreshes
                 # with the generated title even if it finished after the loop.
                 if title_queue is not None:
@@ -834,6 +1050,28 @@ class AgentLoop:
                             yield f"data: {json.dumps({'type': 'session_title', 'content': t}, ensure_ascii=False)}\n\n"
                         except asyncio.QueueEmpty:
                             break
+
+                # --- 6c-bis. Index the completed turn into long-term memory ---
+                # Fire-and-forget: runs in the background, never blocks or
+                # breaks the SSE stream (failures are only logged). Scheduled
+                # after the title drain so the indexed metadata can include
+                # the session title. Only root sessions are indexed —
+                # sub-agent child sessions duplicate the parent's content and
+                # would pollute the memory index.
+                if depth == 0:
+                    try:
+                        from backend.agent.utils.rag_helpers import index_turn_fire_and_forget
+
+                        index_turn_fire_and_forget(
+                            session_id=session_id,
+                            turn_number=turn_number,
+                            user_message=user_message,
+                            assistant_message=cleaned or "",
+                        )
+                    except Exception as exc:
+                        logger.warning("Memory indexing could not be scheduled: %s", exc)
+                        log_error(str(exc), source="loop.py:run(memory_index)")
+
                 _t_before_done = _time.time()
 
                 # # logger.info("[DEBUG_TIEMPO_SSE] about to yield [DONE] — iteration=%d, t=%.3f", iteration, _t_before_done)

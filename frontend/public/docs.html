@@ -242,18 +242,19 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </table>
           <p>Todo esto se lee en tiempo de ejecución, así que podés agregar, modificar o quitar archivos sin reinstalar nada. Solo necesitás reiniciar el backend para que los cambios tomen efecto.</p>
           <h3><code>config.yaml</code> — permisos del agente principal</h3>
-          <p>El agente principal (el router) <strong>no tiene tools ni skills directas por defecto</strong> — solo puede delegar tareas mediante <code>task</code>. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se toman de ahí (misma lógica que el frontmatter de los agentes):</p>
+          <p>El agente principal (el router) tiene <strong>siempre</strong> un piso base de tools de lectura y delegación: <code>task</code>, <code>help</code>, <code>search_memory</code>, <code>read</code>, <code>websearch</code> y <code>webfetch</code>. Este piso está garantizado: el yaml no puede quitárselas. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se <strong>agregan</strong> encima del piso base:</p>
           <pre><code>permissions:
   tool:
-    read: allow
+    write: allow
   skill:
     mi_skill: allow
   task:
     explorador: allow</code></pre>
           <ul>
-            <li>Si el archivo <strong>no existe</strong> → el agente principal queda solo con <code>task</code> (delegación siempre disponible).</li>
-            <li>Si existe → usa <strong>solo</strong> los permisos explícitos del yaml.</li>
-            <li><code>task</code> está <strong>siempre</strong> disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.</li>
+            <li>Tools base (<code>task</code>, <code>help</code>, <code>search_memory</code>, <code>read</code>, <code>websearch</code>, <code>webfetch</code>): <strong>siempre disponibles</strong>, el yaml no las niega.</li>
+            <li>Otras tools (ej. <code>write</code>): solo si el yaml las lista con <code>allow</code>.</li>
+            <li><code>task</code> es la excepción restrictible: si el yaml lo lista con sub-agentes, solo puede delegar a esos; si no lo lista, a todos.</li>
+            <li>Si el archivo <strong>no existe</strong> — el agente principal opera solo con el piso base.</li>
           </ul>
         </section>
 

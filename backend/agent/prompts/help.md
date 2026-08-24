@@ -40,21 +40,24 @@ El archivo `AGENT.md` (si existe en `~/.config/synapseForge/agents/`) se inyecta
 
 ### Permisos del agente principal (`config.yaml`)
 
-El agente principal no tiene tools ni skills directas por defecto — solo puede delegar mediante `task`. Si existe `~/.config/synapseForge/config.yaml`, sus permisos se toman de ahí:
+El agente principal tiene **siempre** un conjunto base de tools de lectura y delegación: `task`, `help`, `search_memory`, `read`, `websearch` y `webfetch`. Este piso está garantizado: existe o no `~/.config/synapseForge/config.yaml`, el yaml no puede quitárselas.
+
+Si existe `config.yaml`, sus permisos se **agregan** encima del piso base:
 
 ```yaml
 permissions:
   tool:
-    read: allow
+    write: allow
   skill:
     mi_skill: allow
   task:
     explorador: allow
 ```
 
-- Si el archivo **no existe** → el agente principal queda solo con `task` (delegación siempre disponible).
-- Si existe → usa **solo** los permisos explícitos del yaml.
-- `task` está **siempre** disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.
+- Tools base (`task`, `help`, `search_memory`, `read`, `websearch`, `webfetch`): **siempre disponibles**, el yaml no las niega.
+- Otras tools (ej. `write`): solo si el yaml las lista con `allow`.
+- `task` es la excepción restrictible: si el yaml lo lista con sub-agentes, solo puede delegar a esos; si no lo lista, a todos.
+- Si el archivo **no existe** — el agente principal opera solo con el piso base.
 
 ---
 

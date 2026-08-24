@@ -109,10 +109,10 @@ back-off waits of 2s, 4s, 8s, 16s and 32s (62s total).
 LLM_BACKOFF_BASE_SECONDS = 2.0
 """Base delay (seconds) for the exponential back-off between LLM retries."""
 
-# Tool schema for the router agent (agent_name=None). The router delegates
-# via ``task``, reads its own documentation via ``help`` and can search past
-# conversations via ``search_memory``. Without ``config.yaml`` these three
-# are the router's only tools; with it, the yaml permissions apply.
+# Tool schema for the router agent (agent_name=None). Fallback only: the
+# router's guaranteed tools (task, help, search_memory, read, websearch,
+# webfetch) are normally resolved from the tools registry via merged
+# permissions. config.yaml can ADD extra tools but never remove these.
 _ROUTER_TOOLS = [
     {
         "type": "function",
@@ -466,28 +466,35 @@ class AgentLoop:
             
             # --- 3. Resolve tools ---
             if agent_name is None:
-                # Router: si existe config.yaml con permissions, se aplican.
-                # Si no existe, defaults: task + help + search_memory.
+                # Router: piso garantizado de tools (siempre presentes, el
+                # yaml no puede negarlas: lectura/delegación pura, cero riesgo
+                # destructivo). config.yaml AGREGA tools extra encima; nunca
+                # quita las garantizadas. Solo `task` es restrictible por el
+                # yaml (sub-agentes permitidos).
+                tool_permissions = {
+                    "task": "allow",
+                    "help": "allow",
+                    "search_memory": "allow",
+                    "read": "allow",
+                    "websearch": "allow",
+                    "webfetch": "allow",
+                }
                 router_perms = _load_router_permissions()
-                if router_perms is None:
-                    tools = _ROUTER_TOOLS
-                    tool_permissions = {
-                        "task": "allow",
-                        "help": "allow",
-                        "search_memory": "allow",
-                    }
-                else:
-                    tool_permissions = dict(router_perms.get("tool", {}))
+                if router_perms is not None:
+                    for name, action in (router_perms.get("tool") or {}).items():
+                        if name == "task":
+                            continue  # task se resuelve aparte (restrictible)
+                        tool_permissions[name] = action
                     task_perms = router_perms.get("task")
                     if isinstance(task_perms, dict) and task_perms:
                         tool_permissions["task"] = task_perms
                     else:
                         tool_permissions["task"] = "allow"
-                    try:
-                        tools = list(agent.tools.tools_registry(tool_permissions))
-                    except AttributeError as e:
-                        log_error(str(e), source="loop.py:run(tools)")
-                        tools = _ROUTER_TOOLS
+                try:
+                    tools = list(agent.tools.tools_registry(tool_permissions))
+                except AttributeError as e:
+                    log_error(str(e), source="loop.py:run(tools)")
+                    tools = _ROUTER_TOOLS
             else:
                 try:
                     tools = list(agent.tools.tools_registry(tool_permissions))

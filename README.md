@@ -188,7 +188,7 @@ parameters:
 
 - **AGENT.md**: general behavior injected as a `## Behavior` section in the system prompt of all agents (compatible with opencode/claude code).
 - **`## MANDATORY:`**: fidelity rules injected at the end of the system prompt of all agents.
-- **Router permissions**: if `config.yaml` exists, only its explicit permissions are used; otherwise the router is left with just `task` (delegation is always available).
+- **Router permissions**: the router always keeps a guaranteed base of read-only/delegation tools — `task`, `help`, `search_memory`, `read`, `websearch`, `webfetch` — regardless of `config.yaml`. If `config.yaml` exists, its permissions are **added on top** of that base (extra tools like `write`); only `task` is restrictable by the yaml (limiting which sub-agents can be delegated to).
 
 ### Providers and models
 

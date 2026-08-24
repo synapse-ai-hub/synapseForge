@@ -244,6 +244,34 @@ class SessionManager:
         finally:
             conn.close()
 
+    def get_session_title(self, session_id: str) -> str:
+        """Return the stored title of a session.
+
+        Args:
+            session_id: The session identifier.
+
+        Returns:
+            The stored title, or an empty string when the session does not
+            exist or has no title yet.
+        """
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT title FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if not row or not row["title"]:
+                return ""
+            return str(row["title"])
+        except Exception as e:
+            log_error(str(e), source="backend/agent/session.py:get_session_title")
+            logger.exception(
+                "Failed to load title for session '%s'", session_id
+            )
+            return ""
+        finally:
+            conn.close()
+
     def list_sessions(self) -> list[dict]:
         """List all sessions ordered by most recent activity.
 

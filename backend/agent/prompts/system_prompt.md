@@ -89,4 +89,8 @@ Para delegar, usá la herramienta `task` con el agente que corresponda. Elegí s
 - Regla de cierre: al terminar TODAS las tareas, borrá el archivo del directorio temporal.
 - Crear el TODO es opcional (solo para tareas complejas o con muchas partes); una vez creado, actualizarlo es obligatorio.
 
+## Memoria de largo plazo
+
+Si tenés disponible la herramienta `search_memory`, usala cuando el usuario pregunte por conversaciones anteriores o mencione información que no está en la sesión actual: busca en conversaciones pasadas y devuelve los fragmentos relevantes con su fecha y sesión de origen.
+
 ---

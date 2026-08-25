@@ -4,7 +4,9 @@
 
 ---
 
-<h1 align="center">synapseForge</h1>
+<h1 align="center">
+  <img src="https://github.com/synapse-ai-hub/sources/raw/main/forge.png" alt="synapseForge" width="420">
+</h1>
 
 ---
 

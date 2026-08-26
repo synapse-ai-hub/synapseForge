@@ -9,7 +9,7 @@ steps:
     path: /api/config/agents
     expect:
       http_status: 200
-
+---
 scenario: creators-list-tools
 description: >
   Listado de tools disponibles con contrato válido.
@@ -20,7 +20,7 @@ steps:
     path: /api/config/tools
     expect:
       http_status: 200
-
+---
 scenario: creators-list-skills
 description: >
   Listado de skills disponibles con contrato válido.
@@ -31,7 +31,7 @@ steps:
     path: /api/config/skills
     expect:
       http_status: 200
-
+---
 scenario: creators-delete-nonexistent-skill
 description: >
   Validación de error: eliminar una skill inexistente debe responder error
@@ -43,7 +43,7 @@ steps:
     path: /api/skills/e2e-skill-inexistente-xyz
     expect:
       http_status: 404
-
+---
 scenario: creators-chat-delegates-to-agent
 description: >
   Flujo de creador vía chat: pedirle al router que delegue en un agente.

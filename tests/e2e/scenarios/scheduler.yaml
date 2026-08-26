@@ -39,7 +39,7 @@ steps:
     expect:
       http_status: 200
       json_status: success
-
+---
 scenario: scheduler-rejects-invalid-task
 description: >
   Validación de error: una tarea sin prompt debe rechazarse con 400 y
@@ -54,7 +54,7 @@ steps:
       days: [1]
     expect:
       http_status: 400
-
+---
 scenario: scheduler-delete-nonexistent
 description: >
   Validación de error: borrar una tarea inexistente responde 404 sin romper

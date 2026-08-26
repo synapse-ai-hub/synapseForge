@@ -29,7 +29,7 @@ steps:
     expect:
       http_status: 200
       json_status: success
-
+---
 scenario: rag-rejects-invalid-name
 description: >
   Validación de error: nombre de colección inválido debe rechazarse con
@@ -44,7 +44,7 @@ steps:
     expect:
       http_status: 200
       json_status: error
-
+---
 scenario: rag-chat-search-memory-available
 description: >
   Memoria de largo plazo: el router (sin config.yaml) tiene search_memory

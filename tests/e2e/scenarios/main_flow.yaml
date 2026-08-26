@@ -10,7 +10,7 @@ steps:
       done: true
       nonempty: true
       no_tool_error: true
-
+---
 scenario: main-flow-with-attachment-context
 description: >
   Mensaje con referencia a archivo de contexto subido previamente vía API:
@@ -25,7 +25,7 @@ steps:
       json_status: success
       json_path_exists:
         - data
-
+---
 scenario: main-flow-cancel-stream
 description: >
   Cancelación: el bot cierra el stream a mitad de la respuesta; el runner

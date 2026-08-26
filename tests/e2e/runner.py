@@ -296,13 +296,18 @@ def load_scenarios(scenarios_dir: Path) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
     for path in sorted(scenarios_dir.glob("*.yaml")):
         try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            documents = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
         except yaml.YAMLError as exc:
             raise ScenarioError(f"{path.name}: YAML inválido: {exc}") from exc
-        if not isinstance(data, dict) or not data.get("scenario"):
-            raise ScenarioError(f"{path.name}: falta el campo 'scenario'")
-        data["_file"] = path.name
-        scenarios.append(data)
+        for doc in documents:
+            if doc is None:
+                continue
+            if not isinstance(doc, dict) or not doc.get("scenario"):
+                raise ScenarioError(
+                    f"{path.name}: falta el campo 'scenario'"
+                )
+            doc["_file"] = path.name
+            scenarios.append(doc)
     return scenarios
 
 
@@ -367,17 +372,13 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser(description="synapseForge E2E runner")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="Backend base URL")
-    parser.add_argument(
-        "--scenarios-dir",
-        default=str(Path(__file__).parent / "scenarios"),
-        help="Directory containing YAML scenarios",
-    )
     parser.add_argument("--only", default=None, help="Run a single scenario by name")
     args = parser.parse_args()
 
-    scenarios = load_scenarios(Path(args.scenarios_dir))
+    scenarios_dir = Path(__file__).parent / "scenarios"
+    scenarios = load_scenarios(scenarios_dir)
     if args.only:
-        scenarios = [s for s in scenarios if s["scenario"] == args.only]
+        scenarios = [s for s in scenarios if args.only in s["scenario"]]
         if not scenarios:
             print(f"No scenario named '{args.only}'.")
             return 1

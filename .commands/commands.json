@@ -21,6 +21,11 @@
             "alias": "template",
             "command": "python .commands/commands/template.py",
             "description": "Regenera pipeline/template.zip desde template/."
+        },
+        {
+            "alias": "test",
+            "command": "python .commands/commands/quick_test.py",
+            "description": "Corre tests E2E (--only scenario)."
         }
         
     ]

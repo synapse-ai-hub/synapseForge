@@ -14,7 +14,7 @@ import sys
 
 _HERE = Path(__file__).resolve().parent
 _ICO_PATH = _HERE / "logo.ico"
-_LOGO_PNG_PATH = _HERE / "logo_transparente.png"   # <--- Logo local
+_LOGO_PNG_PATH = _HERE / "logo.png"   
 
 try:
     from PIL import Image, ImageTk

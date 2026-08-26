@@ -15,8 +15,20 @@ Tests end-to-end declarativos basados en escenarios YAML. Cada escenario ejecuta
 ## Requisitos
 
 - Python 3.11+
-- El backend corriendo (`python -m uvicorn backend.main:app --reload`)
 - Paquetes: `pip install requests pyyaml`
+- El backend corriendo (`python -m uvicorn backend.main:app --reload` o `run`)
+
+### Por grupo de escenarios
+
+| Grupo | Backend | API Key OpenRouter | LLM configurado |
+|-------|:-------:|:------------------:|:---------------:|
+| **scheduler** (3) | ✅ | — | — |
+| **creators** (5) | ✅ | — | solo `creators-chat-delegates-to-agent` |
+| **main_flow** (3) | ✅ | — | — |
+| **rag** (3) | ✅ | ✅ | solo `rag-chat-search-memory-available` |
+
+- **API Key de OpenRouter**: necesaria para los tests de RAG. Se carga desde **Configuración → Providers** en la UI. Sin ella, los endpoints RAG devuelven error al intentar instanciar ChromaDB.
+- **LLM configurado**: necesario para los escenarios de chat que hacen streaming SSE.
 
 ---
 

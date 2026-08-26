@@ -90,7 +90,7 @@ async def create_collection(req: CreateCollectionRequest):
         if error:
             return make_error_response(message=error)
 
-        db = _get_db()
+        db = get_vector_db()
         metadata = {}
         if req.description:
             metadata["description"] = req.description
@@ -121,7 +121,7 @@ async def list_collections():
         Contract with the list of collections (name, metadata, count).
     """
     try:
-        db = _get_db()
+        db = get_vector_db()
         collections = db.list_collections()
         result = []
         for c in collections:
@@ -154,7 +154,7 @@ async def get_embedding_compatibility():
         Contract with the per-collection classification.
     """
     try:
-        db = _get_db()
+        db = get_vector_db()
         return validate_response(
             make_success_response(
                 message="Compatibilidad de embeddings obtenida.",
@@ -189,7 +189,7 @@ async def reindex_collection_endpoint(name: str):
         if error:
             return make_error_response(message=error)
 
-        db = _get_db()
+        db = get_vector_db()
         report = await asyncio.to_thread(reindex_collection, db, name)
         message = (
             f"Colección '{name}' reindexada con el modelo actual "
@@ -226,7 +226,7 @@ async def delete_collection(name: str):
         if error:
             return make_error_response(message=error)
 
-        db = _get_db()
+        db = get_vector_db()
         try:
             db.get_collection(name)
         except ValueError:
@@ -267,7 +267,7 @@ async def upload_files(name: str, files: list[UploadFile] = File(...)):
                 message=f"Máximo {MAX_FILES} archivos por request."
             )
 
-        db = _get_db()
+        db = get_vector_db()
         try:
             db.get_collection(name)
         except ValueError:
@@ -372,7 +372,7 @@ async def add_url(name: str, req: AddUrlRequest):
         if not url:
             return make_error_response(message="La URL es obligatoria.")
 
-        db = _get_db()
+        db = get_vector_db()
         try:
             db.get_collection(name)
         except ValueError:

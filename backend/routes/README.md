@@ -22,15 +22,22 @@
 
 ## Descripción
 
-Documentación de los endpoints HTTP expuestos por `backend/routes`. Se documentan los módulos **`chat`**, **`sessions`**, **`config`**, **`context_files`** y **`metrics`**.
+Documentación de los endpoints HTTP expuestos por `backend/routes`.
 
 ### ✨ Rutas documentadas
 
 - **`chat`**: conversación streaming vía Server-Sent Events (SSE).
 - **`sessions`**: listado, obtención y eliminación de sesiones de chat.
-- **`config`**: gestión de proveedores, modelos y ventana de contexto.
+- **`config`**: gestión de proveedores, modelos, contexto, verbose mode y MCP.
 - **`context_files`**: gestión de archivos de contexto (instrucciones y documentos).
-- **`metrics`**: métricas de uso y rendimiento del agente.
+- **`metrics`**: métricas de uso, tools, errores y modelos.
+- **`rag`**: colecciones RAG, embedding compatibility, reindex, archivos y URLs.
+- **`scheduler`**: tareas programadas (agenda) y ejecuciones.
+- **`create`**: creación de skills, tools y agents vía streaming SSE.
+- **`conversation`**: exportación de conversaciones a Markdown.
+- **`events`**: event bus SSE (Telegram → frontend).
+- **`telegram`**: estado y toggle del bot de Telegram.
+- **`agent_items`**: listado y eliminación de skills, tools, agents, MCP y colecciones.
 
 ---
 
@@ -40,16 +47,16 @@ Documentación de los endpoints HTTP expuestos por `backend/routes`. Se document
 
 #### `POST /api/chat`
 
-Streaming de un turno de conversación vía Server-Sent Events. Acepta el mensaje del usuario como `FormData`, opcionalmente con archivos adjuntos, y devuelve un `StreamingResponse` con `text/event-stream`. Internamente instancia `AgentLoop` y ejecuta `agent_loop.run(...)`.
+Streaming de un turno de conversación vía Server-Sent Events. Acepta el mensaje del usuario como `FormData`, opcionalmente con archivos adjuntos, y devuelve un `StreamingResponse` con `text/event-stream`.
 
 **Parámetros (FormData):**
 
 - `message` (str, **requerido**): mensaje del usuario.
 - `session_id` (str, opcional): id de sesión. Si no se envía, se genera uno (`uuid4`).
 - `stream_id` (str, opcional): id de stream.
-- `files` (File, opcional): uno o varios archivos adjuntos. El texto se extrae con `extract_text_from_bytes` y se pasa al loop como `file_contents`.
+- `files` (File, opcional): uno o varios archivos adjuntos.
 
-**Respuesta:** `text/event-stream`. Eventos `data: {json}` y un evento final `data: [DONE]`. Si el cliente se desconecta, se cancela el stream vía `stream_cancel_event`.
+**Respuesta:** `text/event-stream`. Eventos `data: {json}` y un evento final `data: [DONE]`.
 
 ---
 
@@ -71,19 +78,11 @@ Devuelve todas las sesiones de chat ordenadas por actividad más reciente.
 
 Devuelve el historial completo de mensajes de una sesión.
 
-Solo se retornan mensajes con `role` `user` y `assistant`, mapeados a formato frontend-friendly (`id`, `type`, `content`, `toolCalls`, `toolResults`).
-
 **Respuesta:** `JSONResponse` `{status, data: {session_id, messages[]}}`.
 
 #### `DELETE /api/sessions/{session_id}`
 
 Elimina una sesión y todos sus mensajes.
-
-**Respuesta:** `JSONResponse` `{status, message}`.
-
-#### `DELETE /api/conversations`
-
-Elimina **todas** las conversaciones (tabla `conversaciones` completa). Operación destructiva, usar con precaución.
 
 **Respuesta:** `JSONResponse` `{status, message}`.
 
@@ -93,31 +92,49 @@ Elimina **todas** las conversaciones (tabla `conversaciones` completa). Operaci�
 
 #### `GET /api/config/providers`
 
-Lista los proveedores disponibles (Ollama si `ollama list` responde; cada provider cloud solo si tiene key válida guardada y cifrada en la SQLite interna — las variables de entorno no se consultan).
+Lista los proveedores disponibles.
 
 **Respuesta:** `JSONResponse` `{status, providers: string[]}`.
+
+#### `GET /api/config/providers/keys`
+
+Lista las API keys guardadas (enmascaradas).
+
+**Respuesta:** `JSONResponse` `{status, data: {provider: masked_key}}`.
+
+#### `PUT /api/config/providers/{provider}/key`
+
+Guarda una API key para un proveedor (cifrada en SQLite).
+
+**Body (JSON):** `{"key": "sk-..."}`.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `DELETE /api/config/providers/{provider}/key`
+
+Elimina la API key de un proveedor.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
 
 #### `GET /api/config/models`
 
 Lista los modelos disponibles según `provider` (query param `provider=LOCAL|API`).
 
-- `LOCAL` → ejecuta `ollama list`.
-- `API` → consulta la API de Groq.
-
-No hay modelo por defecto automático: si no hay ninguno seleccionado, la respuesta trae la lista y el usuario elige proveedor + modelo y aplica desde el frontend (pantalla inicial de configuración saltable). Si hay un modelo persistido en SQLite (`config_kv`) de una sesión anterior, se usa ese.
-
 **Respuesta:** `JSONResponse` `{status, provider, models: string[], model: string}`.
 
 #### `POST /api/config/models/select`
 
-Selecciona un modelo para la sesión y lo guarda en `agent._resolved_model` y `agent.provider`.
+Selecciona un modelo para la sesión.
 
-**Body (JSON):** `{"model": "nombre_modelo", "provider": "LOCAL|API"}`
+**Body (JSON):** `{"model": "nombre_modelo", "provider": "LOCAL|API"}`.
 
 **Respuesta:** `JSONResponse` `{status, message, model}`.
 
-- `400` → si `model` está vacío.
-- `503` → si el agente no está inicializado.
+#### `GET /api/config/parameters`
+
+Devuelve los parámetros de generación configurados (temperature, top_p, etc.).
+
+**Respuesta:** `JSONResponse` `{status, data: {temperature, top_p, max_tokens, ...}}`.
 
 #### `GET /api/config/context-window`
 
@@ -129,23 +146,67 @@ Devuelve el límite de turns de contexto (`-1` = todos).
 
 Setea el límite de turns de contexto.
 
-**Body (JSON):** `{"max_turns": 10}`
-
-- `-1` = todos los turns. Debe ser `-1` o un entero positivo (no `0`).
+**Body (JSON):** `{"max_turns": 10}`.
 
 **Respuesta:** `JSONResponse` `{status, message, max_turns}`.
 
-#### `GET /api/config/mcp/servers`
+#### `GET /api/config/verbose-mode`
 
-Lista los servidores MCP configurados en `config.json`.
+Devuelve el estado del modo verbose.
 
-**Respuesta:** `JSONResponse` `{status, servers: object}`.
+**Respuesta:** `JSONResponse` `{status, data: {enabled: bool}}`.
 
-#### `GET /api/config/mcp/health`
+#### `POST /api/config/verbose-mode`
 
-Verifica la salud de todos los servidores MCP configurados.
+Activa/desactiva el modo verbose.
 
-**Respuesta:** `JSONResponse` `{status, results: McpServerStatus[]}`.
+**Body (JSON):** `{"enabled": true}`.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `GET /api/config/setup-completed`
+
+Indica si el setup inicial fue completado.
+
+**Respuesta:** `JSONResponse` `{status, data: {completed: bool}}`.
+
+#### `POST /api/config/setup-completed`
+
+Marca el setup inicial como completado.
+
+**Body (JSON):** `{"completed": true}`.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `GET /api/config/skills`
+
+Lista las skills disponibles.
+
+**Respuesta:** `JSONResponse` `{status, data: Skill[]}`.
+
+#### `GET /api/config/tools`
+
+Lista las tools disponibles.
+
+**Respuesta:** `JSONResponse` `{status, data: Tool[]}`.
+
+#### `POST /api/config/tools/refresh`
+
+Refresca el listado de tools.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `GET /api/config/agents`
+
+Lista los agentes disponibles.
+
+**Respuesta:** `JSONResponse` `{status, data: Agent[]}`.
+
+#### `GET /api/config/mcp`
+
+Lista los servidores MCP configurados.
+
+**Respuesta:** `JSONResponse` `{status, data: McpServer[]}`.
 
 ---
 
@@ -155,14 +216,14 @@ Verifica la salud de todos los servidores MCP configurados.
 
 Lista todos los archivos de contexto subidos.
 
-**Respuesta:** `JSONResponse` `{status, data: ContextFile[]}` donde `ContextFile` incluye `id`, `filename`, `size`, `content_type`, `created_at`.
+**Respuesta:** `JSONResponse` `{status, data: ContextFile[]}`.
 
 #### `POST /api/context-files`
 
-Sube un archivo de contexto (instrucciones o documentos).
+Sube un archivo de contexto.
 
 **Parámetros (FormData):**
-- `file` (File, **requerido**): archivo a subir. Formatos: PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY.
+- `file` (File, **requerido**): archivo a subir.
 
 **Respuesta:** `JSONResponse` `{status, message, data: ContextFile}`.
 
@@ -176,33 +237,261 @@ Elimina un archivo de contexto por ID.
 
 ### 5. Metrics (`backend/routes/metrics.py`)
 
-#### `GET /api/metrics`
+#### `GET /api/metrics/overview`
 
-Devuelve métricas agregadas de uso del agente.
+Métricas agregadas de uso del agente.
 
-**Parámetros (Query):**
-- `days` (int, opcional, default=7): días hacia atrás para filtrar.
+**Parámetros (Query):** `days` (int, opcional, default=7).
 
-**Respuesta:** `JSONResponse` `{status, data: MetricsSummary}` donde `MetricsSummary` incluye `total_sessions`, `total_messages`, `total_tokens`, `avg_tokens_per_message`, `top_models`, `provider_usage`.
+**Respuesta:** `JSONResponse` `{status, data: MetricsOverview}`.
 
 #### `GET /api/metrics/sessions`
 
-Devuelve métricas por sesión.
+Métricas por sesión.
 
-**Parámetros (Query):**
-- `days` (int, opcional, default=7): días hacia atrás.
-- `limit` (int, opcional, default=50): máximo de sesiones a retornar.
+**Parámetros (Query):** `days` (int, opcional, default=7), `limit` (int, opcional, default=50).
 
-**Respuesta:** `JSONResponse` `{status, data: SessionMetrics[]}` donde `SessionMetrics` incluye `session_id`, `title`, `message_count`, `total_tokens`, `created_at`, `updated_at`.
+**Respuesta:** `JSONResponse` `{status, data: SessionMetrics[]}`.
 
-#### `GET /api/metrics/tokens`
+#### `GET /api/metrics/tools`
 
-Devuelve desglose de tokens por modelo/proveedor.
+Métricas de uso de tools.
 
-**Parámetros (Query):**
-- `days` (int, opcional, default=7): días hacia atrás.
+**Parámetros (Query):** `days` (int, opcional, default=7).
 
-**Respuesta:** `JSONResponse` `{status, data: TokenMetrics[]}` donde `TokenMetrics` incluye `model`, `provider`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `request_count`.
+**Respuesta:** `JSONResponse` `{status, data: ToolMetrics[]}`.
+
+#### `GET /api/metrics/errors`
+
+Métricas de errores.
+
+**Parámetros (Query):** `days` (int, opcional, default=7).
+
+**Respuesta:** `JSONResponse` `{status, data: ErrorMetrics[]}`.
+
+#### `GET /api/metrics/models`
+
+Métricas de uso por modelo.
+
+**Parámetros (Query):** `days` (int, opcional, default=7).
+
+**Respuesta:** `JSONResponse` `{status, data: ModelMetrics[]}`.
+
+---
+
+### 6. RAG (`backend/routes/rag.py`)
+
+Requiere API key de OpenRouter configurada.
+
+#### `POST /api/rag/collections`
+
+Crea una nueva colección vectorial.
+
+**Body (JSON):** `{"name": "nombre-coleccion", "description": "opcional"}`.
+
+**Respuesta:** `JSONResponse` `{status, message, data: CollectionInfo}`.
+
+#### `GET /api/rag/collections`
+
+Lista todas las colecciones disponibles.
+
+**Respuesta:** `JSONResponse` `{status, data: {collections: CollectionInfo[]}}`.
+
+#### `GET /api/rag/collections/embedding-compatibility`
+
+Clasifica colecciones por compatibilidad de modelo de embeddings.
+
+**Respuesta:** `JSONResponse` `{status, data: {collections: CompatibilityInfo[]}}`.
+
+#### `POST /api/rag/collections/{name}/reindex`
+
+Reindexa una colección con el modelo de embeddings actual.
+
+**Respuesta:** `JSONResponse` `{status, message, data: ReindexReport}`.
+
+#### `DELETE /api/rag/collections/{name}`
+
+Elimina una colección y todos sus datos.
+
+**Respuesta:** `JSONResponse` `{status, message, data: {name}}`.
+
+#### `POST /api/rag/collections/{name}/files`
+
+Sube archivos a una colección: extrae texto, chunk y almacena.
+
+**Parámetros (FormData):** `files` (list[File], **requerido**). Máximo 20 archivos, 50 MB c/u.
+
+**Respuesta:** `JSONResponse` `{status, message, data: {processed[], errors[]}}`.
+
+#### `POST /api/rag/collections/{name}/urls`
+
+Agrega una página web a una colección.
+
+**Body (JSON):** `{"url": "https://..."}`.
+
+**Respuesta:** `JSONResponse` `{status, message, data: {url, chunks}}`.
+
+---
+
+### 7. Scheduler (`backend/routes/scheduler.py`)
+
+#### `GET /api/scheduler/tasks`
+
+Lista todas las tareas programadas ordenadas por horario.
+
+**Respuesta:** `JSONResponse` `{status, tasks: Task[]}`.
+
+#### `POST /api/scheduler/tasks`
+
+Crea una nueva tarea programada.
+
+**Body (JSON):** `{"prompt": "texto", "time": "HH:MM", "days": [0-6]}`.
+
+**Respuesta:** `JSONResponse` `{status, data: Task}`. `400` si falla validación.
+
+#### `PUT /api/scheduler/tasks/{task_id}`
+
+Actualiza una tarea programada.
+
+**Body (JSON):** `{"prompt": "...", "time": "HH:MM", "days": [...], "enabled": true}`. Todos opcionales.
+
+**Respuesta:** `JSONResponse` `{status, data: Task}`. `400` si falla.
+
+#### `DELETE /api/scheduler/tasks/{task_id}`
+
+Elimina una tarea programada y sus ejecuciones registradas.
+
+**Respuesta:** `JSONResponse` `{status, message}`. `404` si no existe.
+
+#### `GET /api/scheduler/runs`
+
+Devuelve las ejecuciones más recientes de tareas (más nuevas primero).
+
+**Respuesta:** `JSONResponse` `{status, runs: Run[]}`.
+
+---
+
+### 8. Create (`backend/routes/create.py`)
+
+Creación de skills, tools y agents vía streaming SSE (mismo patrón que chat).
+
+#### `POST /api/create/skill`
+
+Crea una skill con iteración (entrevista + tool calling).
+
+**Body (JSON):** `{"descripcion": "...", "name": "...", "mensajes": [...], "model": "...", "provider": "..."}`.
+
+**Respuesta:** `text/event-stream` con eventos: `chunk`, `tool_call`, `tool_result`, `skill_action`, `skill_result`, `error`, `aborted`.
+
+#### `POST /api/create/tool`
+
+Crea una tool externa vía streaming SSE.
+
+**Body (JSON):** `{"descripcion": "...", "name": "...", "mensajes": [...]}`.
+
+**Respuesta:** `text/event-stream` con eventos: `chunk`, `tool_call`, `tool_result`, `tool_action`, `tool_result_final`, `error`, `aborted`.
+
+#### `POST /api/create/agent`
+
+Crea un agente vía streaming SSE.
+
+**Body (JSON):** `{"descripcion": "...", "name": "...", "mensajes": [...]}`.
+
+**Respuesta:** `text/event-stream` con eventos similares a los anteriores.
+
+---
+
+### 9. Conversation (`backend/routes/conversation.py`)
+
+#### `POST /api/conversation/export`
+
+Exporta una conversación a Markdown.
+
+**Body (JSON):** `{"messages": [...], "title": "Conversación"}`.
+
+**Respuesta:** `JSONResponse` `{status, message, data: {markdown: string}}`.
+
+---
+
+### 10. Events (`backend/routes/events.py`)
+
+#### `GET /api/events`
+
+Stream SSE del event bus. El frontend se suscribe para recibir eventos del bot de Telegram y otros sources.
+
+**Respuesta:** `text/event-stream` con eventos del bus.
+
+---
+
+### 11. Telegram (`backend/routes/telegram.py`)
+
+#### `GET /api/telegram/status`
+
+Indica si el bot de Telegram está habilitado.
+
+**Respuesta:** `JSONResponse` `{enabled: bool}`.
+
+#### `POST /api/telegram/toggle`
+
+Activa/desactiva el bot de Telegram.
+
+**Body (JSON):** `{"enabled": true}`.
+
+**Respuesta:** `JSONResponse` `{enabled: bool}`.
+
+#### `GET /api/telegram/active-session`
+
+Devuelve el id de sesión activa compartido entre frontend y Telegram.
+
+**Respuesta:** `JSONResponse` `{session_id: string}`.
+
+#### `POST /api/telegram/active-session`
+
+Setea el id de sesión activa.
+
+**Body (JSON):** `{"session_id": "..."}`.
+
+**Respuesta:** `JSONResponse` `{session_id: string}`.
+
+---
+
+### 12. Agent Items (`backend/routes/agent_items.py`)
+
+#### `GET /api/agent/knowledge`
+
+Lista las colecciones vectoriales disponibles.
+
+**Respuesta:** `JSONResponse` `{status, collections: string[]}`.
+
+#### `DELETE /api/agent/skills/{name}`
+
+Elimina una skill (directorio completo).
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `DELETE /api/agent/tools/{name}`
+
+Elimina una tool externa (archivo `.py`).
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `DELETE /api/agent/agents/{name}`
+
+Elimina un agente (archivo `.md`).
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `DELETE /api/agent/mcp/{label}`
+
+Elimina un servidor MCP de la configuración.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
+
+#### `DELETE /api/agent/knowledge/{collection}`
+
+Elimina una colección vectorial.
+
+**Respuesta:** `JSONResponse` `{status, message}`.
 
 ---
 
@@ -220,19 +509,6 @@ curl -X POST http://127.0.0.1:8000/api/chat -F "message=Hola, ¿qué podés hace
 **Invoke (PowerShell)**
 ```powershell
 $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/chat" -Method Post -ContentType "application/x-www-form-urlencoded" -Body "message=Hola, ¿qué podés hacer?" -TimeoutSec 120
-$resp.Content
-```
-
-Con `session_id` fijo:
-
-**cURL**
-```bash
-curl -X POST http://127.0.0.1:8000/api/chat -F "session_id=test-1" -F "message=Hola, ¿qué podés hacer?"
-```
-
-**Invoke (PowerShell)**
-```powershell
-$resp = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/chat" -Method Post -ContentType "application/x-www-form-urlencoded" -Body "session_id=test-1&message=Hola, ¿qué podés hacer?" -TimeoutSec 120
 $resp.Content
 ```
 
@@ -284,16 +560,28 @@ curl -X POST http://127.0.0.1:8000/api/config/models/select -H "Content-Type: ap
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/config/models/select" -Method Post -ContentType "application/json" -Body '{"model": "llama3.2", "provider": "LOCAL"}'
 ```
 
-### `POST /api/config/context-window`
+### `GET /api/scheduler/tasks`
 
 **cURL**
 ```bash
-curl -X POST http://127.0.0.1:8000/api/config/context-window -H "Content-Type: application/json" -d "{\"max_turns\": 10}"
+curl -X GET http://127.0.0.1:8000/api/scheduler/tasks
 ```
 
 **Invoke (PowerShell)**
 ```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/config/context-window" -Method Post -ContentType "application/json" -Body '{"max_turns": 10}'
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/scheduler/tasks"
+```
+
+### `POST /api/rag/collections`
+
+**cURL**
+```bash
+curl -X POST http://127.0.0.1:8000/api/rag/collections -H "Content-Type: application/json" -d "{\"name\": \"mi-coleccion\", \"description\": \"Test\"}"
+```
+
+**Invoke (PowerShell)**
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/rag/collections" -Method Post -ContentType "application/json" -Body '{"name": "mi-coleccion", "description": "Test"}'
 ```
 
 ---

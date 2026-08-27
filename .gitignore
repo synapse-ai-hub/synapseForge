@@ -55,5 +55,5 @@ template/
 config/
 ideas.md
 
-# PyPi
-pyproject.toml
+# DB
+backend/agent/agent_db/agent.db

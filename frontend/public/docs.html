@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Raleway:wght@600;700;800&display=swap" rel="stylesheet">
   <style>
-    * { font-family: 'Inter', system-ui, sans-serif; }
+    * { font-family: 'Inter', system-ui, sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
     .brand-word {
       font-family: 'Raleway', sans-serif;
       font-weight: 700;
@@ -20,7 +20,7 @@
       background-clip: text;
       color: transparent;
     }
-    body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; }
+    body { font-size: 15px; line-height: 1.6; color: #374151; background: #f9fafb; overflow-x: hidden; }
     article h2 { font-size: 1.875rem; font-weight: 700; margin-top: 3rem; margin-bottom: 1.25rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; color: #111827; scroll-margin-top: 7rem; }
     article h2:first-child { margin-top: 0; }
     article h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.75rem; margin-bottom: 0.75rem; color: #111827; }
@@ -53,25 +53,47 @@
     .sidebar-subs { list-style: none; padding: 0; margin: 0.125rem 0 0 0; }
     .sidebar-subs.collapsed { display: none; }
     .app-header { display: flex !important; }
-    @media (max-width: 1023px) {
-      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; width: 18rem; overscroll-behavior: contain; }
+    @media (max-width: 900px) {
+      .app-header { position: fixed !important; top: 0; left: 0; right: 0; width: 100vw !important; height: 64px !important; z-index: 100 !important; }
+      .app-header img { height: 40px !important; }
+      .brand-word { font-size: 1.15rem !important; letter-spacing: 1.5px !important; }
+      .sidebar { position: fixed; left: 0; top: 64px; bottom: 0; z-index: 50; transform: translateX(-100%); transition: transform 0.3s ease; width: 18rem; overscroll-behavior: contain; }
       .sidebar.open { transform: translateX(0); }
       .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
       .sidebar-overlay.open { display: block; }
-      main { padding-top: 5rem !important; }
+      main { padding-top: 80px !important; margin-left: 0 !important; padding-left: 1rem !important; padding-right: 1rem !important; }
+      .hamburger { display: flex !important; }
     }
-    @media (min-width: 1024px) {
-      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 30; width: 25rem; overflow-y: auto; overscroll-behavior: contain; }
+    @media (max-width: 500px) {
+      .app-header { width: 100vw !important; left: 0 !important; right: 0 !important; }
+      .app-header img { height: 32px !important; }
+      .brand-word { font-size: 1rem !important; letter-spacing: 1px !important; }
+      main { padding-top: 72px !important; padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+    }
+    @media (min-width: 901px) {
+      .app-header { position: sticky !important; top: 0 !important; z-index: 40 !important; height: 95px !important; width: 100% !important; left: 0 !important; }
+      .app-header img { height: 95px !important; }
+      .sidebar { position: fixed; left: 0; top: 95px; bottom: 0; z-index: 30; width: 25rem; overflow-y: auto; overscroll-behavior: contain; transform: none !important; }
+      .sidebar-overlay { display: none !important; }
       main { margin-left: 25rem !important; padding-top: 95px !important; }
+      .hamburger { display: none !important; }
     }
   </style>
 </head>
 <body>
-  <!-- Mobile Header -->
+  <!-- Header (at body level, like index.html) -->
   <header class="app-header flex items-center shrink-0 bg-white px-4 border-b border-gray-200"
-          style="position: fixed; top: 0; left: 0; right: 0; z-index: 40; height:95px;">
-    <!-- Left: empty to balance center -->
-    <div class="sm:w-44"></div>
+          style="position: sticky; top: 0; z-index: 40;">
+    <!-- Left: Hamburger (mobile only) -->
+    <div class="sm:w-44 flex items-center justify-start">
+      <button class="hamburger lg:hidden" onclick="toggleSidebar()" aria-label="Menú" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: none; border: none; cursor: pointer; padding: 0;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px; color: #374151;">
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+    </div>
 
     <!-- Center: logo + title -->
     <div class="flex-1 flex items-center justify-center gap-2 sm:gap-3">
@@ -88,9 +110,9 @@
     </div>
   </header>
 
-  <div style="display: flex;">
+  <div style="display: flex; width: 100%; overflow-x: hidden;">
     <!-- Sidebar -->
-    <aside id="sidebar" class="sidebar lg-sidebar" style="width: 18rem; flex-shrink: 0; border-right: 1px solid #e5e7eb; background: white; overflow-y: auto;">
+    <aside id="sidebar" class="sidebar lg-sidebar" style="border-right: 1px solid #e5e7eb; background: white; overflow-y: auto;">
       <nav style="padding: 1rem;">
         <h3 style="font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; padding-left: 0.5rem;">Contenido</h3>
         <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.25rem;" id="toc"></ul>
@@ -100,7 +122,7 @@
     <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
     <!-- Main Content -->
-    <main style="flex: 1; min-width: 0; padding: 2.5rem 2.5rem;">
+    <main style="flex: 1; min-width: 0; padding: 2.5rem;">
       <article style="max-width: 56rem; margin: 0 auto;">
 
         <section id="overview">
@@ -251,19 +273,18 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </table>
           <p>Todo esto se lee en tiempo de ejecución, así que podés agregar, modificar o quitar archivos sin reinstalar nada. Solo necesitás reiniciar el backend para que los cambios tomen efecto.</p>
           <h3><code>config.yaml</code> — permisos del agente principal</h3>
-          <p>El agente principal (el router) tiene <strong>siempre</strong> un piso base de tools de lectura y delegación: <code>task</code>, <code>help</code>, <code>search_memory</code>, <code>read</code>, <code>websearch</code> y <code>webfetch</code>. Este piso está garantizado: el yaml no puede quitárselas. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se <strong>agregan</strong> encima del piso base:</p>
+          <p>El agente principal (el router) <strong>no tiene tools ni skills directas por defecto</strong> — solo puede delegar tareas mediante <code>task</code>. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se toman de ahí (misma lógica que el frontmatter de los agentes):</p>
           <pre><code>permissions:
   tool:
-    write: allow
+    read: allow
   skill:
     mi_skill: allow
   task:
     explorador: allow</code></pre>
           <ul>
-            <li>Tools base (<code>task</code>, <code>help</code>, <code>search_memory</code>, <code>read</code>, <code>websearch</code>, <code>webfetch</code>): <strong>siempre disponibles</strong>, el yaml no las niega.</li>
-            <li>Otras tools (ej. <code>write</code>): solo si el yaml las lista con <code>allow</code>.</li>
-            <li><code>task</code> es la excepción restrictible: si el yaml lo lista con sub-agentes, solo puede delegar a esos; si no lo lista, a todos.</li>
-            <li>Si el archivo <strong>no existe</strong> — el agente principal opera solo con el piso base.</li>
+            <li>Si el archivo <strong>no existe</strong> → el agente principal queda solo con <code>task</code> (delegación siempre disponible).</li>
+            <li>Si existe → usa <strong>solo</strong> los permisos explícitos del yaml.</li>
+            <li><code>task</code> está <strong>siempre</strong> disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.</li>
           </ul>
         </section>
 

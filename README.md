@@ -103,7 +103,7 @@ The result is a self-contained application distribution: embedded Python, compil
 > Currently available on [TestPyPI](https://test.pypi.org/project/synapseforge/).
 
 ```bash
-pip install synapseforge
+pip install synapseForge
 
 # Create a project (interactive GUI)
 synapseforge init my-project
@@ -128,7 +128,7 @@ On first launch, configure an API key from any supported cloud provider ([OpenRo
 
 ```mermaid
 flowchart LR
-    A["pip install synapseforge"] --> B["synapseforge init"]
+    A["pip install synapseForge"] --> B["synapseforge init"]
     B --> C["GUI: name, logo, colors"]
     C --> D["Template + venv + deps"]
     D --> E["Project ready"]

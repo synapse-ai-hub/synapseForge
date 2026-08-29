@@ -46,7 +46,7 @@ The generated project includes:
 ## Installation
 
 ```bash
-pip install synapseforge
+pip install synapseForge
 ```
 
 Package dependencies: `Pillow` (.ico generation) — everything else is project-level.

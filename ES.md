@@ -103,7 +103,7 @@ El resultado es una distribución de aplicación autónoma: Python embebido, bac
 > Actualmente disponible en [TestPyPI](https://test.pypi.org/project/synapseforge/).
 
 ```bash
-pip install synapseforge
+pip install synapseForge
 
 # Crear un proyecto (GUI interactiva)
 synapseforge init my-project
@@ -128,7 +128,7 @@ En el primer inicio, configurá una API key de cualquier proveedor cloud soporta
 
 ```mermaid
 flowchart LR
-    A["pip install synapseforge"] --> B["synapseforge init"]
+    A["pip install synapseForge"] --> B["synapseforge init"]
     B --> C["GUI: nombre, logo, colores"]
     C --> D["Template + venv + deps"]
     D --> E["Proyecto listo"]

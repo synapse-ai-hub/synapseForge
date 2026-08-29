@@ -186,11 +186,26 @@ Requirements:
         help="Project root directory (default: current working directory)",
     )
 
+    # ── update ──────────────────────────────────────────────────────────
+    update_p = subparsers.add_parser(
+        "update",
+        help="Update project to latest template",
+        description="Update the project structure to the latest template version, preserving user configuration.",
+    )
+    update_p.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        help="Project root directory (default: current working directory)",
+    )
+
     args = parser.parse_args()
 
     try:
         if args.command == "init":
             _init(args.target_dir)
+        elif args.command == "update":
+            _update(args.project_dir)
         elif args.command == "launch":
             _launch(args.path, args.name, args.skip_frontend, args.no_embed, args.compile)
         elif args.command == "colors":
@@ -219,6 +234,16 @@ def _init(target_dir: str) -> None:
         return
 
     print("  Proyecto creado correctamente.")
+
+
+def _update(project_dir: str) -> None:
+    """Import and run pipeline.update.main.run_update()."""
+    try:
+        from pipeline.update.main import run_update
+    except ImportError as exc:
+        print(f"ERROR: could not load update module — {exc}", file=sys.stderr)
+        sys.exit(1)
+    run_update(project_dir)
 
 
 def _launch(

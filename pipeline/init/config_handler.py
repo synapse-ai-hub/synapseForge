@@ -24,6 +24,11 @@ def save_config(target: Path, config: dict) -> None:
     print(f"  Saved: {dest}")
 
     # Also generate colors.json for runtime in frontend/public/
+    save_colors(target, config)
+
+
+def save_colors(target: Path, config: dict) -> None:
+    """Generate ``colors.json`` for runtime in ``frontend/public/``."""
     colors = config.get("colors", {})
     runtime_colors = {k: colors.get(k) for k in CONFIGURABLE_COLOR_KEYS if colors.get(k)}
     if runtime_colors:
@@ -33,3 +38,12 @@ def save_config(target: Path, config: dict) -> None:
         with open(colors_dest, "w", encoding="utf-8") as f:
             json.dump(runtime_colors, f, indent=2, ensure_ascii=False)
         print(f"  Saved: {colors_dest}")
+
+
+def load_config(target: Path) -> dict:
+    """Load the user config from ``{target}/config/replace.json``."""
+    dest = target / "config" / "replace.json"
+    if not dest.is_file():
+        raise FileNotFoundError(f"Configuration file not found: {dest}")
+    with open(dest, "r", encoding="utf-8") as f:
+        return json.load(f)

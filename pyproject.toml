@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synapseforge"
-version = "0.1.24.dev0"
+version = "0.1.24.dev1"
 description = "AI agent project scaffolding & distribution CLI"
 readme = "README_PYPI.md"
 license = {text = "Apache-2.0"}
@@ -64,7 +64,7 @@ include = ["synapseforge*", "pipeline*"]
 
 [tool.setuptools.package-data]
 pipeline = ["template.zip", "launch/templates/**/*"]
-synapseforge = ["tk/logo.ico"]
+synapseforge = ["tk/logo.ico", "tk/logo.png"]
 
 [tool.ruff]
 line-length = 100

@@ -49,7 +49,7 @@ The generated project includes:
 pip install synapseforge
 ```
 
-Package dependencies: `colorthief` (color palette extraction) and `Pillow` (.ico generation) — everything else is project-level.
+Package dependencies: `Pillow` (.ico generation) — everything else is project-level.
 
 ## Requirements
 

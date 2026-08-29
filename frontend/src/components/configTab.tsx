@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Settings, Server, Cpu, Database, Globe, Trash2, Upload, KeyRound } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Collapsible } from "./ui/collapsible";
 import configService from "../services/configService";
 import type { ProviderKeyStatus, AdvancedParams } from "../services/configService";
 import contextFilesService, { type ContextFile } from "../services/contextFilesService";
@@ -411,15 +412,12 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
         )}
       </div>
 
-      {/* Parámetros avanzados */}
-      <div>
-        <div className="text-xs font-medium text-app-text-secondary">
-          Par&aacute;metros avanzados
-        </div>
-        <p className="text-[11px] text-app-text-secondary mt-1">
-          Se aplican junto con el modelo al presionar &quot;Aplicar&quot;. Con &quot;Default&quot; se usan los valores de cada agente.
+{/* Parámetros avanzados */}
+      <Collapsible title="Parámetros avanzados">
+        <p className="text-[11px] text-app-text-secondary mb-2">
+          Se aplican junto con el modelo al presionar "Aplicar". Con "Default" se usan los valores de cada agente.
         </p>
-        <div className="mt-2 space-y-3 rounded-lg border border-app-border bg-white p-2.5">
+        <div className="space-y-3">
           {/* Temperature */}
           <div>
             <div className="flex items-center justify-between">
@@ -510,23 +508,19 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             </select>
           </div>
         </div>
-      </div>
+      </Collapsible>
 
       {/* API keys de providers */}
-      <div>
-        <div className="text-xs font-medium text-app-text-secondary flex items-center gap-1.5">
-          <KeyRound size={12} />
-          API keys de proveedores
-        </div>
-        <p className="text-[11px] text-app-text-secondary mt-1">
+      <Collapsible title="API keys de proveedores">
+        <p className="text-[11px] text-app-text-secondary mb-2">
           Opcional: guardá una API key por proveedor (queda cifrada en la base local). Si no hay key guardada se usa la variable de entorno.
         </p>
         {keysError && (
-          <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <div className="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {keysError}
           </div>
         )}
-        <div className="mt-2 space-y-2.5">
+        <div className="space-y-2.5">
           {KEY_PROVIDERS.map(({ provider, label }) => (
             <div key={provider} className="rounded-lg border border-app-border bg-white p-2.5">
               <div className="flex items-center justify-between mb-1.5">
@@ -571,7 +565,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             </div>
           ))}
         </div>
-      </div>
+      </Collapsible>
 
       <div>
         <div className="text-xs font-medium text-app-text-secondary">

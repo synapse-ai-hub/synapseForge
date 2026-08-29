@@ -25,9 +25,10 @@ import time
 from datetime import datetime
 from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Ensure project root for absolute imports
@@ -50,6 +51,8 @@ from backend.agent.utils.create_helpers import (
     resolve_create_model_provider,
 )
 from backend.instances import agent
+from backend.routes.file_text_extractor import extract_text_from_bytes
+from backend.agent.utils.error_logger import log_error
 
 logger = logging.getLogger(__name__)
 
@@ -214,17 +217,66 @@ def _formatear_mensajes(mensajes: list[dict]) -> str:
 
 
 @router.post("/skill")
-async def post_create_skill_stream(req: CreateSkillRequest):
+async def post_create_skill_stream(
+    descripcion: str = Form(...),
+    name: str | None = Form(None),
+    mensajes: str | None = Form(None),
+    model: str | None = Form(None),
+    provider: str | None = Form(None),
+    files: Optional[list[UploadFile]] = File(None),
+):
     """Streaming endpoint para crear skills. Retorna SSE events."""
+    # Parse mensajes from JSON string
+    try:
+        mensajes_list = json.loads(mensajes) if mensajes else []
+    except (json.JSONDecodeError, TypeError):
+        mensajes_list = []
+
+    # Extract text from uploaded files and append to latest user message
+    archivos_raw: dict[str, bytes] = {}
+    if files:
+        extracted_parts: list[str] = []
+        for f in files:
+            filename = f.filename or "archivo"
+            try:
+                content = await f.read()
+            except Exception as exc:
+                log_error(str(exc), source="create.py:skill(file_read)")
+                continue
+            # Store raw bytes for later copying to references/
+            archivos_raw[filename] = content
+            result = extract_text_from_bytes(filename, content)
+            text = (result.text or "").strip() if result.success else ""
+            if text:
+                extracted_parts.append(f"[Archivo adjunto: {filename}]\n```\n{text}\n```")
+            else:
+                extracted_parts.append(f"[Archivo adjunto: {filename}: no se pudo extraer texto]")
+
+        if extracted_parts:
+            # Append extracted text to the latest user message
+            file_block = "\n\n".join(extracted_parts)
+            if mensajes_list:
+                last_user_idx = None
+                for i in reversed(range(len(mensajes_list))):
+                    if mensajes_list[i].get("role") == "user":
+                        last_user_idx = i
+                        break
+                if last_user_idx is not None:
+                    mensajes_list[last_user_idx]["content"] += f"\n\n{file_block}"
+                else:
+                    mensajes_list.append({"role": "user", "content": file_block})
+            else:
+                mensajes_list = [{"role": "user", "content": file_block}]
+
     logger.info(
         "POST /api/create/skill — descripcion='%s' name=%s mensajes=%d",
-        req.descripcion, req.name,
-        len(req.mensajes) if req.mensajes else 0,
+        descripcion, name,
+        len(mensajes_list),
     )
 
-    descripcion = req.descripcion.strip()
-    nombre = req.name.strip() if req.name else None
-    mensajes = req.mensajes or []
+    descripcion = descripcion.strip()
+    nombre = name.strip() if name else None
+    mensajes = mensajes_list
 
     if not descripcion:
         return StreamingResponse(
@@ -253,7 +305,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         collected_content = ""
         tool_calls_data = None
 
-        _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
+        _create_model, _create_provider = resolve_create_model_provider(model, provider)
         async for event in stream_interview_loop(
             prompt=prompt,
             interview_tool=_INTERVIEW_TOOL,
@@ -313,7 +365,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
         # ════════════════════════════════════════════════════════════════
         _SKILLS_DIR.mkdir(parents=True, exist_ok=True)
         skills_locales = _listar_skills_locales()
-        decision = await _evaluar_si_existe(task, skills_locales, req.model, req.provider)
+        decision = await _evaluar_si_existe(task, skills_locales, model, provider)
 
         if decision and decision.get("exist") == "Sí":
             skill_name = decision.get("skill")
@@ -390,7 +442,7 @@ async def post_create_skill_stream(req: CreateSkillRequest):
 
         # Copiar referencias
         if skill_dir and skill_name_creado:
-            _copiar_referencias(skill_dir, mensajes, refs)
+            _copiar_referencias(skill_dir, mensajes, refs, archivos_raw=archivos_raw)
 
         if skill_name_creado and skill_dir:
             yield _sse({"type": "skill_result", "content": {

@@ -45,7 +45,7 @@ function generateId(): string {
 interface HistorialMsg {
   role: "user" | "assistant";
   content: string;
-  files?: Array<{ name: string; content: string }>;
+  files?: Array<{ name: string; size: number }>;
 }
 
 export function SkillInterface() {
@@ -246,22 +246,11 @@ export function SkillInterface() {
       setAutoScrollEnabled(true);
       setIsStreaming(true);
 
-      // Leer contenido de archivos adjuntos
-      let fileContents: Array<{ name: string; content: string }> = [];
-      if (archivos.length > 0) {
-        try {
-          fileContents = await Promise.all(
-            archivos.map(async (f) => ({ name: f.name, content: await f.text() })),
-          );
-        } catch {
-          setMessages((prev) => prev.slice(0, -2));
-          setIsStreaming(false);
-          return;
-        }
-      }
+      // Guardar solo nombres para el historial de display
+      const fileNames = archivos.map((f) => ({ name: f.name, size: f.size }));
       historialRef.current = [
         ...historialRef.current,
-        { role: "user", content: texto, files: fileContents.length ? fileContents : undefined },
+        { role: "user", content: texto, files: fileNames.length ? fileNames : undefined },
       ];
 
       let accumulatedContent = "";
@@ -284,16 +273,17 @@ export function SkillInterface() {
       abortRef.current = abort;
 
       try {
+        const formData = new FormData();
+        formData.append("descripcion", descripcion);
+        if (nombre) formData.append("name", nombre);
+        formData.append("mensajes", JSON.stringify(historialRef.current));
+        if (createModel) formData.append("model", createModel);
+        if (createProvider) formData.append("provider", createProvider);
+        archivos.forEach((f) => formData.append("files", f));
+
         const resp = await fetch(`${API}/create/skill`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            descripcion,
-            name: nombre || null,
-            mensajes: historialRef.current,
-            model: createModel,
-            provider: createProvider,
-          }),
+          body: formData,
           signal: abort.signal,
         });
         if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -794,7 +784,7 @@ export function SkillInterface() {
               )}
 
               <p className="text-xs text-gray-400 mb-2">
-                Podés adjuntar archivos <strong>.md</strong>, <strong>.txt</strong>, <strong>.json</strong>, <strong>.csv</strong>, <strong>.yaml</strong> o <strong>.xml</strong> como material de referencia para la skill.
+                Podés adjuntar archivos <strong>.md</strong>, <strong>.txt</strong>, <strong>.json</strong>, <strong>.csv</strong>, <strong>.yaml</strong>, <strong>.xml</strong>, <strong>.pdf</strong>, <strong>.docx</strong>, <strong>.xlsx</strong> o <strong>.xls</strong> como material de referencia para la skill.
               </p>
 
               {/* Hidden file input */}
@@ -802,7 +792,7 @@ export function SkillInterface() {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".md,.txt,.json,.csv,.yaml,.yml,.xml"
+                accept=".md,.txt,.json,.csv,.yaml,.yml,.xml,.pdf,.docx,.doc,.xlsx,.xls"
                 className="hidden"
                 onChange={handleFilesSelected}
               />

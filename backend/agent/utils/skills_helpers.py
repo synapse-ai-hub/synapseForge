@@ -305,6 +305,7 @@ def _copiar_referencias(
     skill_dir: Path,
     mensajes: list[dict] | None = None,
     refs: str | None = None,
+    archivos_raw: dict[str, bytes] | None = None,
 ) -> None:
     """Copia los archivos adjuntos del usuario a ``references/``.
 
@@ -319,6 +320,8 @@ def _copiar_referencias(
         skill_dir: Directorio de la skill.
         mensajes: Historial de mensajes (pueden contener ``files``).
         refs: Texto de referencia del LLM (opcional, legacy).
+        archivos_raw: Dict ``{filename: bytes}`` con los bytes crudos
+            de los archivos subidos (prioritario sobre ``files[].content``).
     """
     refs_dir = skill_dir / "references"
     refs_dir.mkdir(exist_ok=True)
@@ -330,8 +333,19 @@ def _copiar_referencias(
 
     # 5b. Copiar archivos adjuntos del usuario con nombre original
     #     Solo archivos sueltos, sin subdirectorios anidados.
-    if mensajes:
-        contadas = 0
+    contadas = 0
+
+    # Prioridad: archivos_raw (bytes del UploadFile) > files[].content (legacy)
+    if archivos_raw:
+        for fname, raw_bytes in archivos_raw.items():
+            safe_name = Path(fname).name
+            if not safe_name:
+                continue
+            ref_path = refs_dir / safe_name
+            ref_path.write_bytes(raw_bytes)
+            contadas += 1
+            logger.info("Referencia copiada (raw): %s", ref_path)
+    elif mensajes:
         for m in mensajes:
             files = m.get("files")
             if files and isinstance(files, list):

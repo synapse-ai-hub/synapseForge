@@ -668,11 +668,12 @@ class Agent():
                     oa_kwargs["tool_choice"] = "auto"
                 if json_format:
                     oa_kwargs["response_format"] = {"type": "json_object"}
-                if is_groq and not reasoning:
-                    # Disable reasoning. Only some Groq models accept this field
-                    # (Qwen: "none"; GPT-OSS: low/medium/high). If the model
-                    # rejects it, fall back to a request without the field.
+                if is_groq and (not reasoning or reasoning in ("off", "false", "none")):
+                    # Disable reasoning
                     oa_kwargs["reasoning_effort"] = "none"
+                elif is_groq and reasoning and isinstance(reasoning, str) and reasoning not in ("on", "off", "true", "false", "default"):
+                    # Reasoning is a specific effort level (e.g., "low", "medium", "high")
+                    oa_kwargs["reasoning_effort"] = reasoning
                 try:
                     response = await client.chat.completions.create(
                         model=model,
@@ -681,7 +682,7 @@ class Agent():
                         **kwargs,
                     )
                 except Exception as _ex:
-                    if is_groq and not reasoning and "reasoning_effort" in str(_ex):
+                    if is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
                         oa_kwargs.pop("reasoning_effort", None)
                         response = await client.chat.completions.create(
                             model=model,
@@ -727,9 +728,12 @@ class Agent():
                     options=options,
                     keep_alive=-1,
                 )
-                if reasoning:
+                # Handle reasoning parameter for Ollama
+                # reasoning can be: True/False (legacy), or string values:
+                # "on"/"off", "low"/"medium"/"high"/"max", "default"
+                if reasoning is True or reasoning == "on" or reasoning == "true":
                     response = await self.ollama_client.chat(**chat_kwargs)
-                else:
+                elif reasoning is False or reasoning == "off" or reasoning == "false":
                     # Disable reasoning (think=False). Some models don't support
                     # the think flag; fall back to a request without it.
                     try:
@@ -739,6 +743,16 @@ class Agent():
                             response = await self.ollama_client.chat(**chat_kwargs)
                         else:
                             raise
+                elif isinstance(reasoning, str) and reasoning in ("low", "medium", "high", "max"):
+                    # GPT-OSS style levels or Qwen max
+                    try:
+                        response = await self.ollama_client.chat(**chat_kwargs, think=reasoning)
+                    except Exception as _ex:
+                        # Fallback: try without think parameter
+                        response = await self.ollama_client.chat(**chat_kwargs)
+                else:
+                    # Default: let the model use its default behavior
+                    response = await self.ollama_client.chat(**chat_kwargs)
                 output = response.message.content or ""
                 raw_tc = response.message.tool_calls
                 if cleaned_output and output:
@@ -920,11 +934,12 @@ class Agent():
                 # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
                 # lo rechaza, reintentar sin el campo (igual que en llm_process).
                 oa_kwargs["reasoning_format"] = "parsed"
-                if not reasoning:
-                    # Disable reasoning. Only some Groq models accept this field
-                    # (Qwen: "none"; GPT-OSS: low/medium/high). If the model
-                    # rejects it, fall back to a request without the field.
+                if not reasoning or reasoning in ("off", "false", "none"):
+                    # Disable reasoning
                     oa_kwargs["reasoning_effort"] = "none"
+                elif isinstance(reasoning, str) and reasoning not in ("on", "off", "true", "false", "default"):
+                    # Specific effort level
+                    oa_kwargs["reasoning_effort"] = reasoning
             else:
                 # OpenRouter: pedir el usage en el último chunk del stream.
                 oa_kwargs["stream_options"] = {"include_usage": True}
@@ -934,7 +949,7 @@ class Agent():
                 if is_groq and "reasoning_format" in str(_ex):
                     oa_kwargs.pop("reasoning_format", None)
                     stream = await client.chat.completions.create(**oa_kwargs)
-                elif is_groq and not reasoning and "reasoning_effort" in str(_ex):
+                elif is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
                     oa_kwargs.pop("reasoning_effort", None)
                     stream = await client.chat.completions.create(**oa_kwargs)
                 else:
@@ -1047,16 +1062,30 @@ class Agent():
                 if k in kwargs:
                     options[k] = kwargs.pop(k)
             # Ollama: intentar con think=True (modelos con thinking), fallback sin el flag.
-            # Con reasoning=False se saltea el intento con think (igual que en llm_process).
+            # reasoning can be: True/False (legacy), or string values:
+            # "on"/"off", "low"/"medium"/"high"/"max", "default"
             chat_kwargs = dict(model=model, messages=msgs, stream=True,
                                tools=tools if tools else None,
                                options=options, keep_alive=-1)
 
-            def _try_stream(use_think: bool):
-                """Crear stream con o sin think flag."""
-                if use_think:
+            def _try_stream(use_think=False):
+                """Crear stream con o sin think flag, o con nivel específico."""
+                if isinstance(use_think, str) and use_think in ("low", "medium", "high", "max"):
+                    # String level for GPT-OSS / Qwen max
+                    try:
+                        return self.ollama_client.chat(**chat_kwargs, think=use_think)
+                    except Exception:
+                        return self.ollama_client.chat(**chat_kwargs)
+                elif use_think is True or use_think == "on" or use_think == "true":
                     return self.ollama_client.chat(**chat_kwargs, think=True)
-                return self.ollama_client.chat(**chat_kwargs)
+                elif use_think is False or use_think == "off" or use_think == "false":
+                    try:
+                        return self.ollama_client.chat(**chat_kwargs, think=False)
+                    except Exception:
+                        return self.ollama_client.chat(**chat_kwargs)
+                else:
+                    # Default: let the model decide
+                    return self.ollama_client.chat(**chat_kwargs)
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
             in_think_tag = False

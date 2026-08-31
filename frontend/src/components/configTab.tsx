@@ -38,6 +38,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const [pendingParams, setPendingParams] = useState<AdvancedParams>(DEFAULT_PARAMS);
   const [savedParams, setSavedParams] = useState<AdvancedParams>(DEFAULT_PARAMS);
   const [reasoningSupported, setReasoningSupported] = useState<boolean | null>(null);
+  const [reasoningOptions, setReasoningOptions] = useState<Array<{ value: string; label: string }>>([
+    { value: "", label: "Default" },
+    { value: "yes", label: "Sí" },
+    { value: "no", label: "No" },
+  ]);
+  const [reasoningParam, setReasoningParam] = useState<string | null>(null);
+  const [reasoningType, setReasoningType] = useState<string | null>(null);
   const [applyMessage, setApplyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
   const [uploadingContext, setUploadingContext] = useState(false);
@@ -196,7 +203,48 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
 
   const handleModelChange = (value: string) => {
     setPendingModel(value);
+    // Fetch reasoning options for the selected model
+    if (value && selectedProvider) {
+      fetchReasoningOptions(value, selectedProvider);
+    } else {
+      // Reset to default options
+      setReasoningOptions([
+        { value: "", label: "Default" },
+        { value: "yes", label: "Sí" },
+        { value: "no", label: "No" },
+      ]);
+      setReasoningSupported(null);
+    }
   };
+
+  const fetchReasoningOptions = useCallback(async (model: string, provider: string) => {
+    try {
+      const response = await configService.getModelCapabilities(model, provider);
+      if (response && response.reasoning_options) {
+        setReasoningOptions(response.reasoning_options);
+        setReasoningSupported(response.reasoning_supported ?? true);
+        setReasoningParam(response.reasoning_param ?? null);
+        setReasoningType(response.reasoning_type ?? null);
+      } else {
+        // Fallback to default options
+        setReasoningOptions([
+          { value: "", label: "Default" },
+        ]);
+        setReasoningSupported(null);
+        setReasoningParam(null);
+        setReasoningType(null);
+      }
+    } catch (err) {
+      console.error("Error fetching reasoning options:", err);
+      // Fallback to default options
+      setReasoningOptions([
+        { value: "", label: "Default" },
+      ]);
+      setReasoningSupported(null);
+      setReasoningParam(null);
+      setReasoningType(null);
+    }
+  }, []);
 
   /* ---- advanced parameter handlers ---- */
 
@@ -223,9 +271,10 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   };
 
   const handleReasoningChange = (value: string) => {
+    // Store the raw value; the backend will interpret it based on reasoning_param
     setPendingParams((prev) => ({
       ...prev,
-      reasoning: value === "" ? null : value === "yes",
+      reasoning: value === "" ? null : value,
     }));
   };
 
@@ -359,57 +408,6 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             ))
           )}
         </select>
-        <Button
-          onClick={handleApplyModel}
-          disabled={
-            savingModel ||
-            !pendingModel ||
-            (pendingModel === currentModel &&
-              selectedProvider === currentProvider &&
-              paramsEqual(pendingParams, savedParams))
-          }
-          variant="gradient"
-          className="mt-2 w-full"
-        >
-          {savingModel ? (
-            <>
-              <svg
-                className="animate-spin -ml-1 mr-2 h-4 w-4"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              Aplicando...
-            </>
-          ) : (
-            "Aplicar"
-          )}
-        </Button>
-        {applyMessage && (
-          <div
-            className={`mt-2 text-xs rounded-lg px-3 py-2 border ${
-              applyMessage.type === "success"
-                ? "text-green-700 bg-green-50 border-green-200"
-                : "text-red-600 bg-red-50 border-red-200"
-            }`}
-          >
-            {applyMessage.text}
-          </div>
-        )}
       </div>
 
 {/* Parámetros avanzados */}
@@ -487,28 +485,83 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
               value={
                 pendingParams.reasoning === null
                   ? ""
-                  : pendingParams.reasoning
-                    ? "yes"
-                    : "no"
+                  : String(pendingParams.reasoning)
               }
-              disabled={reasoningSupported === false}
+              disabled={reasoningSupported === false || reasoningOptions.length === 0}
               title={
                 reasoningSupported === false
                   ? "El modelo actual no soporta reasoning."
-                  : undefined
+                  : reasoningOptions.length === 0
+                    ? "Seleccioná un modelo para ver opciones de reasoning"
+                    : undefined
               }
               onChange={(e) => handleReasoningChange(e.target.value)}
               className={`rounded-lg border border-app-border bg-white px-2 py-1 text-xs text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light ${
-                reasoningSupported === false ? "opacity-50 cursor-not-allowed" : ""
+                reasoningSupported === false || reasoningOptions.length === 0 ? "opacity-50 cursor-not-allowed" : ""
               }`}
             >
-              <option value="">Default</option>
-              <option value="yes">S&iacute;</option>
-              <option value="no">No</option>
+              {reasoningOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
       </Collapsible>
+
+      {/* Single Apply button for model + provider + advanced params */}
+      <Button
+        onClick={handleApplyModel}
+        disabled={
+          savingModel ||
+          !pendingModel ||
+          (pendingModel === currentModel &&
+            selectedProvider === currentProvider &&
+            paramsEqual(pendingParams, savedParams))
+        }
+        variant="gradient"
+        className="w-full"
+      >
+        {savingModel ? (
+          <>
+            <svg
+              className="animate-spin -ml-1 mr-2 h-4 w-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            Aplicando...
+          </>
+        ) : (
+          "Aplicar"
+        )}
+      </Button>
+      {applyMessage && (
+        <div
+          className={`text-xs rounded-lg px-3 py-2 border ${
+            applyMessage.type === "success"
+              ? "text-green-700 bg-green-50 border-green-200"
+              : "text-red-600 bg-red-50 border-red-200"
+          }`}
+        >
+          {applyMessage.text}
+        </div>
+      )}
 
       {/* API keys de providers */}
       <Collapsible title="API keys de proveedores">
@@ -525,12 +578,26 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
             <div key={provider} className="rounded-lg border border-app-border bg-white p-2.5">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-medium text-app-text">{label}</span>
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isKeyConfigured(provider) ? "bg-green-500" : "bg-app-bg-tertiary"
-                  }`}
-                  title={isKeyConfigured(provider) ? "API key configurada" : "Sin API key"}
-                />
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isKeyConfigured(provider) ? "bg-green-500" : "bg-app-bg-tertiary"
+                    }`}
+                    title={isKeyConfigured(provider) ? "API key configurada" : "Sin API key"}
+                  />
+                  {isKeyConfigured(provider) && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteKey(provider)}
+                      disabled={savingKeyProvider !== null}
+                      className="text-app-text-secondary hover:text-red-500 transition-colors disabled:opacity-50"
+                      aria-label={`Eliminar API key de ${label}`}
+                      title="Eliminar API key guardada"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex gap-1.5">
                 <Input
@@ -545,22 +612,10 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
                   onClick={() => handleSaveKey(provider)}
                   disabled={savingKeyProvider !== null || !(keyInputs[provider] || "").trim()}
                   variant="gradient"
-                  className="px-3 text-xs shrink-0"
+                  className="px-4 text-xs shrink-0"
                 >
                   {savingKeyProvider === provider ? "..." : "Guardar"}
                 </Button>
-                {isKeyConfigured(provider) && (
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteKey(provider)}
-                    disabled={savingKeyProvider !== null}
-                    className="shrink-0 rounded-lg px-2 text-app-text-secondary hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-                    aria-label={`Eliminar API key de ${label}`}
-                    title="Eliminar API key guardada"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
               </div>
             </div>
           ))}

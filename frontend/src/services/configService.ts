@@ -64,18 +64,26 @@ export interface SetupCompletedResponse {
 export interface AdvancedParams {
   temperature: number | null;
   top_p: number | null;
-  reasoning: boolean | null;
+  reasoning: string | null;
 }
 
 export interface ParametersResponse {
   status: string;
   temperature: number | null;
   top_p: number | null;
-  reasoning: boolean | null;
+  reasoning: string | null;
   model: string | null;
   provider: string;
   /** Whether the current model declaratively supports reasoning (null = unknown). */
   reasoning_supported: boolean | null;
+}
+
+export interface ModelCapabilitiesResponse {
+  status: string;
+  reasoning_supported: boolean | null;
+  reasoning_options: Array<{ value: string; label: string }>;
+  reasoning_param: string | null;
+  reasoning_type: string | null;
 }
 
 export const configService = {
@@ -87,6 +95,18 @@ export const configService = {
     const response = await fetch(url, {
       method: "GET",
     });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  /** Get model capabilities (reasoning options, etc.) for a specific model/provider. */
+  async getModelCapabilities(model: string, provider: string): Promise<ModelCapabilitiesResponse> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/config/models/capabilities?model=${encodeURIComponent(model)}&provider=${encodeURIComponent(provider)}`,
+      { method: "GET" }
+    );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }

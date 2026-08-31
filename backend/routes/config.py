@@ -325,9 +325,11 @@ def refresh_providers_cache() -> None:
             api_key = provider_keys.resolve_api_key(provider_id.upper())
             if not api_key:
                 continue
+            # Sync catalog from models.dev (rate-limited to 24h).
             result = model_catalog.sync_catalog(provider_id)
-            if result.get("status") == "success" and result.get("models", 0) > 0:
-                models = model_catalog.get_models(provider_id)
+            # Whether sync ran or was skipped (fresh catalog), get models.
+            models = model_catalog.get_models(provider_id)
+            if models:
                 cached.append({
                     "provider": provider_id.upper(),
                     "label": _PROVIDER_LABELS.get(provider_id, provider_id),

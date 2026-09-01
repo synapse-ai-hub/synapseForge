@@ -51,6 +51,8 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   ]);
   const [reasoningParam, setReasoningParam] = useState<string | null>(null);
   const [reasoningType, setReasoningType] = useState<string | null>(null);
+  const [budgetMin, setBudgetMin] = useState<number | null>(null);
+  const [budgetMax, setBudgetMax] = useState<number | null>(null);
   const [applyMessage, setApplyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
   const [uploadingContext, setUploadingContext] = useState(false);
@@ -164,6 +166,10 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       const effective = prov || provider;
       setSelectedProvider(effective);
       setMaxTurns(typeof cw.max_turns === "number" ? cw.max_turns : -1);
+      // Fetch reasoning options for the current model so budget/effort UI shows.
+      if (model && effective) {
+        fetchReasoningOptions(model, effective);
+      }
       // Advanced parameters: null = "default" (agent frontmatter value).
       if (prm && prm.status === "success") {
         const p: AdvancedParams = {
@@ -232,6 +238,8 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
         setReasoningSupported(response.reasoning_supported ?? true);
         setReasoningParam(response.reasoning_param ?? null);
         setReasoningType(response.reasoning_type ?? null);
+        setBudgetMin(response.budget_min ?? null);
+        setBudgetMax(response.budget_max ?? null);
       } else {
         // Fallback to default options
         setReasoningOptions([
@@ -517,8 +525,19 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
 
           {/* Budget Tokens (if model uses budget) */}
           {reasoningType === "budget_tokens" && (
-            <div className="flex items-center justify-between pt-2 border-t border-app-border">
-              <label className="text-xs text-app-text">Presupuesto de tokens</label>
+            <div className="pt-2 border-t border-app-border">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-app-text">Presupuesto de tokens</label>
+                <span className="text-[10px] text-app-text-secondary">
+                  {budgetMin !== null && budgetMax !== null
+                    ? `Entre ${budgetMin} y ${budgetMax}`
+                    : budgetMin !== null
+                      ? `Mín: ${budgetMin}`
+                      : budgetMax !== null
+                        ? `Máx: ${budgetMax}`
+                        : ""}
+                </span>
+              </div>
               <input
                 type="number"
                 value={pendingParams.budget_tokens ?? ""}
@@ -527,7 +546,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
                   const val = e.target.value === "" ? null : Number(e.target.value);
                   setPendingParams((prev) => ({ ...prev, budget_tokens: val }));
                 }}
-                className="w-28 rounded-lg border border-app-border bg-white px-2 py-1 text-xs text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light"
+                className="w-full rounded-lg border border-app-border bg-white px-2 py-1 text-xs text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light"
               />
             </div>
           )}

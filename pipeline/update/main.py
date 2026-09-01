@@ -17,6 +17,78 @@ from ..init.config_handler import load_config, save_colors
 from ..init.placeholder_handler import replace_all_placeholders
 
 
+def _smart_merge(backup_path: str, target_path: str) -> None:
+    """Merge two text files by combining unique lines (backup + new)."""
+    try:
+        with open(backup_path, "r", encoding="utf-8") as f:
+            backup_lines = [line.rstrip("\n") for line in f]
+        with open(target_path, "r", encoding="utf-8") as f:
+            target_lines = [line.rstrip("\n") for line in f]
+        # Combine unique lines preserving order (backup first, then new additions)
+        seen = set()
+        merged = []
+        for line in backup_lines + target_lines:
+            if line == "":
+                merged.append(line)
+            elif line not in seen:
+                seen.add(line)
+                merged.append(line)
+        with open(target_path, "w", encoding="utf-8") as f:
+            for line in merged:
+                f.write(line + "\n")
+    except Exception:
+        pass
+
+
+def _select_preserve_items(backup_project: Path) -> list[Path]:
+    """Open a simple tkinter GUI to select files/folders from backup to preserve."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, ttk
+    except ImportError:
+        return []
+
+    selected: list[Path] = []
+
+    def add_selection():
+        # Allow selecting files
+        files = filedialog.askopenfilenames(
+            initialdir=str(backup_project),
+            title="Seleccionar archivos del backup para preservar",
+        )
+        for f in files:
+            p = Path(f)
+            if p.exists() and backup_project in p.parents or p == backup_project:
+                selected.append(p)
+        # Allow selecting folders
+        folder = filedialog.askdirectory(
+            initialdir=str(backup_project),
+            title="Seleccionar carpeta del backup para preservar",
+        )
+        if folder:
+            p = Path(folder)
+            if p.exists() and (backup_project in p.parents or p == backup_project):
+                selected.append(p)
+        # Deduplicate
+        unique = []
+        for s in selected:
+            if s not in unique:
+                unique.append(s)
+        selected.clear()
+        selected.extend(unique)
+        root.destroy()
+
+    root = tk.Tk()
+    root.title("synapseForge — Seleccionar elementos a preservar")
+    root.geometry("500x200")
+    label = tk.Label(root, text="Seleccioná archivos o carpetas del backup que querés preservar en el proyecto actualizado.", wraplength=450)
+    label.pack(pady=10)
+    btn = tk.Button(root, text="Seleccionar archivos / carpetas", command=add_selection)
+    btn.pack(pady=10)
+    root.mainloop()
+    return selected
+
+
 def _get_backup_dir() -> Path:
     """Return ``~/.config/synapseForge/backup/``, creating it if needed."""
     import os
@@ -121,7 +193,26 @@ def run_update(target_dir: str) -> None:
         print("\n[3/5] Downloading & extracting new template ...")
         extract_template(target)
 
-        # Preserve user data (agent.db) and config (replace.json) from backup
+        # Mandatory preservation: config folder, logos, agent.db, README.md
+        # Config folder
+        config_backup = backup_project / "config"
+        config_target = target / "config"
+        if config_backup.exists():
+            if config_target.exists():
+                shutil.rmtree(config_target)
+            shutil.copytree(str(config_backup), str(config_target))
+            print("  Preserved config/ folder from backup.")
+
+        # Logos
+        for logo_name in ["logo_cliente.png", "logo_empresa.png"]:
+            logo_backup = backup_project / "frontend" / "src" / "assets" / logo_name
+            logo_target = target / "frontend" / "src" / "assets" / logo_name
+            if logo_backup.exists():
+                logo_target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(logo_backup), str(logo_target))
+                print(f"  Preserved logo: {logo_name}")
+
+        # Agent DB
         agent_db_backup = backup_project / "backend" / "agent" / "agent_db" / "agent.db"
         agent_db_target = target / "backend" / "agent" / "agent_db" / "agent.db"
         if agent_db_backup.exists():
@@ -129,12 +220,46 @@ def run_update(target_dir: str) -> None:
             shutil.copy2(str(agent_db_backup), str(agent_db_target))
             print("  Preserved agent.db from backup.")
 
-        replace_json_backup = backup_project / "config" / "replace.json"
-        replace_json_target = target / "config" / "replace.json"
-        if replace_json_backup.exists():
-            replace_json_target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(replace_json_backup), str(replace_json_target))
-            print("  Preserved config/replace.json from backup.")
+        # README.md (project root)
+        readme_backup = backup_project / "README.md"
+        readme_target = target / "README.md"
+        if readme_backup.exists():
+            shutil.copy2(str(readme_backup), str(readme_target))
+            print("  Preserved README.md from backup.")
+
+        # Smart merge for files that may have user + owner changes
+        smart_merge_files = [
+            ".env",
+            ".env.example",
+            ".dockerignore",
+            "docker-compose.yaml",
+            "Dockerfile",
+            "requirements.txt",
+        ]
+        for fname in smart_merge_files:
+            backup_file = backup_project / fname
+            target_file = target / fname
+            if backup_file.exists() and target_file.exists():
+                _smart_merge(str(backup_file), str(target_file))
+                print(f"  Smart-merged: {fname}")
+            elif backup_file.exists() and not target_file.exists():
+                shutil.copy2(str(backup_file), str(target_file))
+                print(f"  Copied from backup: {fname}")
+
+        # Preserve user-selected items from backup to new project
+        selected_items = _select_preserve_items(backup_project)
+        for item_path in selected_items:
+            rel_path = item_path.relative_to(backup_project)
+            target_path = target / rel_path
+            if item_path.is_dir():
+                if target_path.exists():
+                    shutil.rmtree(target_path)
+                shutil.copytree(str(item_path), str(target_path))
+                print(f"  Preserved folder from backup: {rel_path}")
+            else:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(item_path), str(target_path))
+                print(f"  Preserved file from backup: {rel_path}")
 
         print("\n[4/5] Re-applying placeholders ...")
         replace_all_placeholders(target, config)

@@ -40,55 +40,6 @@ def _smart_merge(backup_path: str, target_path: str) -> None:
         pass
 
 
-def _select_preserve_items(backup_project: Path) -> list[Path]:
-    """Open a simple tkinter GUI to select files/folders from backup to preserve."""
-    try:
-        import tkinter as tk
-        from tkinter import filedialog, messagebox, ttk
-    except ImportError:
-        return []
-
-    selected: list[Path] = []
-
-    def add_selection():
-        # Allow selecting files
-        files = filedialog.askopenfilenames(
-            initialdir=str(backup_project),
-            title="Seleccionar archivos del backup para preservar",
-        )
-        for f in files:
-            p = Path(f)
-            if p.exists() and backup_project in p.parents or p == backup_project:
-                selected.append(p)
-        # Allow selecting folders
-        folder = filedialog.askdirectory(
-            initialdir=str(backup_project),
-            title="Seleccionar carpeta del backup para preservar",
-        )
-        if folder:
-            p = Path(folder)
-            if p.exists() and (backup_project in p.parents or p == backup_project):
-                selected.append(p)
-        # Deduplicate
-        unique = []
-        for s in selected:
-            if s not in unique:
-                unique.append(s)
-        selected.clear()
-        selected.extend(unique)
-        root.destroy()
-
-    root = tk.Tk()
-    root.title("synapseForge — Seleccionar elementos a preservar")
-    root.geometry("500x200")
-    label = tk.Label(root, text="Seleccioná archivos o carpetas del backup que querés preservar en el proyecto actualizado.", wraplength=450)
-    label.pack(pady=10)
-    btn = tk.Button(root, text="Seleccionar archivos / carpetas", command=add_selection)
-    btn.pack(pady=10)
-    root.mainloop()
-    return selected
-
-
 def _get_backup_dir() -> Path:
     """Return ``~/.config/synapseForge/backup/``, creating it if needed."""
     import os
@@ -231,6 +182,7 @@ def run_update(target_dir: str) -> None:
         smart_merge_files = [
             ".env",
             ".env.example",
+            ".gitignore",
             ".dockerignore",
             "docker-compose.yaml",
             "Dockerfile",
@@ -245,21 +197,6 @@ def run_update(target_dir: str) -> None:
             elif backup_file.exists() and not target_file.exists():
                 shutil.copy2(str(backup_file), str(target_file))
                 print(f"  Copied from backup: {fname}")
-
-        # Preserve user-selected items from backup to new project
-        selected_items = _select_preserve_items(backup_project)
-        for item_path in selected_items:
-            rel_path = item_path.relative_to(backup_project)
-            target_path = target / rel_path
-            if item_path.is_dir():
-                if target_path.exists():
-                    shutil.rmtree(target_path)
-                shutil.copytree(str(item_path), str(target_path))
-                print(f"  Preserved folder from backup: {rel_path}")
-            else:
-                target_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(str(item_path), str(target_path))
-                print(f"  Preserved file from backup: {rel_path}")
 
         print("\n[4/5] Re-applying placeholders ...")
         replace_all_placeholders(target, config)

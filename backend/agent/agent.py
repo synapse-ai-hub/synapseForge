@@ -45,6 +45,8 @@ from backend.agent.utils.contract import (
 
 from backend.agent.tools import Tools
 
+from backend.agent.utils.model_catalog import translate_reasoning
+
 # Marcadores de comentarios usados en este proyecto:
 # TODO   : trabajo pendiente, todavía no implementado.
 # FIXME  : hay un bug conocido; este código falla o es incorrecto.
@@ -588,6 +590,7 @@ class Agent():
                           tools: list | None = None,
                           json_format: bool = False,
                           reasoning: bool = True,
+                          budget_tokens: int | None = None,
                           provider: str | None = None,
                           **kwargs) -> ContractResponse:
         """Send a chat completion and return content + tool_calls.
@@ -609,15 +612,18 @@ class Agent():
             json_format: Force JSON output. For Groq: adds ``response_format={"type": "json_object"}``.
                          For Ollama: adds ``format="json"`` to the request.
             reasoning: Whether to allow the model to reason (thinking). When
-                       ``False``, reasoning is disabled on providers that support
-                       it (Ollama ``think=False``, Groq ``reasoning_effort="none"``)
-                       with a fallback so models that don't support the flag are
-                       not broken.
-            provider: Optional provider override (``"GROQ"`` or ``"LOCAL"``).
-                      When ``None``, falls back to ``self.provider`` so existing
-                      callers keep their current behavior. Pass an explicit value
-                      from the agent loop when a sub-agent overrides the provider
-                      in its frontmatter.
+                        ``False``, reasoning is disabled on providers that support
+                        it (Ollama ``think=False``, Groq ``reasoning_effort="none"``)
+                        with a fallback so models that don't support the flag are
+                        not broken.
+            budget_tokens: Token budget for reasoning (OpenRouter/Gemini).
+                        ``None`` means the provider default.
+            provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
+                       ``"GOOGLE"``, or ``"LOCAL"``).
+                       When ``None``, falls back to ``self.provider`` so existing
+                       callers keep their current behavior. Pass an explicit value
+                       from the agent loop when a sub-agent overrides the provider
+                       in its frontmatter.
             **kwargs: Forwarded to the provider client.
 
         Returns:
@@ -668,12 +674,16 @@ class Agent():
                     oa_kwargs["tool_choice"] = "auto"
                 if json_format:
                     oa_kwargs["response_format"] = {"type": "json_object"}
-                if is_groq and (not reasoning or reasoning in ("off", "false", "none")):
-                    # Disable reasoning
-                    oa_kwargs["reasoning_effort"] = "none"
-                elif is_groq and reasoning and isinstance(reasoning, str) and reasoning not in ("on", "off", "true", "false", "default"):
-                    # Reasoning is a specific effort level (e.g., "low", "medium", "high")
-                    oa_kwargs["reasoning_effort"] = reasoning
+
+                # Use translator for reasoning (Groq, OpenRouter, Google)
+                reasoning_kwargs = translate_reasoning(
+                    provider=effective_provider,
+                    reasoning_value=reasoning,
+                    model_id=model,
+                    budget_tokens=budget_tokens,
+                )
+                oa_kwargs.update(reasoning_kwargs)
+
                 try:
                     response = await client.chat.completions.create(
                         model=model,
@@ -684,6 +694,7 @@ class Agent():
                 except Exception as _ex:
                     if is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
                         oa_kwargs.pop("reasoning_effort", None)
+                        oa_kwargs.pop("reasoning", None)
                         response = await client.chat.completions.create(
                             model=model,
                             messages=msgs,
@@ -776,6 +787,17 @@ class Agent():
                 gemini_tools = self._to_gemini_tools(tools)
                 if gemini_tools:
                     config_kwargs['tools'] = gemini_tools
+
+                # Use translator for reasoning (Google)
+                reasoning_kwargs = translate_reasoning(
+                    provider=effective_provider,
+                    reasoning_value=reasoning,
+                    model_id=model,
+                    budget_tokens=budget_tokens,
+                )
+                if "thinking_config" in reasoning_kwargs:
+                    config_kwargs["thinking_config"] = reasoning_kwargs["thinking_config"]
+
                 _google_start = time.time()
                 response = await self.google_client.aio.models.generate_content(
                     model=model,
@@ -851,6 +873,7 @@ class Agent():
                              stream_cancel_event=None,
                              provider: str | None = None,
                              reasoning: bool = True,
+                             budget_tokens: int | None = None,
                              **kwargs):
         """Async generator that streams LLM response chunks.
 
@@ -876,17 +899,20 @@ class Agent():
             cleaned_output: Apply ``self.clean()`` to text chunks.
             tools: Tool definitions for function calling.
             stream_cancel_event: Optional event to cancel mid-stream.
-            provider: Optional provider override (``"GROQ"`` or ``"LOCAL"``).
-                      When ``None``, falls back to ``self.provider`` so existing
-                      callers keep their current behavior. Pass an explicit value
-                      from the agent loop when a sub-agent overrides the provider
-                      in its frontmatter.
+provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
+                       ``"GOOGLE"``, or ``"LOCAL"``).
+                       When ``None``, falls back to ``self.provider`` so existing
+                       callers keep their current behavior. Pass an explicit value
+                       from the agent loop when a sub-agent overrides the provider
+                       in its frontmatter.
             reasoning: Whether to allow the model to reason (thinking). When
-                       ``False``, reasoning is disabled on providers that support
-                       it (Ollama skips the ``think=True`` attempt, Groq
-                       ``reasoning_effort="none"``) with a fallback so models
-                       that don't support the flag are not broken. Mirrors the
-                       handling in :meth:`llm_process`.
+                        ``False``, reasoning is disabled on providers that support
+                        it (Ollama skips the ``think=True`` attempt, Groq
+                        ``reasoning_effort="none"``) with a fallback so models
+                        that don't support the flag are not broken. Mirrors the
+                        handling in :meth:`llm_process`.
+            budget_tokens: Token budget for reasoning (OpenRouter/Gemini).
+                        ``None`` means the provider default.
             **kwargs: Forwarded to the provider client.
 
         Yields:
@@ -929,17 +955,21 @@ class Agent():
             if tools:
                 oa_kwargs["tools"] = tools
                 oa_kwargs["tool_choice"] = "auto"
+
+            # Use translator for reasoning (Groq, OpenRouter, Google)
+            reasoning_kwargs = translate_reasoning(
+                provider=effective_provider,
+                reasoning_value=reasoning,
+                model_id=model,
+                budget_tokens=budget_tokens,
+            )
+            oa_kwargs.update(reasoning_kwargs)
+
             if is_groq:
                 # Groq: pedir reasoning como campo separado (delta.reasoning_content).
                 # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
                 # lo rechaza, reintentar sin el campo (igual que en llm_process).
                 oa_kwargs["reasoning_format"] = "parsed"
-                if not reasoning or reasoning in ("off", "false", "none"):
-                    # Disable reasoning
-                    oa_kwargs["reasoning_effort"] = "none"
-                elif isinstance(reasoning, str) and reasoning not in ("on", "off", "true", "false", "default"):
-                    # Specific effort level
-                    oa_kwargs["reasoning_effort"] = reasoning
             else:
                 # OpenRouter: pedir el usage en el último chunk del stream.
                 oa_kwargs["stream_options"] = {"include_usage": True}
@@ -951,6 +981,7 @@ class Agent():
                     stream = await client.chat.completions.create(**oa_kwargs)
                 elif is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
                     oa_kwargs.pop("reasoning_effort", None)
+                    oa_kwargs.pop("reasoning", None)
                     stream = await client.chat.completions.create(**oa_kwargs)
                 else:
                     raise
@@ -1234,6 +1265,16 @@ class Agent():
             gemini_tools = self._to_gemini_tools(tools)
             if gemini_tools:
                 config_kwargs['tools'] = gemini_tools
+
+            # Use translator for reasoning (Google)
+            reasoning_kwargs = translate_reasoning(
+                provider=effective_provider,
+                reasoning_value=reasoning,
+                model_id=model,
+                budget_tokens=budget_tokens,
+            )
+            if "thinking_config" in reasoning_kwargs:
+                config_kwargs["thinking_config"] = reasoning_kwargs["thinking_config"]
 
             stream = await self.google_client.aio.models.generate_content_stream(
                 model=model,

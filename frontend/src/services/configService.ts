@@ -65,6 +65,7 @@ export interface AdvancedParams {
   temperature: number | null;
   top_p: number | null;
   reasoning: string | null;
+  budget_tokens: number | null;
 }
 
 export interface ParametersResponse {
@@ -72,6 +73,7 @@ export interface ParametersResponse {
   temperature: number | null;
   top_p: number | null;
   reasoning: string | null;
+  budget_tokens: number | null;
   model: string | null;
   provider: string;
   /** Whether the current model declaratively supports reasoning (null = unknown). */
@@ -84,6 +86,8 @@ export interface ModelCapabilitiesResponse {
   reasoning_options: Array<{ value: string; label: string }>;
   reasoning_param: string | null;
   reasoning_type: string | null;
+  budget_min: number | null;
+  budget_max: number | null;
 }
 
 export const configService = {
@@ -128,6 +132,7 @@ export const configService = {
         temperature: params ? params.temperature : null,
         top_p: params ? params.top_p : null,
         reasoning: params ? params.reasoning : null,
+        budget_tokens: params ? params.budget_tokens : null,
       }),
     });
     const result = await response.json().catch(() => null);

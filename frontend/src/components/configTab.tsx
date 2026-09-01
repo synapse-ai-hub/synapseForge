@@ -16,10 +16,16 @@ const DEFAULT_PARAMS: AdvancedParams = {
   temperature: null,
   top_p: null,
   reasoning: null,
+  budget_tokens: null,
 };
 
 function paramsEqual(a: AdvancedParams, b: AdvancedParams): boolean {
-  return a.temperature === b.temperature && a.top_p === b.top_p && a.reasoning === b.reasoning;
+  return (
+    a.temperature === b.temperature &&
+    a.top_p === b.top_p &&
+    a.reasoning === b.reasoning &&
+    a.budget_tokens === b.budget_tokens
+  );
 }
 
 export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) {
@@ -164,6 +170,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
           temperature: prm.temperature,
           top_p: prm.top_p,
           reasoning: prm.reasoning,
+          budget_tokens: prm.budget_tokens,
         };
         setPendingParams(p);
         setSavedParams(p);
@@ -507,6 +514,23 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
               ))}
             </select>
           </div>
+
+          {/* Budget Tokens (if model uses budget) */}
+          {reasoningType === "budget_tokens" && (
+            <div className="flex items-center justify-between pt-2 border-t border-app-border">
+              <label className="text-xs text-app-text">Presupuesto de tokens</label>
+              <input
+                type="number"
+                value={pendingParams.budget_tokens ?? ""}
+                placeholder="Ej. 1024"
+                onChange={(e) => {
+                  const val = e.target.value === "" ? null : Number(e.target.value);
+                  setPendingParams((prev) => ({ ...prev, budget_tokens: val }));
+                }}
+                className="w-28 rounded-lg border border-app-border bg-white px-2 py-1 text-xs text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light"
+              />
+            </div>
+          )}
         </div>
       </Collapsible>
 

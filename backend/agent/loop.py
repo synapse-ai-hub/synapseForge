@@ -361,6 +361,7 @@ class AgentLoop:
             temperature = 0.0
             top_p = 0.5
             reasoning = True  # Default: reasoning enabled (boolean or string level)
+            budget_tokens = None
             max_tokens = 8192
             if parameters:
                 if parameters.get("temperature") is not None:
@@ -392,6 +393,9 @@ class AgentLoop:
             override_reasoning = _read_param_override("param_reasoning")
             if override_reasoning is not None:
                 reasoning = override_reasoning
+            override_budget = _read_param_override("param_budget_tokens")
+            if override_budget is not None:
+                budget_tokens = override_budget
 
             # Resolve this loop's effective provider. If the agent's frontmatter
             # sets `parameters.provider`, use it for this loop only (passed
@@ -655,7 +659,7 @@ class AgentLoop:
                             model=model, messages=messages, tools=tools,
                             stream_cancel_event=stream_cancel_event,
                             temperature=temperature, top_p=top_p, max_tokens=max_tokens,
-                            reasoning=reasoning,
+                            reasoning=reasoning, budget_tokens=budget_tokens,
                             provider=effective_provider,
                         ):
                             if event["type"] == "chunk":

@@ -449,50 +449,67 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
         "none": "Ninguno",
     }
 
+    # Collect all values first to check if "default" is already present.
+    all_effort_values: list[str] = []
+    budget_min: int | None = None
+    budget_max: int | None = None
+    has_toggle = False
+    for opt in opts:
+        if opt.get("type") == "effort":
+            all_effort_values.extend(opt.get("values") or [])
+        elif opt.get("type") == "budget_tokens":
+            budget_min = opt.get("min")
+            budget_max = opt.get("max")
+        elif opt.get("type") == "toggle":
+            has_toggle = True
+
+    has_default = "default" in all_effort_values
+
+    # Build budget_min/budget_max info for the frontend.
+    budget_info: dict[str, Any] = {}
+    if any(o.get("type") == "budget_tokens" for o in opts):
+        budget_info["budget_min"] = budget_min
+        budget_info["budget_max"] = budget_max
+
+    # Add a single "Default" option at the top if models.dev doesn't include it.
+    if not has_default:
+        result["reasoning_options"].append(
+            {"value": "default", "label": "Default"}
+        )
+
     for opt in opts:
         opt_type = opt.get("type")
 
         if opt_type == "effort":
             result["reasoning_type"] = "effort_levels"
             values = opt.get("values") or []
-            result["reasoning_options"].append(
-                {"value": "default", "label": "Default"}
-            )
             for v in values:
-                result["reasoning_options"].append({
-                    "value": v,
-                    "label": effort_labels.get(v, v),
-                })
+                # Map "none" to "Desactivado" instead of showing both.
+                if v == "none":
+                    result["reasoning_options"].append({
+                        "value": "off",
+                        "label": "Desactivado",
+                    })
+                else:
+                    result["reasoning_options"].append({
+                        "value": v,
+                        "label": effort_labels.get(v, v),
+                    })
 
         elif opt_type == "budget_tokens":
             result["reasoning_type"] = "budget_tokens"
-            min_tok = opt.get("min")
-            max_tok = opt.get("max")
-            result["reasoning_options"].append(
-                {"value": "default", "label": "Default (dinámico)"}
-            )
-            if min_tok == 0 or min_tok is None:
-                result["reasoning_options"].append(
-                    {"value": "0", "label": "Desactivado"}
-                )
-            budget_values = [128, 1024, 2048, 4096, 8192, 16384, 32768]
-            for b in budget_values:
-                if max_tok and b > max_tok:
-                    break
-                if min_tok and b < min_tok:
-                    continue
-                label = f"{b // 1024}K tokens" if b >= 1024 else f"{b} tokens"
-                result["reasoning_options"].append({"value": str(b), "label": label})
+            min_tok = budget_min
+            max_tok = budget_max
+            # Only show the text input hint, not preset values.
+            result["reasoning_options"] = [
+                {"value": "default", "label": "Default"}
+            ]
 
         elif opt_type == "toggle":
             if result["reasoning_type"] is None:
                 result["reasoning_type"] = "boolean"
-            result["reasoning_options"].append(
-                {"value": "default", "label": "Default"}
-            )
-            result["reasoning_options"].append(
-                {"value": "on", "label": "Activado"}
-            )
+            # Only show "Desactivado" — "Activado" is implied by
+            # selecting any effort/budget level.
             result["reasoning_options"].append(
                 {"value": "off", "label": "Desactivado"}
             )
@@ -503,7 +520,107 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
     if not result["reasoning_options"]:
         result["reasoning_options"] = [{"value": "default", "label": "Default"}]
 
+    # Attach budget info so the frontend can render the text input.
+    if budget_info:
+        result["budget_min"] = budget_info.get("budget_min")
+        result["budget_max"] = budget_info.get("budget_max")
+
     return result
+
+
+def translate_reasoning(
+    provider: str,
+    reasoning_value: str | bool | None,
+    model_id: str | None = None,
+    budget_tokens: int | None = None,
+) -> dict[str, Any]:
+    """Translate a user-facing reasoning value into provider-specific kwargs.
+
+    Takes the abstract reasoning value from the UI (effort level, ``"off"``,
+    ``"default"``, or ``None``) and returns the correct keyword arguments
+    for the provider's API call.
+
+    Args:
+        provider: Provider name (``"openrouter"``, ``"groq"``, ``"google"``).
+        reasoning_value: User-selected value (``"default"``, ``"off"``,
+            ``"low"``, ``"medium"``, ``"high"``, ``"max"``, ``"xhigh"``,
+            ``"minimal"``, ``True``, ``False``, or ``None``).
+        model_id: Optional model ID for catalog lookup.
+        budget_tokens: Optional token budget (overrides effort-based defaults).
+
+    Returns:
+        Dict of kwargs to merge into the API call.
+    """
+    prov = (provider or "").upper()
+    val = reasoning_value
+
+    # --- Normalize legacy boolean ---
+    if val is True or val == "on" or val == "true":
+        # Boolean true → let the provider decide (don't pass anything).
+        return {}
+    if val is False or val == "off" or val == "false":
+        val = "off"
+    if val == "none":
+        val = "off"
+
+    # --- Default / None → don't pass reasoning param ---
+    if val is None or val == "default" or val == "":
+        return {}
+
+    # --- "off" → disable reasoning ---
+    if val == "off":
+        if prov == "GROQ":
+            return {"reasoning_effort": "none"}
+        if prov == "OPENROUTER":
+            return {"reasoning": False}
+        if prov == "GOOGLE":
+            # Gemini: set thinking budget to 0 to disable.
+            return {"thinking_config": {"thinking_budget": 0}}
+        return {}
+
+    # --- Budget tokens take precedence when provided ---
+    if budget_tokens is not None and budget_tokens > 0:
+        if prov == "OPENROUTER":
+            return {"reasoning": {"budget_tokens": budget_tokens}}
+        if prov == "GROQ":
+            # Groq doesn't support budget_tokens; use effort level.
+            return {"reasoning_effort": _groq_effort_from_tokens(budget_tokens)}
+        if prov == "GOOGLE":
+            return {"thinking_config": {"thinking_budget": budget_tokens}}
+        return {}
+
+    # --- Effort level ---
+    if prov == "GROQ":
+        # Groq accepts: "low", "medium", "high" (no "none" here, handled above).
+        groq_val = val if val in ("low", "medium", "high") else "medium"
+        return {"reasoning_effort": groq_val}
+
+    if prov == "OPENROUTER":
+        return {"reasoning": {"effort": val}}
+
+    if prov == "GOOGLE":
+        # Gemini: translate effort to budget_tokens approximation.
+        effort_to_budget = {
+            "minimal": 128,
+            "low": 1024,
+            "medium": 8192,
+            "high": 32768,
+            "xhigh": 65536,
+            "max": 131072,
+        }
+        budget = effort_to_budget.get(val, 8192)
+        return {"thinking_config": {"thinking_budget": budget}}
+
+    return {}
+
+
+def _groq_effort_from_tokens(tokens: int) -> str:
+    """Map a token budget to a Groq reasoning_effort level."""
+    if tokens <= 1024:
+        return "low"
+    if tokens <= 8192:
+        return "medium"
+    return "high"
 
 
 def list_configured_providers() -> list[str]:

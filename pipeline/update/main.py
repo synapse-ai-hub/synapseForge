@@ -19,9 +19,9 @@ from ..init.placeholder_handler import replace_all_placeholders
 
 def _get_backup_dir() -> Path:
     """Return ``~/.config/synapseForge/backup/``, creating it if needed."""
-    from backend.agent.utils.config_dir import get_config_dir
-
-    backup = get_config_dir() / "backup"
+    import os
+    base = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config"))
+    backup = base / "synapseForge" / "backup"
     backup.mkdir(parents=True, exist_ok=True)
     return backup
 
@@ -120,6 +120,21 @@ def run_update(target_dir: str) -> None:
 
         print("\n[3/5] Downloading & extracting new template ...")
         extract_template(target)
+
+        # Preserve user data (agent.db) and config (replace.json) from backup
+        agent_db_backup = backup_project / "backend" / "agent" / "agent_db" / "agent.db"
+        agent_db_target = target / "backend" / "agent" / "agent_db" / "agent.db"
+        if agent_db_backup.exists():
+            agent_db_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(agent_db_backup), str(agent_db_target))
+            print("  Preserved agent.db from backup.")
+
+        replace_json_backup = backup_project / "config" / "replace.json"
+        replace_json_target = target / "config" / "replace.json"
+        if replace_json_backup.exists():
+            replace_json_target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(replace_json_backup), str(replace_json_target))
+            print("  Preserved config/replace.json from backup.")
 
         print("\n[4/5] Re-applying placeholders ...")
         replace_all_placeholders(target, config)

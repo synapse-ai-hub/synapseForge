@@ -457,6 +457,7 @@ _PARAM_KEYS = {
     "temperature": "param_temperature",
     "top_p": "param_top_p",
     "reasoning": "param_reasoning",
+    "budget_tokens": "param_budget_tokens",
 }
 """Mapping of parameter name → ``config_kv`` key. Persisted values use the
 literal string ``"null"`` for "default" (no override)."""
@@ -507,8 +508,9 @@ def _read_param(key: str) -> Any:
         key: ``config_kv`` key (see ``_PARAM_KEYS``).
 
     Returns:
-        The parsed value (``float`` for temperature/top_p, ``bool`` for
-        reasoning) or ``None`` when unset/"null" (default).
+        The parsed value (``float`` for temperature/top_p, ``str`` for
+        reasoning, ``int`` for budget_tokens) or ``None`` when unset/"null"
+        (default).
     """
     if session_manager is None:
         return None
@@ -517,7 +519,9 @@ def _read_param(key: str) -> Any:
         return None
     try:
         if key == _PARAM_KEYS["reasoning"]:
-            return raw.strip().lower() == "true"
+            return raw.strip().lower()
+        if key == _PARAM_KEYS["budget_tokens"]:
+            return int(float(raw))
         return float(raw)
     except (TypeError, ValueError):
         return None
@@ -555,6 +559,7 @@ async def get_parameters() -> JSONResponse:
                 "temperature": _read_param(_PARAM_KEYS["temperature"]),
                 "top_p": _read_param(_PARAM_KEYS["top_p"]),
                 "reasoning": _read_param(_PARAM_KEYS["reasoning"]),
+                "budget_tokens": _read_param(_PARAM_KEYS["budget_tokens"]),
                 "model": current_model,
                 "provider": current_provider or "",
                 "reasoning_supported": reasoning_supported,
@@ -727,14 +732,28 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             content={"status": "error", "message": f"top_p {top_p_err}"},
         )
     reasoning = data.get("reasoning", None)
-    if reasoning is not None and not isinstance(reasoning, bool):
+    if reasoning is not None and not isinstance(reasoning, str):
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
-                "message": "reasoning must be a boolean or null (default).",
+                "message": "reasoning must be a string or null (default).",
             },
         )
+    budget_tokens = data.get("budget_tokens", None)
+    if budget_tokens is not None:
+        try:
+            budget_tokens = int(budget_tokens)
+            if budget_tokens < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": "budget_tokens must be a positive integer or null.",
+                },
+            )
 
     if agent is None:
         return JSONResponse(
@@ -746,7 +765,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
         )
 
     # --- Reasoning capacity validation (declarative catalog check) ---
-    if reasoning:
+    if reasoning and reasoning not in ("default", ""):
         try:
             if provider.upper() == "LOCAL":
                 from backend.agent.utils.model_resolver import model_supports_reasoning
@@ -798,6 +817,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             _persist_param(_PARAM_KEYS["temperature"], temperature)
             _persist_param(_PARAM_KEYS["top_p"], top_p)
             _persist_param(_PARAM_KEYS["reasoning"], reasoning)
+            _persist_param(_PARAM_KEYS["budget_tokens"], budget_tokens)
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo persistir el modelo o proveedor seleccionado: %s", exc)
@@ -831,6 +851,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             "temperature": temperature,
             "top_p": top_p,
             "reasoning": reasoning,
+            "budget_tokens": budget_tokens,
         },
     )
 
@@ -881,6 +902,8 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
                 "reasoning_options": caps.get("reasoning_options", []),
                 "reasoning_param": caps.get("reasoning_param"),
                 "reasoning_type": caps.get("reasoning_type"),
+                "budget_min": caps.get("budget_min"),
+                "budget_max": caps.get("budget_max"),
             },
         )
     except Exception as exc:

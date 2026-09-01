@@ -190,7 +190,29 @@ Requirements:
     update_p = subparsers.add_parser(
         "update",
         help="Update project to latest template",
-        description="Update the project structure to the latest template version, preserving user configuration.",
+        description="Update the project to the latest template version from GitHub. Before overwriting, the entire project is backed up to ~/.config/synapseForge/backup/. If the update fails, the project is automatically restored.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  synapseforge update                    # Update project in current directory
+  synapseforge update ./mi-proyecto      # Update specific project
+
+What happens:
+  1. Backs up the entire project to ~/.config/synapseForge/backup/
+  2. Downloads the latest template from GitHub
+  3. Extracts and overwrites base files (backend, frontend structure)
+  4. Re-applies your saved configuration (placeholders, colors)
+  5. On failure: restores from backup automatically
+  6. On success: asks whether to keep or delete the backup
+
+Preserved across updates:
+  - Your config (replace.json, colors, logos)
+  - Your agent.db and provider keys
+  - Your skills, tools, agents, knowledge collections
+
+Not preserved (overwritten):
+  - Backend Python files (model_resolver.py, etc.)
+  - Frontend source files
+  - Pipeline scripts""",
     )
     update_p.add_argument(
         "project_dir",

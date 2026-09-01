@@ -894,17 +894,18 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
                 model_catalog.get_reasoning_options, provider.strip().lower(), model
             )
 
+        response_data = {
+            "status": "success",
+            "reasoning_supported": caps.get("reasoning_supported"),
+            "reasoning_options": caps.get("reasoning_options", []),
+            "reasoning_param": caps.get("reasoning_param"),
+            "reasoning_type": caps.get("reasoning_type"),
+            "budget_min": caps.get("budget_min"),
+            "budget_max": caps.get("budget_max"),
+        }
         return JSONResponse(
             status_code=200,
-            content={
-                "status": "success",
-                "reasoning_supported": caps.get("reasoning_supported"),
-                "reasoning_options": caps.get("reasoning_options", []),
-                "reasoning_param": caps.get("reasoning_param"),
-                "reasoning_type": caps.get("reasoning_type"),
-                "budget_min": caps.get("budget_min"),
-                "budget_max": caps.get("budget_max"),
-            },
+            content=response_data,
         )
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:get_model_capabilities")

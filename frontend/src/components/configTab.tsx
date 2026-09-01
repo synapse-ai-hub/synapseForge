@@ -445,21 +445,22 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
                 Default
               </label>
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <input
-                type="range"
-                min={0}
-                max={2}
-                step={0.1}
-                value={pendingParams.temperature ?? 0}
-                disabled={pendingParams.temperature === null}
-                onChange={(e) => handleTemperatureChange(Number(e.target.value))}
-                className="flex-1 accent-app-primary disabled:opacity-40"
-              />
-              <span className="w-9 text-right text-xs text-app-text-secondary tabular-nums">
-                {pendingParams.temperature === null ? "—" : pendingParams.temperature.toFixed(1)}
-              </span>
-            </div>
+            {pendingParams.temperature !== null && (
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={pendingParams.temperature}
+                  onChange={(e) => handleTemperatureChange(Number(e.target.value))}
+                  className="flex-1 accent-app-primary"
+                />
+                <span className="w-9 text-right text-xs text-app-text-secondary tabular-nums">
+                  {pendingParams.temperature.toFixed(1)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Top P */}
@@ -476,21 +477,22 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
                 Default
               </label>
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={pendingParams.top_p ?? 0.5}
-                disabled={pendingParams.top_p === null}
-                onChange={(e) => handleTopPChange(Number(e.target.value))}
-                className="flex-1 accent-app-primary disabled:opacity-40"
-              />
-              <span className="w-9 text-right text-xs text-app-text-secondary tabular-nums">
-                {pendingParams.top_p === null ? "—" : pendingParams.top_p.toFixed(2)}
-              </span>
-            </div>
+            {pendingParams.top_p !== null && (
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={pendingParams.top_p}
+                  onChange={(e) => handleTopPChange(Number(e.target.value))}
+                  className="flex-1 accent-app-primary"
+                />
+                <span className="w-9 text-right text-xs text-app-text-secondary tabular-nums">
+                  {pendingParams.top_p.toFixed(2)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Reasoning */}
@@ -525,19 +527,17 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
 
           {/* Budget Tokens (if model uses budget) */}
           {reasoningType === "budget_tokens" && (
-            <div className="pt-2 border-t border-app-border">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-app-text">Presupuesto de tokens</label>
-                <span className="text-[10px] text-app-text-secondary">
-                  {budgetMin !== null && budgetMax !== null
-                    ? `Entre ${budgetMin} y ${budgetMax}`
-                    : budgetMin !== null
-                      ? `Mín: ${budgetMin}`
-                      : budgetMax !== null
-                        ? `Máx: ${budgetMax}`
-                        : ""}
-                </span>
-              </div>
+            <div className="pt-2 border-t border-app-border space-y-1">
+              <label className="block text-xs text-app-text">Presupuesto de tokens</label>
+              <span className="block text-[10px] text-app-text-secondary">
+                {budgetMin !== null && budgetMax !== null
+                  ? `Entre ${budgetMin} y ${budgetMax}`
+                  : budgetMin !== null
+                    ? `Mín: ${budgetMin}`
+                    : budgetMax !== null
+                      ? `Máx: ${budgetMax}`
+                      : "sin rango"}
+              </span>
               <input
                 type="number"
                 value={pendingParams.budget_tokens ?? ""}

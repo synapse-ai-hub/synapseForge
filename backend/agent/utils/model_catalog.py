@@ -412,11 +412,36 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
         "reasoning_supported": None,
         "reasoning_options": [],
         "reasoning_type": None,
+        "context_window": None,
+        "input_limit": None,
+        "output_limit": None,
+        "input_modalities": None,
+        "output_modalities": None,
+        "cost_input": None,
+        "cost_output": None,
     }
 
     model = get_model(provider, model_id)
     if model is None:
         return result
+
+    # Add model info
+    result["context_window"] = model.get("context_window")
+    result["input_limit"] = model.get("input_limit")
+    result["output_limit"] = model.get("output_limit")
+    # Parse JSON modalities columns
+    raw_input_mod = model.get("modalities_input")
+    raw_output_mod = model.get("modalities_output")
+    try:
+        result["input_modalities"] = json.loads(raw_input_mod) if raw_input_mod else None
+    except (json.JSONDecodeError, TypeError):
+        result["input_modalities"] = None
+    try:
+        result["output_modalities"] = json.loads(raw_output_mod) if raw_output_mod else None
+    except (json.JSONDecodeError, TypeError):
+        result["output_modalities"] = None
+    result["cost_input"] = model.get("cost_input")
+    result["cost_output"] = model.get("cost_output")
 
     reasoning = model.get("reasoning")
     if not reasoning:

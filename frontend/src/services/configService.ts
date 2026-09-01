@@ -88,6 +88,13 @@ export interface ModelCapabilitiesResponse {
   reasoning_type: string | null;
   budget_min: number | null;
   budget_max: number | null;
+  context_window: number | null;
+  input_limit: number | null;
+  output_limit: number | null;
+  input_modalities: string[] | null;
+  output_modalities: string[] | null;
+  cost_input: number | null;
+  cost_output: number | null;
 }
 
 export const configService = {

@@ -53,6 +53,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const [reasoningType, setReasoningType] = useState<string | null>(null);
   const [budgetMin, setBudgetMin] = useState<number | null>(null);
   const [budgetMax, setBudgetMax] = useState<number | null>(null);
+  const [contextWindow, setContextWindow] = useState<number | null>(null);
+  const [inputLimit, setInputLimit] = useState<number | null>(null);
+  const [outputLimit, setOutputLimit] = useState<number | null>(null);
+  const [inputModalities, setInputModalities] = useState<string[] | null>(null);
+  const [outputModalities, setOutputModalities] = useState<string[] | null>(null);
+  const [costInput, setCostInput] = useState<number | null>(null);
+  const [costOutput, setCostOutput] = useState<number | null>(null);
   const [applyMessage, setApplyMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
   const [uploadingContext, setUploadingContext] = useState(false);
@@ -240,6 +247,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
         setReasoningType(response.reasoning_type ?? null);
         setBudgetMin(response.budget_min ?? null);
         setBudgetMax(response.budget_max ?? null);
+        setContextWindow(response.context_window ?? null);
+        setInputLimit(response.input_limit ?? null);
+        setOutputLimit(response.output_limit ?? null);
+        setInputModalities(response.input_modalities ?? null);
+        setOutputModalities(response.output_modalities ?? null);
+        setCostInput(response.cost_input ?? null);
+        setCostOutput(response.cost_output ?? null);
       } else {
         // Fallback to default options
         setReasoningOptions([
@@ -248,6 +262,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
         setReasoningSupported(null);
         setReasoningParam(null);
         setReasoningType(null);
+        setContextWindow(null);
+        setInputLimit(null);
+        setOutputLimit(null);
+        setInputModalities(null);
+        setOutputModalities(null);
+        setCostInput(null);
+        setCostOutput(null);
       }
     } catch (err) {
       console.error("Error fetching reasoning options:", err);
@@ -258,6 +279,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       setReasoningSupported(null);
       setReasoningParam(null);
       setReasoningType(null);
+      setContextWindow(null);
+      setInputLimit(null);
+      setOutputLimit(null);
+      setInputModalities(null);
+      setOutputModalities(null);
+      setCostInput(null);
+      setCostOutput(null);
     }
   }, []);
 
@@ -424,6 +452,55 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
           )}
         </select>
       </div>
+
+      {/* Model info */}
+      {(contextWindow !== null || inputLimit !== null || outputLimit !== null || inputModalities !== null || outputModalities !== null || costInput !== null || costOutput !== null) && (
+        <Collapsible title="Info del modelo">
+          <div className="space-y-1.5">
+            {inputModalities !== null && inputModalities.length > 0 && (
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-app-text-secondary">Entrada</span>
+                <span className="text-app-primary font-medium">{inputModalities.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(", ")}</span>
+              </div>
+            )}
+            {outputModalities !== null && outputModalities.length > 0 && (
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-app-text-secondary">Salida</span>
+                <span className="text-app-primary font-medium">{outputModalities.map(m => m.charAt(0).toUpperCase() + m.slice(1)).join(", ")}</span>
+              </div>
+            )}
+            {contextWindow !== null && (
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-app-text-secondary">Contexto</span>
+                <span className="text-app-primary font-medium">{contextWindow.toLocaleString()} tokens</span>
+              </div>
+            )}
+            {inputLimit !== null && (
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-app-text-secondary">Entrada máx</span>
+                <span className="text-app-primary font-medium">{inputLimit.toLocaleString()} tokens</span>
+              </div>
+            )}
+            {outputLimit !== null && (
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-app-text-secondary">Salida máx</span>
+                <span className="text-app-primary font-medium">{outputLimit.toLocaleString()} tokens</span>
+              </div>
+            )}
+            {(costInput !== null || costOutput !== null) && (
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-app-text-secondary">Costo</span>
+                <span className="text-app-primary font-medium">
+                  {costInput !== null && `In $${costInput}`}
+                  {costInput !== null && costOutput !== null && " · "}
+                  {costOutput !== null && `Out $${costOutput}`}
+                  <span className="text-app-text-secondary font-normal"> /M tok</span>
+                </span>
+              </div>
+            )}
+          </div>
+        </Collapsible>
+      )}
 
 {/* Parámetros avanzados */}
       <Collapsible title="Parámetros avanzados">

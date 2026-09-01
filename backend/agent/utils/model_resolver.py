@@ -308,7 +308,7 @@ def get_model_reasoning_options(provider: str, model: str) -> dict:
 
     Returns:
         Dict with ``reasoning_supported``, ``reasoning_options``,
-        ``reasoning_param``, ``reasoning_type``.
+        ``reasoning_param``, ``reasoning_type``, plus model info.
     """
     result = {
         "reasoning_supported": None,
@@ -323,6 +323,48 @@ def get_model_reasoning_options(provider: str, model: str) -> dict:
     p = provider.strip().upper()
     if p != "LOCAL":
         return result
+
+    # Get model info from Ollama /api/show
+    import requests
+    try:
+        resp = requests.post(
+            "http://localhost:11434/api/show",
+            json={"model": model},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Context window: try multiple sources
+        cl = data.get("context_length")
+        if cl:
+            result["context_window"] = int(cl)
+        else:
+            model_info = data.get("model_info") or {}
+            for k, v in model_info.items():
+                if k.endswith(".context_length") and v:
+                    result["context_window"] = int(v)
+                    break
+            else:
+                # Try parsing from parameters
+                params = data.get("parameters") or ""
+                import re
+                m = re.search(r"num_ctx\s+(\d+)", params)
+                if m:
+                    result["context_window"] = int(m.group(1))
+
+        # Modalities from capabilities
+        caps = data.get("capabilities") or []
+        if "vision" in caps:
+            result["input_modalities"] = ["text", "image"]
+        else:
+            result["input_modalities"] = ["text"]
+        result["output_modalities"] = ["text"]
+    except Exception:
+        pass
+
+    # Only include fields with actual values
+    result = {k: v for k, v in result.items() if v is not None and v != []}
 
     model_lower = model.lower()
 

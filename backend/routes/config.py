@@ -894,15 +894,11 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
                 model_catalog.get_reasoning_options, provider.strip().lower(), model
             )
 
-        response_data = {
-            "status": "success",
-            "reasoning_supported": caps.get("reasoning_supported"),
-            "reasoning_options": caps.get("reasoning_options", []),
-            "reasoning_param": caps.get("reasoning_param"),
-            "reasoning_type": caps.get("reasoning_type"),
-            "budget_min": caps.get("budget_min"),
-            "budget_max": caps.get("budget_max"),
-        }
+        # Build response with only fields that have values
+        response_data = {"status": "success"}
+        for key, value in caps.items():
+            if value is not None and value != []:
+                response_data[key] = value
         return JSONResponse(
             status_code=200,
             content=response_data,

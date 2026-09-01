@@ -874,23 +874,11 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           </div>
           <div className="flex flex-col text-xs text-app-text-secondary leading-tight">
             <span>
-              Ventana de contexto del modelo:{" "}
-              <span className="font-medium text-app-text">
-                {contextWindow != null ? contextWindow.toLocaleString() : "—"}
-              </span>{" "}
-              tokens
-            </span>
-            <span>
               Tokens utilizados:{" "}
               <span className="font-medium text-app-text">
                 {tokensUsed != null ? tokensUsed.toLocaleString() : "—"}
               </span>
             </span>
-            {currentProvider === "LOCAL" && vramGb != null && ollamaDefaultContext != null && (
-            <span className="mt-1 text-[11px] text-app-text-secondary/80">
-              Con tu VRAM de ${vramGb} GB, se recomienda no superar ${ollamaDefaultContext.toLocaleString()} tokens de contexto.
-            </span>
-          )}
           </div>
         </div>
 

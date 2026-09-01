@@ -94,6 +94,14 @@ synapseforge launch -p ./my-project -n "MyApp"
 
 Builds the frontend, bundles embedded Python and packages everything into a self-contained zip ready to deliver. By default the backend ships as `.py` sources; pass `-c` / `--compile` to compile it to `.pyc`. Other options: `--skip-frontend`, `--no-embed`.
 
+### Update to latest template
+
+```bash
+synapseforge update ./my-project
+```
+
+Backs up the entire project (including `agent.db` and `config/replace.json`), downloads the latest template, and restores your data. If anything fails, the project is automatically restored from the backup.
+
 ### Edit colors at runtime (no rebuild)
 
 ```bash
@@ -112,6 +120,7 @@ GUI editor for `frontend/public/colors.json`. Refresh the browser (F5) to see ch
 | `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build self-contained distribution zip (`-c` compiles backend to `.pyc`, default ships `.py`) |
 | `synapseforge colors [dir]` | Edit `frontend/public/colors.json` via GUI (live reload) |
 | `synapseforge run [dir]` | Start uvicorn + npm dev servers, open browser (venv must be active) |
+| `synapseforge update [dir]` | Update project to latest template (preserves agent.db, config, colors) |
 | `synapseforge --help` | Show global help |
 
 ---

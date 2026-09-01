@@ -16,6 +16,7 @@ Examples:
     synapseforge launch -n mi-app -c                # Compile backend to .pyc
     synapseforge colors                  # Edit colors in current project
     synapseforge colors ./mi-proyecto    # Edit colors in specific project
+    synapseforge update ./mi-proyecto    # Update project to latest template
     synapseforge run                     # Start dev servers (uvicorn + npm)
     synapseforge run ./mi-proyecto       # Start dev servers in specific project
 """

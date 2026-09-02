@@ -65,7 +65,7 @@ MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 # ---------------------------------------------------------------------------
 
 # Dedicated Chroma collection holding one document per conversation turn.
-MEMORY_COLLECTION = "conversaciones"
+MEMORY_COLLECTION = "agent_conversations"
 
 # Turns are usually short, so a turn is a single document. Only when the
 # document exceeds this size is the existing chunking helper applied.

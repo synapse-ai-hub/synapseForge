@@ -227,7 +227,14 @@ def _read_param_override(key: str) -> Any:
         return None
     try:
         if key == "param_reasoning":
-            return raw.strip().lower() == "true"
+            # Can be boolean (old format) or string (new format: "on"/"off"/"low"/"medium"/"high"/"max"/"default"/"none"/"0"/"1024"/etc.)
+            val = raw.strip().lower()
+            if val in ("true", "on"):
+                return "on"
+            elif val in ("false", "off"):
+                return "off"
+            else:
+                return raw.strip()
         return float(raw)
     except (TypeError, ValueError):
         return None
@@ -353,15 +360,23 @@ class AgentLoop:
             # (`parameters`, via task tool or router) → hardcoded fallback.
             temperature = 0.0
             top_p = 0.5
-            reasoning = True
+            reasoning = True  # Default: reasoning enabled (boolean or string level)
+            budget_tokens = None
             max_tokens = 8192
             if parameters:
                 if parameters.get("temperature") is not None:
                     temperature = parameters["temperature"]
                 if parameters.get("top_p") is not None:
                     top_p = parameters["top_p"]
-                if isinstance(parameters.get("reasoning"), bool):
-                    reasoning = parameters["reasoning"]
+                # reasoning can be: bool (legacy), string ("on"/"off"/"low"/"medium"/"high"/"max"/"default")
+                if parameters.get("reasoning") is not None:
+                    r = parameters["reasoning"]
+                    if isinstance(r, bool):
+                        reasoning = "on" if r else "off"
+                    elif isinstance(r, str):
+                        reasoning = r
+                    else:
+                        reasoning = str(r)
                 # model override from frontmatter (optional)
                 if parameters.get("model"):
                     model = parameters["model"]
@@ -378,6 +393,9 @@ class AgentLoop:
             override_reasoning = _read_param_override("param_reasoning")
             if override_reasoning is not None:
                 reasoning = override_reasoning
+            override_budget = _read_param_override("param_budget_tokens")
+            if override_budget is not None:
+                budget_tokens = override_budget
 
             # Resolve this loop's effective provider. If the agent's frontmatter
             # sets `parameters.provider`, use it for this loop only (passed
@@ -641,7 +659,7 @@ class AgentLoop:
                             model=model, messages=messages, tools=tools,
                             stream_cancel_event=stream_cancel_event,
                             temperature=temperature, top_p=top_p, max_tokens=max_tokens,
-                            reasoning=reasoning,
+                            reasoning=reasoning, budget_tokens=budget_tokens,
                             provider=effective_provider,
                         ):
                             if event["type"] == "chunk":

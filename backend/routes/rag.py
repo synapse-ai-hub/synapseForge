@@ -119,12 +119,18 @@ async def list_collections():
 
     Returns:
         Contract with the list of collections (name, metadata, count).
+        Excludes internal collections like agent_conversations.
     """
     try:
+        from backend.agent.utils.rag_helpers import MEMORY_COLLECTION
+
         db = get_vector_db()
         collections = db.list_collections()
         result = []
         for c in collections:
+            # Skip internal collections
+            if c["name"] == MEMORY_COLLECTION:
+                continue
             try:
                 info = db.get_collection_info(c["name"])
                 result.append(info)

@@ -1,5 +1,10 @@
-"""Orchestrates the full init pipeline (steps 1-10)."""
+"""Orchestrates the full init pipeline (steps 1-10).
 
+If any step fails, the entire target directory is removed so the user
+starts from a clean slate on the next attempt.
+"""
+
+import shutil
 import subprocess
 import sys
 
@@ -19,73 +24,100 @@ def run(target_dir: str, config: dict | None = None) -> None:
     When *config* is provided the pipeline uses it directly (GUI mode)
     and skips the interactive ``get_user_input()`` prompt.
 
+    If any step fails, the entire target directory is deleted.
+
     Args:
         target_dir: Absolute or relative path to the (empty) project directory.
         config: Pre-collected configuration dict (from GUI). When ``None``
             the pipeline prompts via terminal.
     """
     target = Path(target_dir).resolve()
+    created_dir = False
 
     if not target.is_dir():
         print(f"  Creating directory: {target}")
         target.mkdir(parents=True, exist_ok=True)
+        created_dir = True
 
     print("=" * 60)
     print("  synapseForge — Init Pipeline")
     print("=" * 60)
 
-    # Step 1: User input
-    if config is None:
-        print("\n[1/10] User input ...")
-        config = get_user_input()
-    else:
-        print("\n[1/10] Using provided configuration ...")
+    try:
+        # Step 1: User input
+        if config is None:
+            print("\n[1/10] User input ...")
+            config = get_user_input()
+        else:
+            print("\n[1/10] Using provided configuration ...")
 
-    # Step 2: Download & extract template
-    print("\n[2/10] Downloading & extracting template ...")
-    extract_template(target)
+        # Step 2: Download & extract template
+        print("\n[2/10] Downloading & extracting template ...")
+        extract_template(target)
 
-    # Step 3: Create virtual environment
-    print("\n[3/10] Creating virtual environment ...")
-    venv_path = setup_venv(target, config["repo"])
+        # Step 3: Create virtual environment
+        print("\n[3/10] Creating virtual environment ...")
+        venv_path = setup_venv(target, config["repo"])
 
-    # Step 4: Install Python requirements
-    print("\n[4/10] Installing Python requirements ...")
-    install_requirements(venv_path, target)
+        # Step 4: Install Python requirements
+        print("\n[4/10] Installing Python requirements ...")
+        install_requirements(venv_path, target)
 
-    # Step 5: npm install
-    print("\n[5/10] Installing npm dependencies ...")
-    _run_npm_install(target)
+        # Step 5: npm install
+        print("\n[5/10] Installing npm dependencies ...")
+        _run_npm_install(target)
 
-    # Step 6: Copy logos
-    print("\n[6/10] Copying logos ...")
-    company_logo_dest = target / "frontend" / "src" / "assets" / "logo_empresa.png"
-    handle_logo(config, company_logo_dest, config_key="logo.path")
-    # Also copy to root/src for backward compatibility with template references
-    company_logo_root = target / "src" / "logo_empresa.png"
-    handle_logo(config, company_logo_root, config_key="logo.path")
-    client_logo_dest = target / "frontend" / "src" / "assets" / "logo_cliente.png"
-    handle_logo(config, client_logo_dest, config_key="logo_cliente")
+        # Step 6: Copy logos
+        print("\n[6/10] Copying logos ...")
+        company_logo_dest = target / "frontend" / "src" / "assets" / "logo_empresa.png"
+        handle_logo(config, company_logo_dest, config_key="logo.path")
+        company_logo_root = target / "src" / "logo_empresa.png"
+        handle_logo(config, company_logo_root, config_key="logo.path")
+        client_logo_dest = target / "frontend" / "src" / "assets" / "logo_cliente.png"
+        handle_logo(config, client_logo_dest, config_key="logo_cliente")
 
-    # Step 7: Generate .ico from client logo
-    print("\n[7/10] Generating favicon (.ico) ...")
-    _run_generate_ico(venv_path, client_logo_dest)
+        # Step 7: Generate .ico from client logo
+        print("\n[7/10] Generating favicon (.ico) ...")
+        _run_generate_ico(venv_path, client_logo_dest)
 
-    # Step 8: Extract colors from client logo
-    print("\n[8/10] Resolving colors ...")
-    _resolve_colors(config, client_logo_dest)
+        # Step 8: Extract colors from client logo
+        print("\n[8/10] Resolving colors ...")
+        _resolve_colors(config, client_logo_dest)
 
-    # Step 9: Save user config (colors already in dict)
-    print("\n[9/10] Saving configuration ...")
-    save_config(target, config)
+        # Step 9: Save user config (colors already in dict)
+        print("\n[9/10] Saving configuration ...")
+        save_config(target, config)
 
-    # Step 10: Replace placeholders
-    print("\n[10/10] Replacing placeholders ...")
-    replace_all_placeholders(target, config)
+        # Step 10: Replace placeholders
+        print("\n[10/10] Replacing placeholders ...")
+        replace_all_placeholders(target, config)
+
+    except Exception as exc:
+        print(f"\n  ERROR: Init failed at step — {exc}")
+        print(f"  Cleaning up: {target}")
+        _cleanup(target, created_dir)
+        sys.exit(1)
 
     print("\n" + "=" * 60)
     print("  Done! Project initialized in:", target)
     print("=" * 60)
+
+
+def _cleanup(target: Path, created_dir: bool) -> None:
+    """Remove the target directory if init failed.
+
+    Args:
+        target: The project directory to remove.
+        created_dir: Whether this function created the directory
+            (if True and removal fails, at least print a warning).
+    """
+    try:
+        if target.is_dir():
+            shutil.rmtree(target)
+            print(f"  Removed: {target}")
+    except Exception as exc:
+        print(f"  WARNING: could not remove {target}: {exc}")
+        print(f"  Please remove it manually.")
 
 
 # ---------------------------------------------------------------------------

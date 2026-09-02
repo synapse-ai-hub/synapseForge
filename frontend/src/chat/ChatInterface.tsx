@@ -154,6 +154,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
   const [tokensUsed, setTokensUsed] = useState<number | null>(null);
   const [vramGb, setVramGb] = useState<number | null>(null);
   const [ollamaDefaultContext, setOllamaDefaultContext] = useState<number | null>(null);
+  const [currentProvider, setCurrentProvider] = useState<string | null>(null);
   /* Bell dropdown: scheduled-task execution notifications. */
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -248,6 +249,29 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
     window.addEventListener("model-changed", onModelChange);
     return () => window.removeEventListener("model-changed", onModelChange);
   }, [loadContextWindow]);
+
+  // Load current provider
+  const loadCurrentProvider = useCallback(() => {
+    configService
+      .getModels()
+      .then((data) => {
+        if (cancelledRef.current) return;
+        setCurrentProvider(data.provider || null);
+      })
+      .catch(() => {
+        if (!cancelledRef.current) setCurrentProvider(null);
+      });
+  }, []);
+
+  useEffect(() => {
+    loadCurrentProvider();
+  }, [loadCurrentProvider]);
+
+  useEffect(() => {
+    const onModelChange = () => loadCurrentProvider();
+    window.addEventListener("model-changed", onModelChange);
+    return () => window.removeEventListener("model-changed", onModelChange);
+  }, [loadCurrentProvider]);
 
   /* ---- blocked state: no provider/model selected yet ---- */
   const [modelSelected, setModelSelected] = useState<boolean | null>(null);
@@ -850,22 +874,10 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           </div>
           <div className="flex flex-col text-xs text-app-text-secondary leading-tight">
             <span>
-              Ventana de contexto del modelo:{" "}
-              <span className="font-medium text-app-text">
-                {contextWindow != null ? contextWindow.toLocaleString() : "—"}
-              </span>{" "}
-              tokens
-            </span>
-            <span>
               Tokens utilizados:{" "}
               <span className="font-medium text-app-text">
                 {tokensUsed != null ? tokensUsed.toLocaleString() : "—"}
               </span>
-            </span>
-            <span className="mt-1 text-[11px] text-app-text-secondary/80">
-              {vramGb != null && ollamaDefaultContext != null
-                ? `Con tu VRAM de ${vramGb} GB, se recomienda no superar ${ollamaDefaultContext.toLocaleString()} tokens de contexto.`
-                : "VRAM no detectada. Contexto sugerido según VRAM: < 24 GB → 4.096 tokens · 24-48 GB → 32.768 · ≥ 48 GB → 262.144"}
             </span>
           </div>
         </div>

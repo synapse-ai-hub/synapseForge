@@ -64,18 +64,37 @@ export interface SetupCompletedResponse {
 export interface AdvancedParams {
   temperature: number | null;
   top_p: number | null;
-  reasoning: boolean | null;
+  reasoning: string | null;
+  budget_tokens: number | null;
 }
 
 export interface ParametersResponse {
   status: string;
   temperature: number | null;
   top_p: number | null;
-  reasoning: boolean | null;
+  reasoning: string | null;
+  budget_tokens: number | null;
   model: string | null;
   provider: string;
   /** Whether the current model declaratively supports reasoning (null = unknown). */
   reasoning_supported: boolean | null;
+}
+
+export interface ModelCapabilitiesResponse {
+  status: string;
+  reasoning_supported: boolean | null;
+  reasoning_options: Array<{ value: string; label: string }>;
+  reasoning_param: string | null;
+  reasoning_type: string | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  context_window: number | null;
+  input_limit: number | null;
+  output_limit: number | null;
+  input_modalities: string[] | null;
+  output_modalities: string[] | null;
+  cost_input: number | null;
+  cost_output: number | null;
 }
 
 export const configService = {
@@ -87,6 +106,18 @@ export const configService = {
     const response = await fetch(url, {
       method: "GET",
     });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  /** Get model capabilities (reasoning options, etc.) for a specific model/provider. */
+  async getModelCapabilities(model: string, provider: string): Promise<ModelCapabilitiesResponse> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/config/models/capabilities?model=${encodeURIComponent(model)}&provider=${encodeURIComponent(provider)}`,
+      { method: "GET" }
+    );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
@@ -108,6 +139,7 @@ export const configService = {
         temperature: params ? params.temperature : null,
         top_p: params ? params.top_p : null,
         reasoning: params ? params.reasoning : null,
+        budget_tokens: params ? params.budget_tokens : null,
       }),
     });
     const result = await response.json().catch(() => null);

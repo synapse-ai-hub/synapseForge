@@ -1144,24 +1144,17 @@ class TelegramBot:
         await self.send_message(chat_id, f"Proveedor cambiado a {provider}.")
 
     async def _cmd_modelo(self, chat_id: int, model: str | None = None) -> None:
-        from backend.agent.utils.model_resolver import (
-            get_ollama_models,
-            get_groq_models,
-            get_openrouter_models,
-        )
+        from backend.agent.utils.model_resolver import get_ollama_models
+        from backend.agent.utils import model_catalog
         try:
             from backend.instances import agent
             provider = (agent.provider or "LOCAL").strip().upper()
         except Exception:
             provider = "LOCAL"
-        if provider.upper() == 'GROQ':
-            from backend.agent.utils import provider_keys as _pk
-
-            models = get_groq_models(_pk.get_key("GROQ"))
-        elif provider.upper() == 'OPENROUTER':
-            models = get_openrouter_models()
-        else:
+        if provider.upper() == 'LOCAL':
             models = get_ollama_models()
+        else:
+            models = model_catalog.get_models(provider.lower())
         if not models:
             await self.send_message(chat_id, "No hay modelos disponibles.")
             return

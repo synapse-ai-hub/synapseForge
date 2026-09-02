@@ -173,6 +173,15 @@ def save_key(provider: str, api_key: str) -> dict:
                 )
         finally:
             conn.close()
+        # Sync model catalog from models.dev for this provider.
+        try:
+            from backend.agent.utils.model_catalog import sync_catalog
+
+            sync_catalog(provider_u.lower())
+        except Exception as sync_err:
+            # Sync failure is non-blocking: the key is already saved.
+            log_error(str(sync_err), source="provider_keys.py:save_key:sync_catalog")
+            logger.warning("Catalog sync failed for %s: %s", provider_u, sync_err)
         return {"status": "success", "message": f"API key de {provider_u} guardada."}
     except Exception as e:
         log_error(str(e), source="provider_keys.py:save_key")
@@ -245,6 +254,13 @@ def delete_key(provider: str) -> dict:
                     "DELETE FROM provider_api_keys WHERE provider = ?", (provider_u,)
                 )
             deleted = cursor.rowcount > 0
+            # Also delete the model catalog for this provider.
+            if deleted:
+                conn.execute(
+                    "DELETE FROM model_catalog WHERE provider = ?",
+                    (provider_u.lower(),),
+                )
+                conn.commit()
         finally:
             conn.close()
         message = (
@@ -322,17 +338,36 @@ def validate_key(provider: str, api_key: str) -> dict:
                 return {"status": "error", "message": "API key de OpenRouter inválida."}
             resp.raise_for_status()
         elif provider_u == "GOOGLE":
-            from backend.agent.utils.model_resolver import get_google_models
-
-            if not get_google_models(key):
+            # Validate by listing models via Google GenAI API
+            try:
+                from google import genai
+                client = genai.Client(api_key=key)
+                models = list(client.models.list())
+                if not models:
+                    return {
+                        "status": "error",
+                        "message": "API key de Google inválida o sin modelos disponibles.",
+                    }
+            except Exception as e:
                 return {
                     "status": "error",
-                    "message": "API key de Google inválida o sin modelos disponibles.",
+                    "message": f"API key de Google inválida: {e}",
                 }
         else:  # GROQ
-            from backend.agent.utils.model_resolver import get_groq_models
+            # Validate by listing models via Groq API
+            import requests
 
-            if not get_groq_models(key):
+            resp = requests.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                timeout=30,
+            )
+            if resp.status_code == 401:
+                return {"status": "error", "message": "API key de Groq inválida."}
+            resp.raise_for_status()
+            data = resp.json()
+            models = data.get("data", [])
+            if not models:
                 return {
                     "status": "error",
                     "message": "API key de Groq inválida o sin modelos disponibles.",

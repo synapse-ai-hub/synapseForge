@@ -34,18 +34,12 @@ if _project_root not in sys.path:
 
 from backend.instances import agent, session_manager
 from backend.agent.utils.model_resolver import (
-    get_groq_models,
     get_ollama_models,
-    get_google_models,
-    get_openrouter_models,
-    get_groq_context_window,
     get_ollama_context_window,
-    get_google_context_window,
-    get_openrouter_context_window,
     get_vram_gb,
     ollama_default_context,
-    model_supports_reasoning,
 )
+from backend.agent.utils import model_catalog
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils.agent_helpers import get_skills_list, get_tools_list, get_agents_list, get_mcp_list
 
@@ -94,16 +88,9 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
     try:
         if provider.upper() == "LOCAL":
             cw = get_ollama_context_window(model)
-        elif provider.upper() == "GOOGLE":
-            from backend.agent.utils import provider_keys
-
-            cw = get_google_context_window(model, provider_keys.get_key("GOOGLE"))
-        elif provider.upper() == "OPENROUTER":
-            cw = get_openrouter_context_window(model)
         else:
-            from backend.agent.utils import provider_keys
-
-            cw = get_groq_context_window(model, provider_keys.get_key("GROQ"))
+            # Cloud providers: use model_catalog from models.dev
+            cw = model_catalog.get_context_window(provider.strip().lower(), model)
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:_detect_and_persist_context_window")
         logger.warning("No se pudo detectar la context window de %s: %s", model, exc)
@@ -305,11 +292,12 @@ async def set_setup_completed() -> JSONResponse:
 
 
 def refresh_providers_cache() -> None:
-    """List models for each provider and persist them in the ``providers`` table.
+    """Sync model catalog from models.dev for each provider with an API key.
 
-    Called once at application startup so the config endpoints can serve
-    providers/models from SQLite without per-request network calls. Providers
-    whose model list returns empty are excluded.
+    Called once at application startup.  For cloud providers (Groq, Google,
+    OpenRouter, etc.) the catalog is synced from models.dev into the
+    ``model_catalog`` table.  For Ollama (LOCAL) the models are listed
+    directly via ``ollama list`` and stored in the ``providers`` table.
     """
     cached: list[dict[str, Any]] = []
 
@@ -326,48 +314,33 @@ def refresh_providers_cache() -> None:
         log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(ollama)")
         logger.warning("No se pudieron listar modelos de Ollama: %s", exc)
 
-    # Groq — try the API
-    try:
-        api_key = provider_keys.resolve_api_key("GROQ")
-        print(f"[DEBUG] refresh_providers_cache GROQ: key={'OK' if api_key else 'MISSING'}")
-        if api_key:
-            groq_models = get_groq_models(api_key)
-            print(f"[DEBUG] refresh_providers_cache GROQ: models={len(groq_models)}")
-            if groq_models:
-                cached.append({"provider": "Groq", "label": "Groq", "models": groq_models})
-    except Exception as exc:
-        log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(groq)")
-        logger.warning("No se pudieron listar modelos de Groq: %s", exc)
-
-    # Google Gemini — try the API
-    try:
-        api_key = provider_keys.resolve_api_key("GOOGLE")
-        print(f"[DEBUG] refresh_providers_cache GOOGLE: key={'OK' if api_key else 'MISSING'}")
-        if api_key:
-            models = get_google_models(api_key)
-            print(f"[DEBUG] refresh_providers_cache GOOGLE: models={len(models)}")
+    # Cloud providers — sync from models.dev for each configured key.
+    _PROVIDER_LABELS = {
+        "groq": "Groq",
+        "google": "Google Gemini",
+        "openrouter": "OpenRouter",
+    }
+    for provider_id in ["groq", "google", "openrouter"]:
+        try:
+            api_key = provider_keys.resolve_api_key(provider_id.upper())
+            if not api_key:
+                continue
+            # Sync catalog from models.dev (rate-limited to 24h).
+            result = model_catalog.sync_catalog(provider_id)
+            # Whether sync ran or was skipped (fresh catalog), get models.
+            models = model_catalog.get_models(provider_id)
             if models:
-                cached.append({"provider": "GOOGLE", "label": "Google Gemini", "models": models})
-    except Exception as exc:
-        log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(google)")
-        logger.warning("No se pudieron listar modelos de Google: %s", exc)
-
-    # OpenRouter — public catalog, listed when a key is available
-    try:
-        or_key = provider_keys.resolve_api_key("OPENROUTER")
-        print(f"[DEBUG] refresh_providers_cache OPENROUTER: key={'OK' if or_key else 'MISSING'}")
-        if or_key:
-            models = get_openrouter_models()
-            print(f"[DEBUG] refresh_providers_cache OPENROUTER: models={len(models)}")
-            if models:
-                cached.append({"provider": "OPENROUTER", "label": "OpenRouter", "models": models})
-    except Exception as exc:
-        log_error(str(exc), source="backend/routes/config.py:refresh_providers_cache(openrouter)")
-        logger.warning("No se pudieron listar modelos de OpenRouter: %s", exc)
+                cached.append({
+                    "provider": provider_id.upper(),
+                    "label": _PROVIDER_LABELS.get(provider_id, provider_id),
+                    "models": models,
+                })
+        except Exception as exc:
+            log_error(str(exc), source=f"backend/routes/config.py:refresh_providers_cache({provider_id})")
+            logger.warning("No se pudieron listar modelos de %s: %s", provider_id, exc)
 
     if session_manager is not None:
         session_manager.save_providers(cached)
-    print(f"[DEBUG] refresh_providers_cache final: {[p['provider'] for p in cached]}")
     logger.info("Providers cache refreshed: %s", [p["provider"] for p in cached])
 
 
@@ -484,6 +457,7 @@ _PARAM_KEYS = {
     "temperature": "param_temperature",
     "top_p": "param_top_p",
     "reasoning": "param_reasoning",
+    "budget_tokens": "param_budget_tokens",
 }
 """Mapping of parameter name → ``config_kv`` key. Persisted values use the
 literal string ``"null"`` for "default" (no override)."""
@@ -534,8 +508,9 @@ def _read_param(key: str) -> Any:
         key: ``config_kv`` key (see ``_PARAM_KEYS``).
 
     Returns:
-        The parsed value (``float`` for temperature/top_p, ``bool`` for
-        reasoning) or ``None`` when unset/"null" (default).
+        The parsed value (``float`` for temperature/top_p, ``str`` for
+        reasoning, ``int`` for budget_tokens) or ``None`` when unset/"null"
+        (default).
     """
     if session_manager is None:
         return None
@@ -544,7 +519,9 @@ def _read_param(key: str) -> Any:
         return None
     try:
         if key == _PARAM_KEYS["reasoning"]:
-            return raw.strip().lower() == "true"
+            return raw.strip().lower()
+        if key == _PARAM_KEYS["budget_tokens"]:
+            return int(float(raw))
         return float(raw)
     except (TypeError, ValueError):
         return None
@@ -563,11 +540,18 @@ async def get_parameters() -> JSONResponse:
         current_provider = agent.provider if agent is not None else ""
         reasoning_supported: bool | None = None
         if current_model and current_provider:
-            # Catalog lookup can hit the network (OpenRouter) — run it in a
-            # thread so the event loop is never blocked.
-            reasoning_supported = await asyncio.to_thread(
-                model_supports_reasoning, current_provider, current_model
-            )
+            if current_provider.upper() == "LOCAL":
+                from backend.agent.utils.model_resolver import model_supports_reasoning
+                reasoning_supported = await asyncio.to_thread(
+                    model_supports_reasoning, current_provider, current_model
+                )
+            else:
+                caps = await asyncio.to_thread(
+                    model_catalog.get_reasoning_options,
+                    current_provider.strip().lower(),
+                    current_model,
+                )
+                reasoning_supported = caps.get("reasoning_supported")
         return JSONResponse(
             status_code=200,
             content={
@@ -575,6 +559,7 @@ async def get_parameters() -> JSONResponse:
                 "temperature": _read_param(_PARAM_KEYS["temperature"]),
                 "top_p": _read_param(_PARAM_KEYS["top_p"]),
                 "reasoning": _read_param(_PARAM_KEYS["reasoning"]),
+                "budget_tokens": _read_param(_PARAM_KEYS["budget_tokens"]),
                 "model": current_model,
                 "provider": current_provider or "",
                 "reasoning_supported": reasoning_supported,
@@ -747,14 +732,28 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             content={"status": "error", "message": f"top_p {top_p_err}"},
         )
     reasoning = data.get("reasoning", None)
-    if reasoning is not None and not isinstance(reasoning, bool):
+    if reasoning is not None and not isinstance(reasoning, str):
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
-                "message": "reasoning must be a boolean or null (default).",
+                "message": "reasoning must be a string or null (default).",
             },
         )
+    budget_tokens = data.get("budget_tokens", None)
+    if budget_tokens is not None:
+        try:
+            budget_tokens = int(budget_tokens)
+            if budget_tokens < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": "budget_tokens must be a positive integer or null.",
+                },
+            )
 
     if agent is None:
         return JSONResponse(
@@ -766,13 +765,20 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
         )
 
     # --- Reasoning capacity validation (declarative catalog check) ---
-    if reasoning:
+    if reasoning and reasoning not in ("default", ""):
         try:
-            # Catalog lookup can hit the network (OpenRouter) — run it in a
-            # thread so the event loop is never blocked.
-            supports_reasoning = await asyncio.to_thread(
-                model_supports_reasoning, provider, model
-            )
+            if provider.upper() == "LOCAL":
+                from backend.agent.utils.model_resolver import model_supports_reasoning
+                supports_reasoning = await asyncio.to_thread(
+                    model_supports_reasoning, provider, model
+                )
+            else:
+                caps = await asyncio.to_thread(
+                    model_catalog.get_reasoning_options,
+                    provider.strip().lower(),
+                    model,
+                )
+                supports_reasoning = caps.get("reasoning_supported")
         except Exception as exc:
             log_error(str(exc), source="backend/routes/config.py:select_model(reasoning_check)")
             supports_reasoning = None
@@ -811,6 +817,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             _persist_param(_PARAM_KEYS["temperature"], temperature)
             _persist_param(_PARAM_KEYS["top_p"], top_p)
             _persist_param(_PARAM_KEYS["reasoning"], reasoning)
+            _persist_param(_PARAM_KEYS["budget_tokens"], budget_tokens)
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo persistir el modelo o proveedor seleccionado: %s", exc)
@@ -844,8 +851,64 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             "temperature": temperature,
             "top_p": top_p,
             "reasoning": reasoning,
+            "budget_tokens": budget_tokens,
         },
     )
+
+
+@router.get("/models/capabilities")
+async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
+    """Return reasoning capabilities for a specific model/provider.
+
+    Query params:
+        model: Model name/ID
+        provider: Provider name (LOCAL, GROQ, GOOGLE, OPENROUTER)
+
+    Returns:
+        reasoning_supported: boolean
+        reasoning_options: array of {value, label} for the reasoning dropdown
+        reasoning_type: "effort_levels" | "budget_tokens" | "boolean"
+    """
+    if not model or not provider:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": "model and provider query params are required.",
+            },
+        )
+
+    provider_u = provider.strip().upper()
+
+    try:
+        if provider_u == "LOCAL":
+            # Ollama: use legacy model_resolver (no models.dev)
+            from backend.agent.utils.model_resolver import get_model_reasoning_options
+
+            caps = await asyncio.to_thread(
+                get_model_reasoning_options, provider_u, model
+            )
+        else:
+            # Cloud providers: use model_catalog from models.dev
+            caps = await asyncio.to_thread(
+                model_catalog.get_reasoning_options, provider.strip().lower(), model
+            )
+
+        # Build response with only fields that have values
+        response_data = {"status": "success"}
+        for key, value in caps.items():
+            if value is not None and value != []:
+                response_data[key] = value
+        return JSONResponse(
+            status_code=200,
+            content=response_data,
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:get_model_capabilities")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Error obteniendo capacidades: {exc}"},
+        )
 
 
 # ---------------------------------------------------------------------------

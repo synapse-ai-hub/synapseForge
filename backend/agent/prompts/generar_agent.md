@@ -26,21 +26,21 @@ El archivo resultante debe guardarse exactamente con este formato de frontmatter
 
 ```markdown
 ---
-name: {{name}}
-description: {{description}}
+name: <name>
+description: <description>
 permission:
-  tool: {{tools_list}}
-  skill: {{skills_list}}
+  tool: <tools_list>
+  skill: <skills_list>
   parameters:
-    temperature: {{temperature}}
-    top_p: {{top_p}}
-    model: {{model}}
-    provider: {{provider}}
+    temperature: <temperature>
+    top_p: <top_p>
+    model: <model>
+    provider: <provider>
     max_tokens: 3000
     seed: null
 ---
 
-{{system_prompt_body}}
+<system_prompt_body>
 ```
 
 ### Directrices de Generación
@@ -56,3 +56,15 @@ permission:
    - Debe instruir al agente con precisión sobre su rol, sus límites, qué tools puede usar y qué comportamiento se espera.
    - Debe enfatizar el principio de menor privilegio y uso mínimo de contexto.
    - No incluyas explicaciones conversacionales fuera del formato markdown del agente.
+
+## DATOS PARA GENERAR EL AGENTE
+
+Nombre: {nombre}
+Carpeta: {carpeta}
+Tools seleccionadas:
+{tools_seleccionadas}
+Skills seleccionadas:
+{skills_seleccionadas}
+
+Conversación con el usuario:
+{conversacion}

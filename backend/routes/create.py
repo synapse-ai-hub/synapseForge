@@ -999,20 +999,12 @@ async def post_create_agent_stream(req: CreateAgentRequest):
         mcp_list_text = "\n".join(f"- {m.get('label', 'mcp')}" for m in available_mcps) if available_mcps else "(ninguno configurado)"
         rag_list_text = "\n".join(f"- {r}" for r in available_rag) if available_rag else "(ninguna colección creada)"
 
-        # Escape { y } en inputs de usuario para evitar KeyError en format()
-        desc_esc = descripcion.replace("{", "{{").replace("}", "}}")
-        nombre_esc = nombre.replace("{", "{{").replace("}}", "}") if nombre else ""
-        mensajes_esc = _formatear_mensajes(mensajes).replace("{", "{{").replace("}}", "}") if mensajes else ""
-
         prompt = template.format(
-            descripcion=desc_esc,
-            nombre=nombre_esc or "(inferir)",
-            mensajes=mensajes_esc,
+            descripcion=descripcion,
+            nombre=nombre or "(inferir)",
+            mensajes=_formatear_mensajes(mensajes),
             tools_disponibles=tools_list_text,
             skills_disponibles=skills_list_text,
-            subagentes_disponibles=subagents_list_text,
-            mcp_disponibles=mcp_list_text,
-            rag_disponibles=rag_list_text,
         )
 
         collected_content = ""
@@ -1093,8 +1085,8 @@ async def post_create_agent_stream(req: CreateAgentRequest):
             nombre=name or "(inferir del contexto)",
             conversacion=conversacion,
             carpeta=carpeta,
-            tools=tools_text,
-            skills=skills_text,
+            tools_seleccionadas=tools_text,
+            skills_seleccionadas=skills_text,
             tools_disponibles=tools_list_text,
             skills_disponibles=skills_list_text,
             subagentes_disponibles=subagents_list_text,

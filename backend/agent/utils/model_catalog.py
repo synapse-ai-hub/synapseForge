@@ -34,6 +34,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.error_logger import log_error
+from backend.utils.db import db_transaction, get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -50,17 +51,6 @@ _TIMEOUT_SECONDS = 30
 # Database helpers
 # ---------------------------------------------------------------------------
 
-def _db_path() -> str:
-    """Return the agent SQLite database path.
-
-    Returns:
-        Absolute path to ``agent.db``.
-    """
-    from backend.agent.session import _DB_PATH
-
-    return _DB_PATH
-
-
 def _connect() -> sqlite3.Connection | None:
     """Open a short-lived connection to the agent DB.
 
@@ -68,10 +58,7 @@ def _connect() -> sqlite3.Connection | None:
         A new ``sqlite3.Connection``, or ``None`` on failure.
     """
     try:
-        conn = sqlite3.connect(_db_path(), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn = get_connection()
         from backend.agent.ddl_setup import setup_database
 
         setup_database(conn)

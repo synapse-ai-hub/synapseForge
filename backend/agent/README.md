@@ -22,14 +22,14 @@
 
 ## Descripción
 
-El módulo **Agent** es el núcleo del asistente conversacional. Implementa un bucle `while(true)` que itera con el LLM usando detección nativa de tool calls, ejecuta las herramientas, persiste cada mensaje en SQLite y gestiona el contexto con compactación automática. Soporta proveedores Groq (API) y Ollama (local).
+El módulo **Agent** es el núcleo del asistente conversacional. Implementa un bucle `while(true)` que itera con el LLM usando detección nativa de tool calls, ejecuta las herramientas, persiste cada mensaje en SQLite y gestiona el contexto con compactación automática. Soporta proveedores cloud (Groq, Google Gemini, OpenRouter) y local (Ollama).
 
 ### ✨ Características Principales
 
 - **Loop iterativo nativo**: Llama al LLM en un `while(true)` — si responde con `tool_calls`, las ejecuta y continúa; si responde con contenido, lo entrega y termina.
 - **Persistencia SQLite**: Cada mensaje, tool call y resultado se guarda automáticamente en `agent_db/agent.db`.
 - **Contexto compactable**: Gestión inteligente de tokens con estrategias configurables (ask, cod, original) y límite de turnos.
-- **Soporte multi-proveedor**: Funciona con Groq (API) y Ollama (local) sin cambiar la lógica del loop.
+- **Soporte multi-proveedor**: Funciona con Groq, Google Gemini, OpenRouter (cloud) y Ollama (local) sin cambiar la lógica del loop.
 - **Permisos y prompts**: Resolución dinámica de herramientas y skills desde archivos markdown de agente.
 - **Configuración MCP**: `mcp.json` en `~/.config/synapseForge/` para servidores MCP (Model Context Protocol).
 
@@ -68,7 +68,7 @@ Maneja toda la interacción con la base de datos SQLite:
 - Almacenamiento de configuración clave/valor (`config_kv`): modelo seleccionado, proveedor, ventana de contexto.
 - Path de la DB: `backend/agent/agent_db/agent.db` (relativo al project root).
 
-### 3. `config.py` — Configuración del entorno
+### 3. `utils/config.py` — Configuración del entorno
 
 Configuración del loop vía variables de entorno (`.env`):
 - `COMPACTION_TRIGGER_TOKENS`, `COMPACTION_STRATEGY`, `COMPACTION_TAIL_TURNS`, etc.
@@ -100,7 +100,7 @@ Resuelve en tiempo de ejecución:
 - Filtrado de herramientas/skills según el agente activo.
 - Permisos del agente principal (router) desde `config.yaml` (ver `loop.py`).
 
-### 7. `contract.py` — Contratos de respuesta
+### 7. `utils/contract.py` — Contratos de respuesta
 
 Define los formatos estándar de respuesta para todas las herramientas del agente:
 - `make_success_response` / `make_error_response` para respuestas unificadas.
@@ -110,12 +110,27 @@ Define los formatos estándar de respuesta para todas las herramientas del agent
 ### 8. `utils/` — Utilidades auxiliares
 
 Contiene módulos de soporte genéricos para el funcionamiento del agente:
+- `config.py` — Configuración del loop vía variables de entorno.
+- `config_dir.py` — Gestión del directorio `~/.config/synapseForge/`.
+- `contract.py` — Contratos de respuesta.
 - `clean_memory.py` — Liberación de modelos de GPU/CPU.
 - `model_resolver.py` — Resolución y validación del modelo activo.
+- `model_catalog.py` — Catálogo de modelos sincronizado desde models.dev.
+- `provider_keys.py` — Gestión de API keys (cifrado Fernet en SQLite).
 - `skill_loader.py` — Carga y formateo de skills para el system prompt.
+- `skills_helpers.py` — Helpers de evaluación y creación de skills.
 - `email_parser.py` — Parseo de correos electrónicos (headers, body, adjuntos).
 - `mcp_helper.py` — Integración con MCP (Model Context Protocol).
-- `generate_ico.py` — Generación de .ico desde logo PNG.
+- `vector_db.py` — Wrapper de ChromaDB (RAG y memoria de largo plazo).
+- `rag_helpers.py` — Helpers de RAG (indexación y consulta).
+- `chunking.py` — División de documentos en chunks.
+- `loop_helpers.py` — Helpers del loop (ejecución de tools, prompts).
+- `scheduler_helpers.py` — Helpers de tareas programadas.
+- `create_helpers.py` — Helpers de creación vía LLM (skills, tools, agentes).
+- `tools_helpers.py` — Helpers de tools externas.
+- `agent_helpers.py` — Helpers de los endpoints AgentInfo.
+- `subagent_logger.py` — Logging de sub-agentes.
+- `error_logger.py` — Registro de errores en `error_log`.
 
 ### 9. `prompts/` — Prompts del sistema
 
@@ -123,7 +138,10 @@ Almacena los prompts del agente en formato markdown:
 - `system_prompt.md` — Prompt base del router.
 - `mandatory.md` — Reglas `## MANDATORY:` inyectadas al final del system prompt de todos los agentes.
 - `help.md` — Documentación interna para la tool `help`.
-- `title.md`, `generar_skill.md`, `evaluar_skills.md` — Prompts auxiliares.
+- `title.md` — Generación de títulos de sesión.
+- `generar_skill.md`, `generar_tool.md`, `generar_agent.md` — Prompts de creación vía LLM.
+- `iterar_skill.md`, `iterar_tool.md`, `iterar_agent.md` — Prompts de iteración.
+- `evaluar_skills.md`, `explicar_skill.md` — Prompts auxiliares.
 
 ### 10. `agent_db/` — Base de datos SQLite
 
@@ -132,6 +150,8 @@ Directorio que contiene el archivo `agent.db` con las tablas:
 - `messages` — Historial de mensajes con tool calls y resultados.
 - `config_kv` — Configuración persistente (modelo, proveedor, turnos de contexto).
 - `error_log` — Registro de excepciones del backend (session_id, turn_number, exception, source, created_at).
+
+El esquema se crea de forma idempotente en `ddl_setup.py` (`CREATE TABLE IF NOT EXISTS`).
 
 ---
 
@@ -257,7 +277,7 @@ Los siguientes parámetros se seleccionan desde el **frontend** y se guardan en 
 | Clave | Descripción | Endpoint |
 |-------|-------------|----------|
 | `selected_model` | Modelo activo (ej. `qwen/qwen3.6-27b`, `llama3.2:3b`) | `POST /config/models/select` |
-| `selected_provider` | Proveedor activo: `LOCAL` (Ollama) o `API` (Groq) | `POST /config/models/select` |
+| `selected_provider` | Proveedor activo: `LOCAL` (Ollama) o `API` (Groq, Google Gemini, OpenRouter) | `POST /config/models/select` |
 | `context_window_turns` | Turnos de historial a mantener (`-1` = todos) | `POST /config/context-window` |
 
 Se cargan automáticamente al inicio vía `load_persisted_config()` en `backend/routes/config.py` y se aplican al agente singleton.
@@ -268,7 +288,7 @@ Se cargan automáticamente al inicio vía `load_persisted_config()` en `backend/
 
 1. **Inicio app** → `GET /config/providers` → lista proveedores disponibles (Ollama si `ollama list` responde; cada provider cloud solo si tiene key válida guardada en la DB).
 2. Usuario elige proveedor → `GET /config/models?provider=LOCAL|API` → lista modelos de ese proveedor.
-3. Usuario elige modelo → `POST /config/models/select` con `{"model": "...", "provider": "LOCAL|API"}`.
+3. Usuario elige modelo → `POST /config/models/select` con `{"model": "...", "provider": "LOCAL|API"}` (donde `API` cubre Groq, Google Gemini y OpenRouter).
 4. Opcional: `POST /config/context-window` con `{"max_turns": 10}`.
 
 ---
@@ -341,12 +361,15 @@ El agente distingue tres tipos de herramientas:
 ### 1. Tools nativas (en `tools.py`)
 
 Definidas como métodos de la clase `Tools`. Incluyen:
-- `read`, `write`, `list_dir` — Operaciones de archivos.
+- `read`, `write`, `edit`, `glob`, `grep`, `list_dir` — Operaciones de archivos.
 - `websearch`, `webfetch` — Búsqueda y fetch web.
-- `search_product`, `search_discounts`, `query_db` — Consultas de catálogo/BD.
-- `calculate`, `generate_pdf`, `parse_email` — Utilidades.
-- `execute_mcp_tool` — Ejecución de herramientas MCP.
+- `rag`, `search_memory` — Consulta de colecciones RAG y memoria de largo plazo.
+- `check_email`, `send_email` — Correo electrónico (IMAP/SMTP).
+- `shell` — Ejecución de comandos en la terminal.
+- `skill`, `reference` — Carga de skills y archivos de referencia.
+- `help` — Documentación interna de las tools.
 - `task` — Delegación a sub-agentes.
+- `execute_mcp_tool` — Ejecución de herramientas MCP.
 
 ### 2. Tools externas (en `~/.config/synapseForge/tools/`)
 
@@ -358,25 +381,16 @@ tools/
 └── otra_herramienta.py
 ```
 
-Cada tool externa debe exponer:
-- `TOOL_NAME` (str) — Nombre único.
-- `TOOL_DESCRIPTION` (str) — Descripción para el LLM.
-- `TOOL_PARAMETERS` (dict) — Esquema JSON Schema de parámetros.
-- `execute(**kwargs)` — Función async que implementa la lógica.
+Cada tool externa debe cumplir:
+- La **primera línea del docstring del módulo** es la descripción que el LLM usa para decidir si invocarla.
+- La función principal debe ser `async` y tener el **mismo nombre que el archivo** (sin `.py`).
+- Debe devolver el contrato unificado `{status, message, data, usage}`.
 
 **Ejemplo `tools/calculadora.py`:**
 ```python
-TOOL_NAME = "calculadora"
-TOOL_DESCRIPTION = "Realiza operaciones matemáticas básicas."
-TOOL_PARAMETERS = {
-    "type": "object",
-    "properties": {
-        "expresion": {"type": "string", "description": "Expresión matemática a evaluar"}
-    },
-    "required": ["expresion"]
-}
+"""Realiza operaciones matemáticas básicas."""
 
-async def execute(expresion: str) -> dict:
+async def calculadora(expresion: str) -> dict:
     try:
         resultado = eval(expresion, {"__builtins__": {}}, {})
         return {"status": "success", "data": {"resultado": resultado}}
@@ -395,15 +409,15 @@ Los servidores MCP configurados en `mcp.json` exponen sus herramientas automáti
 - Construye el esquema function-calling para el LLM.
 - Las tools externas aparecen junto a las nativas y MCP en la lista disponible.
 
-### Ejecución de tools (igual para Groq y Ollama)
+### Ejecución de tools (igual para todos los proveedores)
 
-**El flujo es idéntico para ambos proveedores:**
+**El flujo es idéntico para todos los proveedores:**
 
 1. `agent.llm_streaming()` recibe `tools` (lista de esquemas JSON Schema).
-2. **Groq**: `client.chat.completions.create(tools=..., tool_choice="auto", stream=True)`
+2. **Groq / Google Gemini / OpenRouter**: `client.chat.completions.create(tools=..., tool_choice="auto", stream=True)`
 3. **Ollama**: `ollama_client.chat(tools=..., stream=True)`
-4. Ambos proveedores devuelven `tool_calls` en streaming.
-5. `llm_streaming` **normaliza** los tool_calls de ambos formatos a:
+4. Todos los proveedores devuelven `tool_calls` en streaming.
+5. `llm_streaming` **normaliza** los tool_calls de todos los formatos a:
    ```python
    {"id": "call_xxx", "name": "tool_name", "args": {"param": "value"}}
    ```
@@ -446,7 +460,7 @@ Los servidores MCP configurados en `mcp.json` exponen sus herramientas automáti
 
 **Notas:**
 - La base de datos SQLite se crea automáticamente en `backend/agent/agent_db/agent.db` al iniciar el agente.
-- El directorio de configuración `~/.config/synapseForge/` (skills, tools, agents, config.json) se crea automáticamente al arrancar.
+- El directorio de configuración `~/.config/synapseForge/` (skills, tools, agents, mcp.json, config.yaml) se crea automáticamente al arrancar.
 - Las variables de entorno se cargan desde `.env` en la raíz del proyecto.
 - No requiere servicios externos — SQLite es parte de la stdlib de Python.
 
@@ -461,28 +475,46 @@ backend/agent/
 ├─ agent.py                 # Clase principal del agente (LLM provider)
 ├─ loop.py                  # Bucle while(true) del agente
 ├─ session.py               # Persistencia SQLite
-├─ config.py                # Configuración vía entorno
+├─ ddl_setup.py             # Creación idempotente de tablas SQLite
 ├─ permissions.py           # Resolución de permisos y prompts
 ├─ tools.py                 # Registro y ejecución de herramientas
-├─ contract.py              # Contratos de respuesta
-├─ config_dir.py            # Gestión del directorio ~/.config/synapseForge/
 ├─ agent_db/                # Base de datos SQLite
 │   └─ agent.db
 ├─ prompts/                 # Prompts del sistema
 │   ├─ system_prompt.md     # Prompt base del router
 │   ├─ help.md              # Documentación interna para tool help
 │   ├─ title.md             # Prompt para generar títulos de sesión
+│   ├─ mandatory.md         # Reglas ## MANDATORY: inyectadas a todos los agentes
 │   ├─ generar_skill.md     # Prompt para crear skills con LLM
+│   ├─ generar_tool.md      # Prompt para crear tools con LLM
+│   ├─ generar_agent.md     # Prompt para crear agentes con LLM
+│   ├─ iterar_skill.md      # Prompt para iterar skills
+│   ├─ iterar_tool.md       # Prompt para iterar tools
+│   ├─ iterar_agent.md      # Prompt para iterar agentes
 │   ├─ evaluar_skills.md    # Prompt para evaluar skills existentes
-│   └─ mandatory.md         # Reglas ## MANDATORY: inyectadas a todos los agentes
+│   └─ explicar_skill.md    # Prompt para explicar skills
 ├─ utils/                   # Utilidades auxiliares
+│   ├─ agent_helpers.py     # Helpers de endpoints AgentInfo
+│   ├─ chunking.py          # División de documentos en chunks
 │   ├─ clean_memory.py      # Liberación de modelos
-│   ├─ model_resolver.py    # Resolución del modelo activo
-│   ├─ skill_loader.py      # Carga de skills
-│   ├─ skill_creator.py     # Creación de skills vía LLM
+│   ├─ config.py            # Configuración vía entorno
+│   ├─ config_dir.py        # Gestión del directorio ~/.config/synapseForge/
+│   ├─ contract.py          # Contratos de respuesta
+│   ├─ create_helpers.py    # Helpers de creación vía LLM
 │   ├─ email_parser.py      # Parseo de correos electrónicos
+│   ├─ error_logger.py      # Registro de errores
+│   ├─ loop_helpers.py      # Helpers del loop
 │   ├─ mcp_helper.py        # Integración MCP
-│   └─ generate_ico.py      # Generación de .ico desde logo PNG
+│   ├─ model_catalog.py     # Catálogo de modelos (models.dev)
+│   ├─ model_resolver.py    # Resolución del modelo activo
+│   ├─ provider_keys.py     # Gestión de API keys
+│   ├─ rag_helpers.py       # Helpers RAG
+│   ├─ scheduler_helpers.py # Helpers de tareas programadas
+│   ├─ skill_loader.py      # Carga de skills
+│   ├─ skills_helpers.py    # Helpers de skills
+│   ├─ subagent_logger.py   # Logging de sub-agentes
+│   ├─ tools_helpers.py     # Helpers de tools externas
+│   └─ vector_db.py         # Wrapper ChromaDB
 └─ README.md
 ```
 
@@ -499,7 +531,7 @@ El agente sigue un ciclo iterativo:
 5. **Tool resolution**: Se resuelven las herramientas disponibles según permisos (nativas + externas + MCP).
 6. **Loop** (`while True`):
    a. Se llama al LLM con `messages` + `tools` vía `agent.llm_streaming()`.
-   b. `llm_streaming` normaliza tool_calls de Groq/Ollama a `{"id", "name", "args"}` y yield `tool_calls_detected`.
+   b. `llm_streaming` normaliza tool_calls de todos los proveedores a `{"id", "name", "args"}` y yield `tool_calls_detected`.
    c. `loop.py` ejecuta cada tool vía `execute_tool(agent, tc)` → `agent.tools._execute_tool(name, **args)`.
    d. Resultados se agregan como `role: "tool"` y continúa el loop.
    e. Si el LLM devuelve contenido sin tool_calls → se emite como `chunk` SSE y se cierra el loop.
@@ -514,6 +546,8 @@ El agente sigue un ciclo iterativo:
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003b57?logo=sqlite&logoColor=white)
 ![Groq](https://img.shields.io/badge/Groq-API-f97316?logo=groq&logoColor=white)
+![Google Gemini](https://img.shields.io/badge/Google%20Gemini-API-4285F4?logo=google&logoColor=white)
+![OpenRouter](https://img.shields.io/badge/OpenRouter-API-8b5cf6?logo=openrouter&logoColor=white)
 ![Ollama](https://img.shields.io/badge/Ollama-Local-000000?logo=ollama&logoColor=white)
 
 ---

@@ -41,9 +41,9 @@
 ```
     FORGE             EQUIP             RUN              SHIP
     ─────             ─────             ───              ────
-    Agents            Permissions       AgentLoop        Portable zip
-    Skills            Providers         Tool calling     Embedded Python
-    Tools             Models            RAG search       Native launcher
+    Agents            Permissions       AgentLoop        Docker
+    Skills            Providers         Tool calling     Desktop app
+    Tools             Models            RAG search       Portable zip
     Knowledge                           Memory           Ready to ship
                                         Streaming SSE
 ```
@@ -58,7 +58,7 @@ You don't assemble an agent. You forge a system.
 
 synapseForge is designed around a simple idea: agents should be built as systems, not assembled from prompts.
 
-Define your agents, equip them with skills and tools, connect them to your data sources, and ship a self-contained application — from `pip install` to a distributable zip.
+Define your agents, equip them with skills and tools, connect them to your data sources, and ship a self-contained application — from `pip install` to a distributable build (Docker, desktop app or portable zip).
 
 ### A forge that can extend itself
 
@@ -91,10 +91,11 @@ The Forge turns those definitions into autonomous systems.
 ```bash
 synapseforge init my-project      # scaffold with GUI
 synapseforge run .                # develop locally
-synapseforge launch -n my-app     # build portable zip
+synapseforge launch -n my-app     # build a desktop app / portable zip
+docker compose up --build -d      # or deploy with Docker
 ```
 
-The result is a self-contained application distribution: embedded Python, compiled backend, built frontend, native launcher. Hand it to anyone.
+The result is a self-contained application distribution. Choose the modality that fits: a **Docker** container (autocontained or backend-only), a **desktop app** (embedded Python + native launcher), or a **portable zip** ready to hand to anyone.
 
 ---
 
@@ -122,7 +123,7 @@ On first launch, configure an API key from any supported cloud provider ([OpenRo
 | Command | What it does |
 |---------|-------------|
 | `synapseforge init [dir]` | Create a project with interactive GUI |
-| `synapseforge launch -p <path> -n <name>` | Build a portable distribution zip |
+| `synapseforge launch -p <path> -n <name>` | Build a desktop app / portable distribution zip |
 | `synapseforge colors [dir]` | Edit project colors live |
 | `synapseforge run [dir]` | Start development servers |
 
@@ -134,7 +135,9 @@ flowchart LR
     D --> E["Project ready"]
     E --> F["synapseforge run"]
     E --> G["synapseforge launch"]
-    G --> H["Portable zip"]
+    E --> I["docker compose up"]
+    G --> H["Desktop app / portable zip"]
+    I --> J["Docker container"]
 ```
 
 ---
@@ -145,7 +148,7 @@ flowchart LR
 
 FastAPI application with REST/SSE routers. The agent framework lives in `backend/agent/`: AgentLoop with native tool calling, tools registry (native + external + MCP), SQLite sessions, per-agent permissions, skills, RAG (ChromaDB) and long-term memory.
 
-**Native tools**: `read`, `write`, `edit`, `glob`, `grep`, `webfetch`, `websearch`, `shell`, `task` (sub-agent delegation), `skill`, `reference`, `rag`, `search_memory`, `check_email`, `send_email`, `help`.
+**Native tools**: `read`, `write`, `edit`, `glob`, `grep`, `list_dir`, `webfetch`, `websearch`, `shell`, `task` (sub-agent delegation), `skill`, `reference`, `rag`, `search_memory`, `check_email`, `send_email`, `help`.
 
 ### Frontend
 
@@ -220,6 +223,11 @@ python -m tests.e2e.runner --only rag     # filter by name
 ---
 
 ## Docker
+
+Deploy the app as a container. Two targets are available in `docker-compose.yml`:
+
+- **`app`** — autocontained: builds the frontend and serves it from the backend in a single container.
+- **`backend`** — backend only, for separated deployments (e.g. ACI).
 
 ```bash
 docker compose up --build -d

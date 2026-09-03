@@ -136,7 +136,7 @@
             <li>Un <strong>backend</strong> robusto listo para producción con FastAPI, streaming en tiempo real, persistencia y motor de agentes.</li>
             <li>Un <strong>frontend</strong> moderno con chat, historial, adjuntos, panel de configuración y base de conocimiento.</li>
             <li>Un <strong>sistema de agentes extensible</strong> basado en archivos Markdown: skills, tools externas, sub-agentes y colecciones RAG se cargan dinámicamente.</li>
-            <li>Un <strong>build distribuible</strong>: con un comando compilás todo a un .exe + frontend estático, empaquetado en un zip.</li>
+            <li>Un <strong>build distribuible</strong>: con un comando compilás todo a una app de escritorio / zip, o lo desplegás como contenedor Docker.</li>
           </ul>
         </section>
 
@@ -164,7 +164,7 @@ synapseForge run .
               <tr><td><code>synapseForge init [directorio]</code></td><td>Crea un proyecto nuevo desde la plantilla (con GUI)</td></tr>
               <tr><td><code>synapseForge colors [directorio]</code></td><td>Edita solo la paleta de colores de un proyecto existente</td></tr>
               <tr><td><code>synapseForge run [directorio]</code></td><td>Levanta el proyecto en modo desarrollo (requiere el venv activado)</td></tr>
-              <tr><td><code>synapseForge launch -p &lt;directorio&gt; -n &lt;nombre&gt;</code></td><td>Compila todo a un .exe + zip distribuible</td></tr>
+              <tr><td><code>synapseForge launch -p &lt;directorio&gt; -n &lt;nombre&gt;</code></td><td>Compila todo a una app de escritorio / zip distribuible</td></tr>
             </tbody>
           </table>
         </section>
@@ -385,6 +385,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>skill</code></td><td>Carga el contenido de una skill por nombre.</td></tr>
               <tr><td><code>reference</code></td><td>Carga un archivo de referencia específico de una skill.</td></tr>
               <tr><td><code>rag</code></td><td>Consulta una colección RAG (solo las permitidas en <code>permission.rag</code>).</td></tr>
+              <tr><td><code>search_memory</code></td><td>Busca en conversaciones anteriores y devuelve los fragmentos relevantes.</td></tr>
               <tr><td><code>check_email</code></td><td>Verifica correos no leídos en un buzón IMAP.</td></tr>
               <tr><td><code>send_email</code></td><td>Envía un email.</td></tr>
               <tr><td><code>help</code></td><td>Documentación interna de las tools.</td></tr>
@@ -400,11 +401,11 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </ul>
           <h3>Reglas importantes</h3>
           <ul>
-            <li>La función principal debe ser <strong>async</strong>.</li>
+            <li>La <strong>primera línea del docstring del módulo</strong> es la descripción que el LLM usa para decidir si invocar la tool.</li>
+            <li>La función principal debe ser <strong>async</strong> y tener el <strong>mismo nombre que el archivo</strong> (sin la extensión).</li>
             <li>Todos los parámetros tienen que tener <strong>type hints</strong> (anotaciones de tipo).</li>
-            <li>La función tiene que devolver <strong>texto</strong> (lo que el modelo va a leer).</li>
-            <li>El nombre de la función principal tiene que coincidir con el nombre del archivo (sin la extensión).</li>
-            <li>Toda la lógica va dentro de un <strong>try/except</strong> que devuelve el error como string.</li>
+            <li>La función tiene que devolver el contrato unificado <code>{status, message, data, usage}</code>.</li>
+            <li>Toda la lógica va dentro de un <strong>try/except</strong> que devuelve el error en el campo <code>message</code> del contrato.</li>
             <li>Las operaciones bloqueantes se ejecutan en un thread aparte para no trabar al agente.</li>
             <li>Si la tool necesita credenciales, se leen de un <code>.env</code> propio dentro de la carpeta <code>lib/</code>.</li>
           </ul>
@@ -419,7 +420,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li>Creá un archivo <code>nombre_tool.py</code> directamente en <code>~/.config/synapseForge/tools/</code>. No dentro de subcarpetas.</li>
             <li>Al inicio del archivo, escribí una <strong>descripción corta de una línea</strong> (máximo 80 caracteres). Esa descripción es la primera cosa que ve el modelo cuando evalúa si la tool le sirve.</li>
             <li>Definí la función principal como <code>async def nombre_tool(...)</code> con type hints y un docstring que explique qué hace cada parámetro.</li>
-            <li>Implementá la lógica dentro de un <strong>try/except</strong> que devuelva el error como string.</li>
+            <li>Implementá la lógica dentro de un <strong>try/except</strong> que devuelva el error en el campo <code>message</code> del contrato <code>{status, message, data, usage}</code>.</li>
             <li>Si la tool hace operaciones bloqueantes (consultas a base de datos, llamadas HTTP), envolvélas para que se ejecuten en un thread aparte y no bloqueen al agente.</li>
             <li>Agregá un bloque <code>if __name__ == "__main__"</code> al final para poder probar la tool desde la línea de comandos.</li>
             <li>Si la tool necesita credenciales o configuración, creá un archivo <code>tools/lib/.env</code> con las variables necesarias.</li>
@@ -523,6 +524,8 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <p>El panel lateral incluye una sección <strong>Crear</strong> (modo dev) con accesos a las páginas standalone que se abren en una nueva pestaña del navegador:</p>
           <ul>
             <li><strong>Crear Skill</strong>: formulario con nombre, tarea, cuándo usarla, cuándo NO, y material de referencia. El LLM busca skills existentes que coincidan; si no encuentra, genera una nueva.</li>
+            <li><strong>Crear Tool</strong>: entrevista iterativa con el LLM para generar una tool externa (<code>.py</code>).</li>
+            <li><strong>Crear Agente</strong>: entrevista iterativa con el LLM para generar un agente (<code>.md</code>).</li>
             <li><strong>Gestionar RAG</strong>: página para crear colecciones RAG, subir archivos y agregar URLs, procesada con ChromaDB.</li>
           </ul>
           <p>En las pantallas iniciales de creación (skill, tool y agente) podés elegir con qué modelo cloud se genera el elemento: seleccionás proveedor y modelo y pulsás <strong>Aplicar</strong>. La selección es efímera (solo vale para esa tarea mientras la pestaña está abierta); si no aplicás ninguna, se usa el modelo por defecto.</p>
@@ -764,14 +767,14 @@ synapseForge run .</code></pre>
         <section id="deploy-cloud">
           <h2>Deploy en cloud</h2>
           <h3>Introducción</h3>
-          <p>Para distribuir el agente como producto terminado, synapseForge incluye un comando que compila todo a un ejecutable standalone más el frontend, todo empaquetado en un zip listo para distribuir.</p>
+          <p>Para distribuir el agente como producto terminado, synapseForge ofrece varias modalidades: una <strong>app de escritorio / zip portable</strong> (con el comando <code>launch</code>) o un <strong>contenedor Docker</strong>.</p>
           <h3>Build con el comando launch</h3>
           <pre><code>synapseForge launch -p ./mi-proyecto -n "MiApp"</code></pre>
           <p>Este comando hace tres cosas:</p>
           <ol>
             <li><strong>Compila el backend</strong> en un ejecutable standalone que incluye todas las dependencias de Python.</li>
             <li><strong>Compila el frontend</strong> en archivos estáticos optimizados para producción.</li>
-            <li><strong>Empaqueta todo</strong> en un zip distribuible: el ejecutable, el frontend compilado, el entorno virtual, el launcher, la configuración, la licencia, el README y la documentación.</li>
+            <li><strong>Empaqueta todo</strong> en una app de escritorio / zip distribuible: el ejecutable, el frontend compilado, el entorno virtual, el launcher, la configuración, la licencia, el README y la documentación.</li>
           </ol>
           <h3>Checklist previo al build</h3>
           <p>Antes de generar el build, asegurate de que la configuración de producción esté lista:</p>
@@ -802,9 +805,12 @@ synapseForge run .</code></pre>
     }
 }</code></pre>
           <h3>Despliegue con Docker</h3>
-          <p>Si preferís usar contenedores, synapseForge incluye una configuración lista para usar:</p>
+          <p>Si preferís usar contenedores, synapseForge incluye una configuración lista para usar con dos targets:</p>
           <pre><code>docker compose up -d --build</code></pre>
-          <p>El contenedor compila el frontend y lo sirve desde el backend en una sola aplicación. Solo necesitás exponer el puerto 8000.</p>
+          <ul>
+            <li><strong><code>app</code></strong> — autocontenido: compila el frontend y lo sirve desde el backend en una sola aplicación. Solo necesitás exponer el puerto 8000.</li>
+            <li><strong><code>backend</code></strong> — solo backend, para despliegues separados (ej. ACI).</li>
+          </ul>
           <h3>Plataformas cloud recomendadas</h3>
           <ul>
             <li><strong>VPS clásico</strong> (Hetzner, DigitalOcean, Vultr) — Más control y mejor precio. Ideal para proyectos que necesitan un servidor siempre encendido.</li>

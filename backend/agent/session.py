@@ -24,12 +24,9 @@ if _project_root not in sys.path:
 from backend.agent.utils.contract import make_error_response, make_success_response, zero_usage
 from backend.agent.utils.error_logger import log_error
 from backend.agent.ddl_setup import setup_database
+from backend.utils.db import DB_PATH
 
 logger = logging.getLogger(__name__)
-
-# Ruta absoluta al archivo SQLite (basada en el project root, no en CWD)
-# Así funciona igual desde cualquier directorio (uvicorn, debugger, tests).
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 
 class SessionManager:
@@ -47,7 +44,7 @@ class SessionManager:
 
     VALID_ROLES = frozenset({"system", "user", "assistant", "tool"})
 
-    def __init__(self, db_path: str = _DB_PATH) -> None:
+    def __init__(self, db_path: str = DB_PATH) -> None:
         """Initialise the session manager.
 
         Connections are now created per-operation (not singleton) to avoid

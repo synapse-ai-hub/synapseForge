@@ -36,26 +36,14 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.error_logger import log_error
+from backend.utils.db import db_transaction, get_connection
 
 logger = logging.getLogger(__name__)
-
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 CHECK_INTERVAL_SECONDS = 20
 """How often the loop checks for due tasks (must stay below one minute)."""
 
 _TIME_RE_ERROR = "Horario inválido (formato esperado HH:MM)."
-
-
-# ---------------------------------------------------------------------------
-# Database helpers
-# ---------------------------------------------------------------------------
-
-def _connect() -> sqlite3.Connection:
-    """Open a connection to the agent database with dict rows."""
-    conn = sqlite3.connect(_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 
 def _row_to_task(row: sqlite3.Row) -> dict:
@@ -83,7 +71,7 @@ def list_tasks() -> list[dict]:
         List of task dicts (possibly empty on error).
     """
     try:
-        with _connect() as conn:
+        with get_connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM scheduled_tasks ORDER BY time, created_at"
             ).fetchall()
@@ -97,7 +85,7 @@ def list_tasks() -> list[dict]:
 def get_task(task_id: str) -> dict | None:
     """Return a single scheduled task or ``None`` if it does not exist."""
     try:
-        with _connect() as conn:
+        with get_connection() as conn:
             row = conn.execute(
                 "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,)
             ).fetchone()
@@ -130,13 +118,12 @@ def add_task(prompt: str, time_str: str, days: list[int]) -> dict:
     now = datetime.now().isoformat()
     task_id = uuid.uuid4().hex
     try:
-        with _connect() as conn:
+        with db_transaction() as conn:
             conn.execute(
                 "INSERT INTO scheduled_tasks (id, prompt, time, days, enabled, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, 1, ?, ?)",
                 (task_id, prompt, time_str, json.dumps(sorted(set(days))), now, now),
             )
-            conn.commit()
         return {
             "status": "success",
             "message": "Tarea programada creada.",
@@ -183,7 +170,7 @@ def update_task(
     new_enabled = current["enabled"] if enabled is None else bool(enabled)
 
     try:
-        with _connect() as conn:
+        with db_transaction() as conn:
             conn.execute(
                 "UPDATE scheduled_tasks SET prompt = ?, time = ?, days = ?, enabled = ?, "
                 "last_run_date = NULL, updated_at = ? WHERE id = ?",
@@ -196,7 +183,6 @@ def update_task(
                     task_id,
                 ),
             )
-            conn.commit()
         return {
             "status": "success",
             "message": "Tarea actualizada.",
@@ -218,14 +204,13 @@ def delete_task(task_id: str) -> dict:
         Contract-style dict with ``status`` and ``message``.
     """
     try:
-        with _connect() as conn:
+        with db_transaction() as conn:
             cursor = conn.execute(
                 "DELETE FROM task_runs WHERE task_id = ?", (task_id,)
             )
             cursor = conn.execute(
                 "DELETE FROM scheduled_tasks WHERE id = ?", (task_id,)
             )
-            conn.commit()
         if cursor.rowcount == 0:
             return {"status": "error", "message": "La tarea no existe."}
         return {"status": "success", "message": "Tarea eliminada."}
@@ -245,7 +230,7 @@ def list_runs(limit: int = 50) -> list[dict]:
         List of run dicts joined with the task prompt (possibly empty).
     """
     try:
-        with _connect() as conn:
+        with get_connection() as conn:
             rows = conn.execute(
                 "SELECT r.*, t.prompt FROM task_runs r "
                 "LEFT JOIN scheduled_tasks t ON t.id = r.task_id "
@@ -281,13 +266,12 @@ def record_run(
 ) -> None:
     """Persist a task execution result in ``task_runs``."""
     try:
-        with _connect() as conn:
+        with db_transaction() as conn:
             conn.execute(
                 "INSERT INTO task_runs (task_id, session_id, status, detail, started_at, finished_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (task_id, session_id, status, detail, started_at, finished_at),
             )
-            conn.commit()
     except Exception as exc:
         log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:record_run")
         logger.warning("Failed to record task run: %s", exc)
@@ -296,12 +280,11 @@ def record_run(
 def mark_fired(task_id: str, date_str: str) -> None:
     """Mark a task as already fired on the given date (dedup guard)."""
     try:
-        with _connect() as conn:
+        with db_transaction() as conn:
             conn.execute(
                 "UPDATE scheduled_tasks SET last_run_date = ? WHERE id = ?",
                 (date_str, task_id),
             )
-            conn.commit()
     except Exception as exc:
         log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:mark_fired")
         logger.warning("Failed to mark task fired: %s", exc)

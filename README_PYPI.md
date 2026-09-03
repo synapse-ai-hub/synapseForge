@@ -92,7 +92,9 @@ Requires the project venv to be activated (`VIRTUAL_ENV`). Starts backend + fron
 synapseforge launch -p ./my-project -n "MyApp"
 ```
 
-Builds the frontend, bundles embedded Python and packages everything into a self-contained zip ready to deliver. By default the backend ships as `.py` sources; pass `-c` / `--compile` to compile it to `.pyc`. Other options: `--skip-frontend`, `--no-embed`.
+Builds the frontend, bundles embedded Python and packages everything into a self-contained desktop app / zip ready to deliver. By default the backend ships as `.py` sources; pass `-c` / `--compile` to compile it to `.pyc`. Other options: `--skip-frontend`, `--no-embed`.
+
+Alternatively, deploy the project as a container with the bundled Docker setup (`docker compose up --build -d`), which serves the built frontend from the backend in a single image.
 
 ### Update to latest template
 
@@ -117,7 +119,7 @@ GUI editor for `frontend/public/colors.json`. Refresh the browser (F5) to see ch
 | Command | Description |
 |---------|-------------|
 | `synapseforge init [dir]` | Scaffold a project from bundled template (GUI) |
-| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build self-contained distribution zip (`-c` compiles backend to `.pyc`, default ships `.py`) |
+| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build self-contained desktop app / distribution zip (`-c` compiles backend to `.pyc`, default ships `.py`) |
 | `synapseforge colors [dir]` | Edit `frontend/public/colors.json` via GUI (live reload) |
 | `synapseforge run [dir]` | Start uvicorn + npm dev servers, open browser (venv must be active) |
 | `synapseforge update [dir]` | Update project to latest template (preserves agent.db, config, colors) |
@@ -160,6 +162,6 @@ Apache 2.0
 
 ---
 
-Copyright (c) 2026 SYNASPE AI SAS
+Copyright (c) 2026 SYNAPSE AI SAS
 
 ---

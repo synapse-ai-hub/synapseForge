@@ -96,6 +96,8 @@ Además de las tools externas, el sistema incluye **tools nativas** incorporadas
 | `check_email` | Verifica correos no leídos en un buzón IMAP. |
 | `send_email` | Envía un email vía SMTP. |
 | `list_dir` | Lista el contenido de un directorio. |
+| `rag` | Consulta una colección RAG (solo las permitidas en `permission.rag`). |
+| `search_memory` | Busca en conversaciones anteriores y devuelve los fragmentos relevantes. |
 
 ---
 

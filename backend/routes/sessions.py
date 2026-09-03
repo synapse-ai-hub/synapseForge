@@ -14,6 +14,7 @@ import sqlite3
 import sys
 
 from backend.agent.utils.error_logger import log_error
+from backend.utils.db import db_transaction, get_connection
 
 from fastapi import APIRouter
 
@@ -39,9 +40,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["sessions"])
 
-# Path to the SQLite database
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
-
 
 def _fetch_attachments(session_id: str) -> dict[int, list[dict]]:
     """Fetch attachment file names and sizes grouped by turn_number for a session.
@@ -50,15 +48,11 @@ def _fetch_attachments(session_id: str) -> dict[int, list[dict]]:
         Dict mapping turn_number -> list of {"name": str, "size": int} dicts.
     """
     try:
-        conn = sqlite3.connect(_DB_PATH)
-        conn.row_factory = sqlite3.Row
-        try:
+        with get_connection() as conn:
             rows = conn.execute(
                 "SELECT turn_number, file_name, size FROM attachments WHERE session_id = ? ORDER BY turn_number, id",
                 (session_id,),
             ).fetchall()
-        finally:
-            conn.close()
 
         attachments: dict[int, list[dict]] = {}
         for row in rows:

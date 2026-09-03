@@ -993,13 +993,16 @@ class Tools:
             )
 
     async def search_memory(self, query: str, limit: int = 5) -> dict:
-        """Busca en conversaciones anteriores del usuario (memoria de largo plazo). Úsala cuando el usuario pregunte por conversaciones previas o mencione información que no está en la sesión actual.
+        """Search the user's past conversations (long-term memory).
 
-        Consulta la colección ``conversaciones`` de ChromaDB (indexada
-        automáticamente al final de cada turno) y devuelve los fragmentos más
-        relevantes con su metadata (sesión, título, fecha, turno). La sesión
-        actual siempre se excluye de los resultados para no buscar en sí
-        misma.
+        Use it when the user asks about previous conversations or mentions
+        information that is not in the current session.
+
+        Queries the ``agent_conversations`` ChromaDB collection (indexed
+        automatically at the end of every turn) and returns the most relevant
+        fragments with their metadata (session, title, date, turn). The current
+        session is always excluded from the results so it never searches
+        itself.
 
         Args:
             query: Natural language query describing what to look for in past
@@ -1519,14 +1522,17 @@ class Tools:
             )
 
     async def help(self) -> dict:
-        """Lee la documentación interna del agente sobre su funcionamiento. Utiliza esta herramienta cuando el usuario te pida ayuda con el funcionamiento del agente, cuando te pida que le expliques cómo crear herramientas, subagentes, etc.
+        """Read the agent's internal documentation about how it works.
 
-        Devuelve el contenido del archivo ``help.md`` que explica cómo
-        crear herramientas, skills, agentes, cambiar modelos, configurar
-        la ventana de contexto, el modo verbose, etc.
+        Use this tool when the user asks for help with how the agent works,
+        or asks you to explain how to create tools, sub-agents, etc.
+
+        Returns the content of the ``help.md`` file, which explains how to
+        create tools, skills, agents, change models, configure the context
+        window, verbose mode, etc.
 
         Returns:
-            dict con ``{status, message, data, usage}``.
+            dict with ``{status, message, data, usage}``.
         """
         try:
             help_path = os.path.join(

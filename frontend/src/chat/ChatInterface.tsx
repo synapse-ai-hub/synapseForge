@@ -206,7 +206,6 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
       .getContextWindow()
       .then((data) => {
         if (cancelledRef.current) return;
-        console.log("[DEBUG] getContextWindow response:", JSON.stringify(data));
         if (data.context_window_tokens != null) {
           setContextWindow(data.context_window_tokens);
           // Recompute percent against the new window using the last known tokensUsed.
@@ -217,15 +216,13 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
         }
         if (data.vram_gb != null) {
           setVramGb(data.vram_gb);
-          console.log("[DEBUG] setVramGb:", data.vram_gb);
         }
         if (data.ollama_default_context != null) {
           setOllamaDefaultContext(data.ollama_default_context);
-          console.log("[DEBUG] setOllamaDefaultContext:", data.ollama_default_context);
         }
       })
-      .catch((err) => {
-        if (!cancelledRef.current) console.log("[DEBUG] getContextWindow error:", err);
+      .catch(() => {
+        // Silent failure - context window info is optional
       });
   }, []);
 

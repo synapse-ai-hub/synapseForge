@@ -84,7 +84,11 @@ def liberar_modelo(modelo: str, session_id: str | None = None, turn_number: int 
 
 
 def ollama_server_vivo(session_id: str | None = None, turn_number: int | None = None, parent_id: str | None = None) -> bool:
-    """Verifica si llama-server está corriendo y responde."""
+    """Check whether the local Ollama server is running and responding.
+
+    Returns:
+        True if the server responds with HTTP 200, False otherwise.
+    """
     try:
         import requests
         r = requests.get("http://localhost:11434/api/tags", timeout=3)
@@ -178,10 +182,10 @@ def reiniciar_llama_server(session_id: str | None = None, turn_number: int | Non
 
 
 def obtener_modelo_actual() -> str | None:
-    """Obtiene el modelo resuelto actualmente desde el singleton agent.
-    
+    """Get the currently resolved model from the agent singleton.
+
     Returns:
-        Nombre del modelo o None si no hay modelo seleccionado.
+        The model name, or None if no model is selected.
     """
     try:
         from backend.instances import agent

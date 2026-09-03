@@ -129,27 +129,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   };
 
   const load = useCallback(async (prov?: string) => {
-    let label: string | undefined;
     try {
       setLoading(true);
-      label = "[ConfigTab] load " + Date.now();
-      console.time(label);
-      const tProv = "[ConfigTab] getProviders " + Date.now();
-      const tModels = "[ConfigTab] getModels " + Date.now();
-      const tCW = "[ConfigTab] getContextWindow " + Date.now();
-      const tParams = "[ConfigTab] getParameters " + Date.now();
-      console.time(tProv);
-      console.time(tModels);
-      console.time(tCW);
-      console.time(tParams);
       const [provResp, m, cw, prm] = await Promise.all([
-        configService.getProviders().finally(() => console.timeEnd(tProv)),
-        configService.getModels(prov).finally(() => console.timeEnd(tModels)),
-        configService.getContextWindow().finally(() => console.timeEnd(tCW)),
-        configService
-          .getParameters()
-          .catch(() => null)
-          .finally(() => console.timeEnd(tParams)),
+        configService.getProviders(),
+        configService.getModels(prov),
+        configService.getContextWindow(),
+        configService.getParameters().catch(() => null),
       ]);
       setProviders(provResp.providers || []);
       setModels(m.models || []);
@@ -193,7 +179,6 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       console.error("Error cargando configuración:", err);
     } finally {
       setLoading(false);
-      if (label) console.timeEnd(label);
     }
   }, []);
 

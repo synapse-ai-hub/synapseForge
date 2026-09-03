@@ -5,12 +5,11 @@ This module centralises the non-endpoint logic used by
 the SSRF-protected URL fetching (DNS pinning, private-IP blocking, redirect
 handling and response size caps).
 
-It also hosts the long-term conversation memory helpers (branch
-``feat/memoria-largo-plazo``): indexing of completed turns into the dedicated
-``conversaciones`` Chroma collection, following the pattern proven in
-ProspectingAgent (one document per turn = user message + final assistant
-answer, with session/date metadata), fire-and-forget so an indexing failure
-can never break the chat stream.
+It also hosts the long-term conversation memory helpers: indexing of completed
+turns into the dedicated ``agent_conversations`` Chroma collection (one
+document per turn = user message + final assistant answer, with session/date
+metadata), fire-and-forget so an indexing failure can never break the chat
+stream.
 
 Keeping this logic in ``utils`` (instead of inline in the route) follows the
 project convention of separating helpers from endpoints.
@@ -567,9 +566,9 @@ def _index_turn_sync(
     """Index one completed conversation turn into Chroma (blocking).
 
     Resolves the session title from SQLite, builds the turn document and
-    stores it in the ``conversaciones`` collection using the shared VectorDB
-    (OpenRouter embeddings). If the document exceeds ``MAX_TURN_DOC_CHARS``
-    it is split with the existing chunking helper.
+    stores it in the ``agent_conversations`` collection using the shared
+    VectorDB (OpenRouter embeddings). If the document exceeds
+    ``MAX_TURN_DOC_CHARS`` it is split with the existing chunking helper.
 
     Args:
         session_id: Session identifier.

@@ -122,6 +122,13 @@ except ImportError as e:
     scheduler_router = None
     logging.warning("backend.routes.scheduler could not be imported.")
 
+try:
+    from backend.routes.billing import router as billing_router
+except ImportError as e:
+    log_error(str(e), source="main.py:billing_import")
+    billing_router = None
+    logging.warning("backend.routes.billing could not be imported.")
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -340,6 +347,9 @@ if conversation_router is not None:
 
 if scheduler_router is not None:
     app.include_router(scheduler_router, prefix="/api")
+
+if billing_router is not None:
+    app.include_router(billing_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

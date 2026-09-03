@@ -41,9 +41,9 @@
 ```
     FORJAR             EQUIPAR           EJECUTAR         DISTRIBUIR
     ───────          ───────           ─────────        ──────────
-    Agentes          Permisos          AgentLoop        Zip portable
-    Skills           Proveedores       Tool calling     Python embebido
-    Tools            Modelos           RAG search       Launcher nativo
+    Agentes          Permisos          AgentLoop        Docker
+    Skills           Proveedores       Tool calling     App de escritorio
+    Tools            Modelos           RAG search       Zip portable
     Conocimiento                     Memoria           Listo para usar
                                      Streaming SSE
 ```
@@ -58,7 +58,7 @@ No armás un agente. Forjás un sistema.
 
 synapseForge parte de una idea simple: los agentes deben construirse como sistemas, no armarse desde prompts.
 
-Definí tus agentes, equipalos con skills y tools, conectalos a tus fuentes de datos, y distribuí una aplicación autónoma — desde `pip install` hasta un zip distribuible.
+Definí tus agentes, equipalos con skills y tools, conectalos a tus fuentes de datos, y distribuí una aplicación autónoma — desde `pip install` hasta un build distribuible (Docker, app de escritorio o zip portable).
 
 ### Una fábrica que se extiende a sí misma
 
@@ -91,10 +91,11 @@ La fábrica transforma esas definiciones en sistemas autónomos.
 ```bash
 synapseforge init my-project      # scaffolding con GUI
 synapseforge run .                # desarrollo local
-synapseforge launch -n my-app     # zip portable
+synapseforge launch -n my-app     # app de escritorio / zip portable
+docker compose up --build -d      # o desplegá con Docker
 ```
 
-El resultado es una distribución de aplicación autónoma: Python embebido, backend compilado, frontend construido, launcher nativo. Entregalo a quien quieras.
+El resultado es una distribución de aplicación autónoma. Elegí la modalidad que te convenga: un contenedor **Docker** (autocontenido o solo backend), una **app de escritorio** (Python embebido + launcher nativo) o un **zip portable** listo para entregar a quien quieras.
 
 ---
 
@@ -122,7 +123,7 @@ En el primer inicio, configurá una API key de cualquier proveedor cloud soporta
 | Comando | Qué hace |
 |---------|----------|
 | `synapseforge init [dir]` | Crear un proyecto con GUI interactiva |
-| `synapseforge launch -p <path> -n <name>` | Construir un zip de distribución portable |
+| `synapseforge launch -p <path> -n <name>` | Construir una app de escritorio / zip de distribución portable |
 | `synapseforge colors [dir]` | Editar colores del proyecto en vivo |
 | `synapseforge run [dir]` | Iniciar servidores de desarrollo |
 
@@ -134,7 +135,9 @@ flowchart LR
     D --> E["Proyecto listo"]
     E --> F["synapseforge run"]
     E --> G["synapseforge launch"]
-    G --> H["Zip portable"]
+    E --> I["docker compose up"]
+    G --> H["App de escritorio / zip portable"]
+    I --> J["Contenedor Docker"]
 ```
 
 ---
@@ -145,11 +148,11 @@ flowchart LR
 
 Aplicación FastAPI con routers REST/SSE. El framework de agentes vive en `backend/agent/`: AgentLoop con tool calling nativo, registro de tools (nativos + externos + MCP), sesiones SQLite, permisos por agente, skills, RAG (ChromaDB) y memoria de largo plazo.
 
-**Tools nativos**: `read`, `write`, `edit`, `glob`, `grep`, `webfetch`, `websearch`, `shell`, `task` (delegación a sub-agentes), `skill`, `reference`, `rag`, `search_memory`, `check_email`, `send_email`, `help`.
+**Tools nativos**: `read`, `write`, `edit`, `glob`, `grep`, `list_dir`, `webfetch`, `websearch`, `shell`, `task` (delegación a sub-agentes), `skill`, `reference`, `rag`, `search_memory`, `check_email`, `send_email`, `help`.
 
 ### Frontend
 
-SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui. Multi-página: chat, creación de skills, gestión de RAG, documentación. Streaming SSE, visualización de tool calls, indicador de contexto, tareas programadas, dashboard de métricos, toggle de Telegram.
+SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui. Multi-página: chat, creación de skills, gestión de RAG, documentación. Streaming SSE, visualización de tool calls, indicador de contexto, tareas programadas, dashboard de métricas, toggle de Telegram.
 
 ### Proveedores
 
@@ -210,7 +213,7 @@ synapseForge/
 
 ## Testing
 
-Suite E2E declarativa en `tests/e2e/`. Escenarios YAML驱动 el backend real — chat vía SSE, llamadas API directas — validando contratos y estructura.
+Suite E2E declarativa en `tests/e2e/`. Escenarios YAML que manejan el backend real — chat vía SSE, llamadas API directas — validando contratos y estructura.
 
 ```bash
 python -m tests.e2e.runner                # todos los escenarios
@@ -220,6 +223,11 @@ python -m tests.e2e.runner --only rag     # filtrar por nombre
 ---
 
 ## Docker
+
+Desplegá la app como contenedor. Hay dos targets disponibles en `docker-compose.yml`:
+
+- **`app`** — autocontenido: compila el frontend y lo sirve desde el backend en un solo contenedor.
+- **`backend`** — solo backend, para despliegues separados (ej. ACI).
 
 ```bash
 docker compose up --build -d

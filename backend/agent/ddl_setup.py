@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from backend.agent.utils.contract import zero_usage
+
 
 def setup_database(conn: sqlite3.Connection) -> None:
     """Create all agent tables on the given connection.
@@ -169,7 +171,52 @@ def setup_database(conn: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_model_catalog_provider ON model_catalog(provider);
+        CREATE INDEX IF NOT EXISTS idx_model_catalog_model ON model_catalog(model_id);
         CREATE INDEX IF NOT EXISTS idx_model_catalog_reasoning ON model_catalog(reasoning);
         CREATE INDEX IF NOT EXISTS idx_model_catalog_context ON model_catalog(context_window);
+
+        CREATE TABLE IF NOT EXISTS billing (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL,
+            requests INTEGER DEFAULT 0,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            cost REAL DEFAULT 0.0,
+            provider_limits TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(provider)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_billing_provider ON billing(provider);
+
+        CREATE TABLE IF NOT EXISTS spend (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            cost_input REAL DEFAULT 0.0,
+            cost_output REAL DEFAULT 0.0,
+            cost_total REAL DEFAULT 0.0,
+            updated_at TEXT NOT NULL,
+            UNIQUE(provider, model)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_spend_provider_model ON spend(provider, model);
+
+        CREATE TABLE IF NOT EXISTS spend_limits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL,
+            model TEXT,
+            limit_amount REAL NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(provider, model)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_spend_limits_provider_model ON spend_limits(provider, model);
         """
     )

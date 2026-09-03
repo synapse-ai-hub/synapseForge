@@ -1100,7 +1100,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                                options=options, keep_alive=-1)
 
             def _try_stream(use_think=False):
-                """Crear stream con o sin think flag, o con nivel específico."""
+                """Create a stream with or without the think flag, or with a specific level."""
                 if isinstance(use_think, str) and use_think in ("low", "medium", "high", "max"):
                     # String level for GPT-OSS / Qwen max
                     try:

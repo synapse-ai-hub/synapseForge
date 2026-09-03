@@ -87,7 +87,11 @@ def _unlink(path: Path) -> bool:
 
 @router.get("/knowledge")
 async def list_knowledge_collections() -> JSONResponse:
-    """Lista las colecciones vectoriales disponibles."""
+    """List the available vector collections.
+
+    Returns:
+        A JSONResponse with ``{status, collections: string[]}``.
+    """
     try:
         db = get_vector_db()
         cols = db.list_collections()
@@ -112,9 +116,12 @@ async def list_knowledge_collections() -> JSONResponse:
 
 @router.delete("/skills/{name}")
 async def delete_skill(name: str) -> JSONResponse:
-    """Elimina una skill por nombre.
+    """Delete a skill by name.
 
-    Busca ``<skills_dir>/<name>/`` y lo borra recursivamente.
+    Looks up ``<skills_dir>/<name>/`` and removes it recursively.
+
+    Returns:
+        A JSONResponse with the operation result.
     """
     if not name or ".." in name or "/" in name:
         return _make_response("error", "Nombre de skill inválido.", 400)
@@ -138,9 +145,12 @@ async def delete_skill(name: str) -> JSONResponse:
 
 @router.delete("/tools/{name}")
 async def delete_tool(name: str) -> JSONResponse:
-    """Elimina una tool externa por nombre.
+    """Delete an external tool by name.
 
-    Busca ``<tools_dir>/<name>.py`` y lo borra.
+    Looks up ``<tools_dir>/<name>.py`` and removes it.
+
+    Returns:
+        A JSONResponse with the operation result.
     """
     if not name or ".." in name or "/" in name:
         return _make_response("error", "Nombre de tool inválido.", 400)
@@ -167,9 +177,12 @@ async def delete_tool(name: str) -> JSONResponse:
 
 @router.delete("/agents/{name}")
 async def delete_agent(name: str) -> JSONResponse:
-    """Elimina un agente por nombre.
+    """Delete an agent by name.
 
-    Busca ``<agents_dir>/<name>.md`` y lo borra.
+    Looks up ``<agents_dir>/<name>.md`` and removes it.
+
+    Returns:
+        A JSONResponse with the operation result.
     """
     if not name or ".." in name or "/" in name:
         return _make_response("error", "Nombre de agente inválido.", 400)
@@ -193,7 +206,11 @@ async def delete_agent(name: str) -> JSONResponse:
 
 @router.delete("/mcp/{label:path}")
 async def delete_mcp_server(label: str) -> JSONResponse:
-    """Elimina un servidor MCP de mcp.json."""
+    """Delete an MCP server from mcp.json.
+
+    Returns:
+        A JSONResponse with the operation result.
+    """
     if not label:
         return _make_response("error", "Label del servidor inválido.", 400)
 
@@ -224,9 +241,12 @@ async def delete_mcp_server(label: str) -> JSONResponse:
 
 @router.delete("/knowledge/{collection}")
 async def delete_knowledge_collection(collection: str) -> JSONResponse:
-    """Elimina una colección vectorial de la base de conocimiento.
+    """Delete a vector collection from the knowledge base.
 
-    Busca ``<knowledge_dir>/<collection>/`` y lo borra recursivamente.
+    Looks up ``<knowledge_dir>/<collection>/`` and removes it recursively.
+
+    Returns:
+        A JSONResponse with the operation result.
     """
     if not collection or ".." in collection or "/" in collection:
         return _make_response("error", "Nombre de colección inválido.", 400)

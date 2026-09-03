@@ -193,7 +193,14 @@ def _sse(event: dict) -> str:
 
 
 def _formatear_mensajes(mensajes: list[dict]) -> str:
-    """Convierte la lista de mensajes en texto para el prompt."""
+    """Convert the list of messages into text for the prompt.
+
+    Args:
+        mensajes: List of message dicts from the interview.
+
+    Returns:
+        A plain-text representation of the conversation.
+    """
     if not mensajes:
         return "(Sin preguntas aún)"
     partes = []
@@ -225,7 +232,13 @@ async def post_create_skill_stream(
     provider: str | None = Form(None),
     files: Optional[list[UploadFile]] = File(None),
 ):
-    """Streaming endpoint para crear skills. Retorna SSE events."""
+    """Streaming endpoint to create a skill via an LLM interview.
+
+    Streams Server-Sent Events back to the client as the interview progresses.
+
+    Returns:
+        A StreamingResponse with SSE events.
+    """
     # Parse mensajes from JSON string
     try:
         mensajes_list = json.loads(mensajes) if mensajes else []
@@ -554,11 +567,13 @@ _TOOL_INTERVIEW_TOOL: dict[str, Any] = {
 
 @router.post("/tool")
 async def post_create_tool_stream(req: CreateToolRequest):
-    """Streaming endpoint para crear tools externas. Retorna SSE events.
+    """Streaming endpoint to create an external tool via an LLM interview.
 
-    Contrato idéntico a ``POST /api/create/skill`` pero emite eventos
-    ``tool_action`` y ``tool_result`` en lugar de ``skill_action`` /
-    ``skill_result``.
+    Same contract as ``POST /api/create/skill`` but emits ``tool_action``
+    and ``tool_result`` events instead of ``skill_action`` / ``skill_result``.
+
+    Returns:
+        A StreamingResponse with SSE events.
     """
     logger.info(
         "POST /api/create/tool — descripcion='%s' name=%s mensajes=%d",
@@ -905,11 +920,13 @@ _AGENT_INTERVIEW_TOOL: dict[str, Any] = {
 
 @router.post("/agent")
 async def post_create_agent_stream(req: CreateAgentRequest):
-    """Streaming endpoint para crear agentes especializados. Retorna SSE events.
+    """Streaming endpoint to create a specialized agent via an LLM interview.
 
-    Contrato idéntico a ``POST /api/create/skill`` pero emite eventos
-    ``agent_action`` y ``agent_result`` en lugar de ``skill_action`` /
-    ``skill_result``.
+    Same contract as ``POST /api/create/skill`` but emits ``agent_action``
+    and ``agent_result`` events instead of ``skill_action`` / ``skill_result``.
+
+    Returns:
+        A StreamingResponse with SSE events.
     """
     logger.info(
         "POST /api/create/agent — descripcion='%s' name=%s mensajes=%d",

@@ -294,7 +294,6 @@ export function ToolInterface() {
                 }
 
                 case "reasoning": {
-                  console.log(`[REASONING-FRONT] ${new Date().toISOString()}`, event.content);
                   accumulatedReasoning += (event.content || "").replace(/\n+/g, " ");
                   updateReasoningBlock();
                   setMessages((prev) =>

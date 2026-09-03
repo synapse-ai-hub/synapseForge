@@ -31,8 +31,10 @@ from backend.agent.utils.contract import (
 from backend.agent.utils.error_logger import log_error
 from backend.utils.db import db_transaction
 from backend.utils.spend_handler import (
+    get_all_spend,
     get_billing_stats,
     get_current_spend,
+    get_spend_by_provider,
     get_spend_config,
     set_spend_limit,
 )
@@ -306,3 +308,37 @@ async def get_billing_statistics(
     except Exception as e:
         log_error(str(e), source="billing.py:get_billing_statistics")
         return validate_response(make_error_response(message="Error fetching billing statistics"))
+
+
+@router.get("/api/spend")
+async def get_spend(
+    provider: str | None = Query(default=None, description="Filter by provider name"),
+):
+    """Return per-model spend records.
+
+    Args:
+        provider: Optional provider filter.
+
+    Returns:
+        A contract response with ``data`` containing per-model spend records
+        (tokens and cost breakdowns) for every provider-model combination.
+    """
+    try:
+        if provider:
+            spend = get_spend_by_provider(provider)
+        else:
+            spend = get_all_spend()
+
+        return validate_response(
+            make_success_response(
+                message="Spend obtenido",
+                data={
+                    "spend": spend,
+                    "count": len(spend),
+                },
+                usage=zero_usage(),
+            )
+        )
+    except Exception as e:
+        log_error(str(e), source="billing.py:get_spend")
+        return validate_response(make_error_response(message="Error fetching spend"))

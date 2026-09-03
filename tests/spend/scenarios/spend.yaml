@@ -1,0 +1,24 @@
+scenario: spend-recording
+description: >
+  Verifica que una conversación real registra el gasto en la tabla spend
+  (a través de los puntos de control en llm_process/llm_streaming) y que el
+  registro se puede recuperar desde el endpoint /api/spend. El provider y el
+  modelo deben coincidir con el modelo activo configurado en el backend.
+provider: groq
+model: llama-3.1-8b-instant
+cleanup: true
+steps:
+  - action: chat
+    message: "Hola, respondé en una sola frase."
+    expect:
+      done: true
+      nonempty: true
+      no_tool_error: true
+  - action: request
+    method: GET
+    path: /api/spend
+    expect:
+      http_status: 200
+      json_status: success
+      json_path_exists:
+        - data.spend

@@ -72,7 +72,6 @@ from backend.instances import agent, session_manager
 from backend.agent.utils.loop_helpers import (
     build_initial_messages,
     build_system_prompt,
-    classify_llm_error,
     execute_tool,
     fetch_context_window_turns,
 )
@@ -80,6 +79,11 @@ from backend.agent.utils.model_resolver import (
     ensure_context_window,
     get_vram_gb,
     ollama_default_context,
+)
+from backend.utils.spend_handler import check_spend_limit
+from backend.utils.rate_limit_handler import (
+    classify_error_category,
+    get_retry_delay,
 )
 
 logger = logging.getLogger(__name__)
@@ -654,6 +658,28 @@ class AgentLoop:
                     tool_calls = None
                     usage_data = None
 
+                    # Preventively block the request if the configured budget
+                    # limit is exceeded (cloud providers only; LOCAL/Ollama has
+                    # no cost). Both the model-specific and the provider-level
+                    # limits are checked by ``check_spend_limit``.
+                    if effective_provider.upper() != "LOCAL":
+                        can_proceed, _spend_info = check_spend_limit(
+                            effective_provider.lower(), model
+                        )
+                        if not can_proceed:
+                            budget_msg = (
+                                "*Se alcanzó el límite de presupuesto configurado "
+                                "para este proveedor/modelo. No se pueden hacer más "
+                                "solicitudes hasta que se incremente el límite.*"
+                            )
+                            session_manager.save_message(
+                                session_id, "assistant", content=budget_msg,
+                                model=model, turn_number=turn_number, step=step,
+                            )
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': budget_msg}, ensure_ascii=False)}\n\n"
+                            yield "data: [DONE]\n\n"
+                            return
+
                     try:
                         async for event in agent.llm_streaming(
                             model=model, messages=messages, tools=tools,
@@ -693,7 +719,7 @@ class AgentLoop:
                                 yield "data: [DONE]\n\n"
                                 return
                     except Exception as e:
-                        error_category = classify_llm_error(e)
+                        error_category = classify_error_category(e)
                         logger.exception("Error in agent streaming: %s", e)
                         log_error(str(e), source="loop.py:run(llm_stream)")
 
@@ -708,8 +734,8 @@ class AgentLoop:
                                 )
                             yield "data: [DONE]\n\n"
                             return
-                        # Fatal errors keep the current behavior: no retry.
-                        if error_category == "fatal":
+                        # Fatal and budget errors keep the current behavior: no retry.
+                        if error_category in ("fatal", "budget"):
                             # Guardar respuesta parcial antes de terminar con error
                             if collected_content:
                                 session_manager.save_message(
@@ -726,14 +752,20 @@ class AgentLoop:
                             yield "data: [DONE]\n\n"
                             return
 
-                        # Rate-limit / transient: retry with exponential back-off
-                        # while attempts remain.
+                        # Rate-limit / transient: retry with exponential back-off while attempts
+                        # remain. The delay honors the provider's ``retry_after``
+                        # hint when available, never dropping below the
+                        # exponential back-off floor.
                         if llm_attempt < MAX_LLM_RETRIES:
-                            await asyncio.sleep(LLM_BACKOFF_BASE_SECONDS * (2 ** llm_attempt))
+                            delay = max(
+                                LLM_BACKOFF_BASE_SECONDS * (2 ** llm_attempt),
+                                get_retry_delay(e, LLM_BACKOFF_BASE_SECONDS, 60.0),
+                            )
+                            await asyncio.sleep(delay)
                             logger.warning(
                                 "LLM %s error (attempt %d/%d): %s — retrying in %.0fs",
                                 error_category, llm_attempt + 1, MAX_LLM_RETRIES + 1,
-                                e, LLM_BACKOFF_BASE_SECONDS * (2 ** llm_attempt),
+                                e, delay,
                             )
                             log_error(str(e), source="loop.py:run(llm_retry)")
                             if error_category == "rate_limit":

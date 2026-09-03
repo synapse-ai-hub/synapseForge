@@ -513,3 +513,75 @@ def get_all_spend() -> list[dict]:
         log_error(str(e), source="spend_handler.py:get_all_spend")
         logger.error("Failed to get all spend: %s", e)
         return []
+
+
+def get_billing_stats(provider: str) -> dict | None:
+    """Retrieve aggregated billing statistics for a provider.
+
+    Aggregates the spend table to compute the request count and the token
+    and cost totals for the given provider.
+
+    Args:
+        provider: The provider name (e.g., "groq", "openrouter").
+
+    Returns:
+        A dict with ``provider``, ``requests``, ``prompt_tokens``,
+        ``completion_tokens``, ``total_tokens`` and ``cost``, or None if the
+        provider has no recorded spend.
+    """
+    try:
+        provider_lower = provider.strip().lower()
+
+        with get_connection() as conn:
+            row = conn.execute(
+                """SELECT COUNT(*) as requests,
+                          SUM(prompt_tokens) as prompt_tokens,
+                          SUM(completion_tokens) as completion_tokens,
+                          SUM(total_tokens) as total_tokens,
+                          SUM(cost_total) as cost
+                   FROM spend
+                   WHERE provider = ?""",
+                (provider_lower,),
+            ).fetchone()
+
+            if row is None or (row["requests"] or 0) == 0:
+                return None
+
+            return {
+                "provider": provider_lower,
+                "requests": row["requests"] or 0,
+                "prompt_tokens": row["prompt_tokens"] or 0,
+                "completion_tokens": row["completion_tokens"] or 0,
+                "total_tokens": row["total_tokens"] or 0,
+                "cost": float(row["cost"] or 0.0),
+            }
+
+    except sqlite3.Error as e:
+        log_error(str(e), source="spend_handler.py:get_billing_stats")
+        logger.error("Failed to get billing stats: %s", e)
+        return None
+
+
+def get_current_spend(provider: str) -> float:
+    """Retrieve the current accumulated spend for a provider.
+
+    Args:
+        provider: The provider name (e.g., "groq", "openrouter").
+
+    Returns:
+        The total accumulated cost for the provider, or 0.0 if none.
+    """
+    try:
+        provider_lower = provider.strip().lower()
+
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT SUM(cost_total) as total FROM spend WHERE provider = ?",
+                (provider_lower,),
+            ).fetchone()
+            return float(row["total"] or 0.0) if row else 0.0
+
+    except sqlite3.Error as e:
+        log_error(str(e), source="spend_handler.py:get_current_spend")
+        logger.error("Failed to get current spend: %s", e)
+        return 0.0

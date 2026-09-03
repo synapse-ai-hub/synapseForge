@@ -46,6 +46,7 @@ from backend.agent.utils.contract import (
 from backend.agent.tools import Tools
 
 from backend.agent.utils.model_catalog import translate_reasoning
+from backend.utils.spend_handler import calculate_cost, record_spend
 
 # Marcadores de comentarios usados en este proyecto:
 # TODO   : trabajo pendiente, todavía no implementado.
@@ -580,6 +581,33 @@ class Agent():
 
         return contents, system_instruction
 
+    def _record_spend(self, provider: str, model: str, usage: dict | None) -> None:
+        """Record token usage and cost for a completed LLM call.
+
+        Cloud providers only (LOCAL/Ollama has no cost). Failures are logged
+        and swallowed so they never break the calling flow.
+
+        Args:
+            provider: The provider name (e.g. ``"GROQ"``, ``"OPENROUTER"``).
+            model: The model identifier.
+            usage: The usage report dict (``prompt_tokens``, ``completion_tokens``).
+        """
+        try:
+            if not usage or (provider or "").upper() == "LOCAL":
+                return
+            prompt_tokens = usage.get("prompt_tokens") or 0
+            completion_tokens = usage.get("completion_tokens") or 0
+            cost_input, cost_output, _ = calculate_cost(
+                provider.lower(), model, prompt_tokens, completion_tokens
+            )
+            record_spend(
+                provider.lower(), model, prompt_tokens, completion_tokens,
+                cost_input, cost_output,
+            )
+        except Exception as exc:
+            log_error(str(exc), source="agent.py:_record_spend")
+            logger.warning("Failed to record spend: %s", exc)
+
     async def llm_process(self, model: str, prompt: str | None = None,
                           system_content: str | None = None,
                           messages: list[dict[str, Any]] | None = None,
@@ -838,6 +866,13 @@ class Agent():
 
             tool_calls = self._normalize_tool_calls(raw_tc)
 
+            self._record_spend(effective_provider, model, {
+                'prompt_tokens': prompt_tokens,
+                'completion_tokens': completion_tokens,
+                'total_tokens': total_tokens,
+                'total_time': total_time,
+            })
+
             return validate_response(make_success_response(
                 message='Proceso ok.',
                 data=output,
@@ -1062,6 +1097,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
 
             # After stream finishes, yield usage (if captured) and tool_calls_detected
             if usage_data is not None:
+                self._record_spend(effective_provider, model, usage_data)
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
@@ -1233,6 +1269,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
 
             # After stream finishes, yield usage (if captured) and tool_calls_detected
             if usage_data is not None:
+                self._record_spend(effective_provider, model, usage_data)
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
@@ -1326,6 +1363,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
 
             # After stream finishes, yield usage (if captured) and tool_calls_detected
             if usage_data is not None:
+                self._record_spend(effective_provider, model, usage_data)
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 yield {'type': 'tool_calls_detected', 'content': accumulated_tool_calls}

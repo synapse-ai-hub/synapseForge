@@ -641,29 +641,35 @@ export function AgentInterface() {
                    {downloadError && (
                      <p className="text-sm text-red-600">{downloadError}</p>
                    )}
-                   <div className="flex gap-2">
-                     <button
-                       onClick={async () => {
-                         try {
-                           setDownloadError(null);
-                           const md = await fetchConversationMarkdown(messages, "Conversación - Creador de Agentes");
-                           await saveFileWithPicker(md, "conversacion-agente", ".md");
-                         } catch (err) {
-                           setDownloadError(err instanceof Error ? err.message : "No se pudo descargar la conversación.");
-                         }
-                       }}
-                       className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
-                     >
-                       <Download size={14} />
-                       Descargar conversación
-                     </button>
-                     <button
-                       onClick={() => window.close()}
-                       className="bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
-                     >
-                       Aceptar
-                     </button>
-                   </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            setDownloadError(null);
+                            const md = await fetchConversationMarkdown(messages, "Conversación - Creador de Agentes");
+                            await saveFileWithPicker(md, "conversacion-agente", ".md");
+                          } catch (err) {
+                            setDownloadError(err instanceof Error ? err.message : "No se pudo descargar la conversación.");
+                          }
+                        }}
+                        className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
+                      >
+                        <Download size={14} />
+                        Descargar conversación
+                      </button>
+                      <button
+                        onClick={() => { setResultMsg(null); setResultType(null); setInput(""); }}
+                        className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
+                      >
+                        Seguir iterando
+                      </button>
+                      <button
+                        onClick={() => window.close()}
+                        className="bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
+                      >
+                        Aceptar
+                      </button>
+                    </div>
                 </div>
               ) : (
                 <>

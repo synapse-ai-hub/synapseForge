@@ -15,6 +15,7 @@ from pathlib import Path
 from ..init.template_handler import extract_template
 from ..init.config_handler import load_config, save_colors
 from ..init.placeholder_handler import replace_all_placeholders
+from ..init.venv_handler import run_ddl_setup
 
 
 def _smart_merge(backup_path: str, target_path: str) -> None:
@@ -125,7 +126,7 @@ def run_update(target_dir: str) -> None:
     print("=" * 60)
 
     # ── Step 1: Backup ────────────────────────────────────────────────
-    print("\n[1/5] Backing up project ...")
+    print("\n[1/6] Backing up project ...")
     try:
         _backup_project(target, backup_dir)
     except Exception as exc:
@@ -138,10 +139,10 @@ def run_update(target_dir: str) -> None:
     # will be overwritten).
     backup_project = backup_dir / "project"
     try:
-        print("\n[2/5] Loading configuration from backup ...")
+        print("\n[2/6] Loading configuration from backup ...")
         config = load_config(backup_project)
 
-        print("\n[3/5] Downloading & extracting new template ...")
+        print("\n[3/6] Downloading & extracting new template ...")
         extract_template(target)
 
         # Mandatory preservation: config folder, logos, agent.db, README.md
@@ -198,11 +199,16 @@ def run_update(target_dir: str) -> None:
                 shutil.copy2(str(backup_file), str(target_file))
                 print(f"  Copied from backup: {fname}")
 
-        print("\n[4/5] Re-applying placeholders ...")
+        print("\n[4/6] Re-applying placeholders ...")
         replace_all_placeholders(target, config)
 
-        print("\n[5/5] Regenerating derived files ...")
+        print("\n[5/6] Regenerating derived files ...")
         save_colors(target, config)
+
+        print("\n[6/6] Initializing/updating database schema (ddl_setup) ...")
+        repo_name = config.get("repo", "synapse")
+        venv_path = target / f".{repo_name}"
+        run_ddl_setup(target, venv_path)
 
     except Exception as exc:
         # ── Failure: restore from backup ──────────────────────────────

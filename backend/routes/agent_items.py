@@ -11,14 +11,19 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
+import importlib
+import importlib.util
+import inspect
 import logging
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -263,3 +268,170 @@ async def delete_knowledge_collection(collection: str) -> JSONResponse:
         )
 
     return _make_response("success", f"Colección '{collection}' eliminada.")
+
+
+# ── Test endpoint ──────────────────────────────────────────────────────────
+
+
+def _load_tool_module(tool_name: str) -> tuple[Any, str] | None:
+    """Load a tool .py module from the tools directory.
+
+    Args:
+        tool_name: Name of the tool file (without .py).
+
+    Returns:
+        ``(module, handler_name)`` on success, ``None`` on failure.
+    """
+    tools_dir = get_tools_dir()
+    tool_path = tools_dir / f"{tool_name}.py"
+    if not tool_path.is_file():
+        return None
+
+    spec = importlib.util.spec_from_file_location(tool_name, str(tool_path))
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    _added = False
+    if str(tools_dir) not in sys.path:
+        sys.path.insert(0, str(tools_dir))
+        _added = True
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        if _added:
+            sys.path.remove(str(tools_dir))
+
+    handler = getattr(mod, tool_name, None)
+    if handler is None or not callable(handler):
+        return None
+    return mod, tool_name
+
+
+@router.get("/tools/{tool_name}/schema")
+async def get_tool_schema(tool_name: str) -> JSONResponse:
+    """Return the function signature of a tool as a JSON schema.
+
+    Extracts parameter names, types, descriptions and required flags from
+    the handler function's signature and docstring.
+
+    Args:
+        tool_name: Tool file name (without .py extension).
+
+    Returns:
+        JSONResponse with ``{properties, required}`` or error.
+    """
+    if not tool_name or ".." in tool_name or "/" in tool_name:
+        return _make_response("error", "Nombre de tool inválido.", 400)
+
+    result = _load_tool_module(tool_name)
+    if result is None:
+        return _make_response("error", f"Tool '{tool_name}' no encontrada.", 404)
+
+    mod, handler_name = result
+    handler = getattr(mod, handler_name)
+    sig = inspect.signature(handler)
+
+    # Parse Google-style Args from docstring
+    doc = (handler.__doc__ or "").strip()
+    param_descs: dict[str, str] = {}
+    lines = doc.split("\n")
+    in_args = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "Args:":
+            in_args = True
+            continue
+        if in_args:
+            if stripped and not stripped.startswith(" ") and not stripped.startswith("\t"):
+                if stripped.endswith(":"):
+                    break
+            m = re.match(r"^(\w+):\s*(.*)", stripped)
+            if m:
+                param_descs[m.group(1)] = m.group(2).strip()
+
+    type_map = {
+        str: "string",
+        int: "integer",
+        float: "number",
+        bool: "boolean",
+        list: "array",
+        dict: "object",
+    }
+
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for pname, param in sig.parameters.items():
+        if pname in ("self", "tools"):
+            continue
+        annotation = param.annotation
+        type_str = "string"
+        if annotation in type_map:
+            type_str = type_map[annotation]
+        elif hasattr(annotation, "__name__"):
+            type_str = annotation.__name__
+
+        prop: dict[str, Any] = {"type": type_str}
+        if pname in param_descs:
+            prop["description"] = param_descs[pname]
+        if param.default is not inspect.Parameter.empty:
+            prop["default"] = param.default
+        else:
+            required.append(pname)
+        properties[pname] = prop
+
+    return JSONResponse(content={
+        "status": "success",
+        "data": {
+            "tool": tool_name,
+            "description": doc.split("\n")[0] if doc else "",
+            "properties": properties,
+            "required": required,
+        },
+    })
+
+
+@router.post("/tools/{tool_name}/test")
+async def test_tool(
+    tool_name: str,
+    args: dict[str, Any] = Body(default={}),
+) -> JSONResponse:
+    """Execute a tool with the given arguments and return the result.
+
+    This is a sandbox endpoint — it loads the tool module fresh each time
+    and invokes the handler with the provided args. No permission checks
+    beyond file existence (this is a developer testing endpoint).
+
+    Args:
+        tool_name: Tool file name (without .py extension).
+        args: Arguments to pass to the tool function.
+
+    Returns:
+        JSONResponse with the tool's contract result.
+    """
+    if not tool_name or ".." in tool_name or "/" in tool_name:
+        return _make_response("error", "Nombre de tool inválido.", 400)
+
+    result = _load_tool_module(tool_name)
+    if result is None:
+        return _make_response("error", f"Tool '{tool_name}' no encontrada.", 404)
+
+    mod, handler_name = result
+    handler = getattr(mod, handler_name)
+
+    try:
+        if asyncio.iscoroutinefunction(handler):
+            tool_result = await handler(**args)
+        else:
+            tool_result = handler(**args)
+    except Exception as e:
+        logger.exception("Tool test failed: %s", tool_name)
+        log_error(str(e), source="agent_items.py:test_tool")
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Error ejecutando '{tool_name}': {e}",
+        }, status_code=500)
+
+    return JSONResponse(content={
+        "status": "success",
+        "data": tool_result,
+    })

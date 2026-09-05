@@ -4,8 +4,8 @@ Low-level internal functions:
 - ``_parse_frontmatter``
 - ``_listar_skills_locales``
 - ``_evaluar_si_existe``
-- ``_explicar_skill``
-- ``_generar_skill``
+- ``_explain_skill``
+- ``_create_skill``
 - ``_copiar_referencias``
 
 All are imported by ``backend/routes/create.py``.
@@ -122,9 +122,9 @@ async def _evaluar_si_existe(
         return None
 
     try:
-        template = agent.prompt("evaluar_skills")
+        template = agent.prompt("evaluate_skills")
     except FileNotFoundError:
-        logger.warning("Prompt evaluar_skills.md no encontrado.")
+        logger.warning("Prompt evaluate_skills.md no encontrado.")
         return None
 
     if skills_locales:
@@ -178,7 +178,7 @@ async def _evaluar_si_existe(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def _explicar_skill(
+async def _explain_skill(
     tarea: str,
     skill_dir: Path,
     model: str | None = None,
@@ -206,9 +206,9 @@ async def _explicar_skill(
     contenido = md_path.read_text(encoding="utf-8")
 
     try:
-        template = agent.prompt("explicar_skill")
+        template = agent.prompt("explain_skill")
     except FileNotFoundError:
-        logger.warning("Prompt explicar_skill.md no encontrado.")
+        logger.warning("Prompt explain_skill.md no encontrado.")
         return None
 
     prompt = template.format(tarea=tarea, contenido=contenido)
@@ -242,13 +242,13 @@ async def _explicar_skill(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def _generar_skill(
+async def _create_skill(
     conversacion: str,
     nombre: str | None = None,
     model: str | None = None,
     provider: str | None = None,
 ) -> dict[str, Any]:
-    """Generate a skill with the LLM using the ``generar_skill`` prompt.
+    """Generate a skill with the LLM using the ``create_skill`` prompt.
 
     Args:
         conversacion: Full conversation history with the user.
@@ -267,9 +267,9 @@ async def _generar_skill(
         raise RuntimeError("No hay modelo configurado. Seleccioná un modelo en Configuración.")
 
     try:
-        template = agent.prompt("generar_skill")
+        template = agent.prompt("create_skill")
     except FileNotFoundError:
-        raise RuntimeError("Prompt generar_skill.md no encontrado.")
+        raise RuntimeError("Prompt create_skill.md no encontrado.")
 
     prompt = template.format(
         nombre=nombre or "(inferir del contexto)",

@@ -73,6 +73,10 @@ Además de las tools internas del sistema, se pueden crear herramientas personal
 4. La función debe ser `async` y debe devolver el contrato `{status, message, data, usage}`.
 5. Una vez creada, se puede habilitar para cualquier agente agregándola en su `permission`.
 
+### Sandbox de prueba
+
+Al crear una tool con el LLM, aparece un botón **Probar** que abre un panel interactivo. El sistema introspea la función y genera automáticamente un formulario con los parámetros detectados (nombres, tipos, valores por defecto y campos requeridos). Completás los campos, hacés clic en **Ejecutar** y ves el resultado sin tener que salir de la pantalla.
+
 ---
 
 ## Tools nativas

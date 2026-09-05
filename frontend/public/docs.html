@@ -427,6 +427,8 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li>Probalo de forma independiente: <code>python tools/nombre_tool.py argumento</code>.</li>
             <li>Reiniciá el backend para que la nueva tool se cargue en el agente.</li>
           </ol>
+          <h3>Sandbox de prueba</h3>
+          <p>Después de crear una tool con el LLM, aparece un botón <strong>Probar</strong> que abre un panel interactivo para ejecutar la tool directamente desde la interfaz. El sistema introspea la función y genera automáticamente un formulario con los parámetros detectados (nombres, tipos, valores por defecto y campos requeridos). Completás los campos, hacés clic en <strong>Ejecutar</strong> y ves el resultado sin tener que salir de la pantalla.</p>
           <h3>Buenas prácticas</h3>
           <ul>
             <li>Una tool = un archivo. Si querés compartir código entre tools, poné ese código en <code>tools/lib/</code>.</li>
@@ -662,6 +664,8 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <tbody>
               <tr><td>POST</td><td><code>/api/chat</code></td><td>Enviar un mensaje al agente. La respuesta se recibe por streaming (SSE).</td></tr>
               <tr><td>POST</td><td><code>/api/create/skill</code></td><td>Crear una skill mediante LLM (entrevista + agente, streaming SSE).</td></tr>
+              <tr><td>POST</td><td><code>/api/create/tool</code></td><td>Crear una tool externa mediante LLM (entrevista + agente, streaming SSE).</td></tr>
+              <tr><td>POST</td><td><code>/api/create/agent</code></td><td>Crear un sub-agente mediante LLM (entrevista + agente, streaming SSE).</td></tr>
               <tr><td>GET</td><td><code>/api/sessions</code></td><td>Listar todas las sesiones de chat.</td></tr>
               <tr><td>GET</td><td><code>/api/sessions/titles</code></td><td>Listar los títulos de las sesiones.</td></tr>
               <tr><td>GET</td><td><code>/api/sessions/{id}</code></td><td>Cargar una sesión completa con todos sus mensajes.</td></tr>
@@ -692,6 +696,8 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td>GET</td><td><code>/api/agent/knowledge</code></td><td>Listar colecciones de la base de conocimiento.</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/skills/{name}</code></td><td>Eliminar una skill.</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/tools/{name}</code></td><td>Eliminar una tool externa.</td></tr>
+              <tr><td>GET</td><td><code>/api/agent/tools/{name}/schema</code></td><td>Obtener el esquema de parámetros de una tool (nombre, tipos, required, descripciones).</td></tr>
+              <tr><td>POST</td><td><code>/api/agent/tools/{name}/test</code></td><td>Ejecutar una tool con argumentos personalizados (sandbox de prueba).</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/agents/{name}</code></td><td>Eliminar un agente.</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/mcp/{label}</code></td><td>Eliminar un servidor MCP.</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/knowledge/{collection}</code></td><td>Eliminar una colección RAG.</td></tr>

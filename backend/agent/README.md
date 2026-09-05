@@ -139,9 +139,9 @@ Almacena los prompts del agente en formato markdown:
 - `mandatory.md` — Reglas `## MANDATORY:` inyectadas al final del system prompt de todos los agentes.
 - `help.md` — Documentación interna para la tool `help`.
 - `title.md` — Generación de títulos de sesión.
-- `generar_skill.md`, `generar_tool.md`, `generar_agent.md` — Prompts de creación vía LLM.
-- `iterar_skill.md`, `iterar_tool.md`, `iterar_agent.md` — Prompts de iteración.
-- `evaluar_skills.md`, `explicar_skill.md` — Prompts auxiliares.
+- `create_skill.md`, `create_tool.md`, `create_agent.md` — Prompts de creación vía LLM.
+- `iterate_skill.md`, `iterate_tool.md`, `iterate_agent.md` — Prompts de iteración.
+- `evaluate_skills.md`, `explain_skill.md` — Prompts auxiliares.
 
 ### 10. `agent_db/` — Base de datos SQLite
 
@@ -485,14 +485,14 @@ backend/agent/
 │   ├─ help.md              # Documentación interna para tool help
 │   ├─ title.md             # Prompt para generar títulos de sesión
 │   ├─ mandatory.md         # Reglas ## MANDATORY: inyectadas a todos los agentes
-│   ├─ generar_skill.md     # Prompt para crear skills con LLM
-│   ├─ generar_tool.md      # Prompt para crear tools con LLM
-│   ├─ generar_agent.md     # Prompt para crear agentes con LLM
-│   ├─ iterar_skill.md      # Prompt para iterar skills
-│   ├─ iterar_tool.md       # Prompt para iterar tools
-│   ├─ iterar_agent.md      # Prompt para iterar agentes
-│   ├─ evaluar_skills.md    # Prompt para evaluar skills existentes
-│   └─ explicar_skill.md    # Prompt para explicar skills
+│   ├─ create_skill.md     # Prompt para crear skills con LLM
+│   ├─ create_tool.md      # Prompt para crear tools con LLM
+│   ├─ create_agent.md     # Prompt para crear agentes con LLM
+│   ├─ iterate_skill.md      # Prompt para iterar skills
+│   ├─ iterate_tool.md       # Prompt para iterar tools
+│   ├─ iterate_agent.md      # Prompt para iterar agentes
+│   ├─ evaluate_skills.md    # Prompt para evaluar skills existentes
+│   └─ explain_skill.md    # Prompt para explicar skills
 ├─ utils/                   # Utilidades auxiliares
 │   ├─ agent_helpers.py     # Helpers de endpoints AgentInfo
 │   ├─ chunking.py          # División de documentos en chunks

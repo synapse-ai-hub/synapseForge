@@ -25,7 +25,7 @@ El sistema soporta múltiples proveedores de LLM (Ollama local y Groq API como b
 ### Skills
 
 - Crear nuevas skills siguiendo el formato `SKILL.md` con frontmatter YAML (`name`, `description`, `metadata.triggers`).
-- Mejorar los prompts de creación en `backend/agent/prompts/generar_skill.md` e `iterar_skill.md`.
+- Mejorar los prompts de creación en `backend/agent/prompts/create_skill.md` e `iterate_skill.md`.
 - Agregar references/ con material de consulta.
 
 ### Tools

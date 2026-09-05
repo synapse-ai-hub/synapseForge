@@ -9,7 +9,7 @@ import {
   type ReactElement,
 } from "react";
 import { flushSync } from "react-dom";
-import { Send, Square, Plus, Trash2, Download } from "lucide-react";
+import { Send, Square, Plus, Trash2, Download, Play } from "lucide-react";
 import { MessageRow } from "../components/chatBlocks";
 import { CreateModelSelector } from "../components/CreateModelSelector";
 import type { Message, ContentBlock } from "../App";
@@ -68,6 +68,16 @@ export function ToolInterface() {
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [resultType, setResultType] = useState<"success" | "error" | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [isIterating, setIsIterating] = useState(false);
+  /* Sandbox: tool recién creada para testing */
+  const [createdToolName, setCreatedToolName] = useState<string | null>(null);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
+  const [sandboxSchema, setSandboxSchema] = useState<Record<string, { type: string; description?: string; default?: unknown }> | null>(null);
+  const [sandboxRequired, setSandboxRequired] = useState<string[]>([]);
+  const [sandboxArgs, setSandboxArgs] = useState<Record<string, string>>({});
+  const [sandboxResult, setSandboxResult] = useState<string | null>(null);
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [sandboxError, setSandboxError] = useState<string | null>(null);
 
   /* ---- refs ---- */
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -187,7 +197,7 @@ export function ToolInterface() {
 
   /* ---- envío al backend (streaming SSE /api/create/tool) ---- */
   const enviar = useCallback(
-    async (texto: string) => {
+    async (texto: string, iterate: boolean = false) => {
       if (isStreaming) return;
       setInput("");
       setChatError(null);
@@ -210,6 +220,8 @@ export function ToolInterface() {
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setAutoScrollEnabled(true);
       setIsStreaming(true);
+      setResultMsg(null);
+      setResultType(null);
 
       historialRef.current = [
         ...historialRef.current,
@@ -246,6 +258,7 @@ export function ToolInterface() {
             datos: datos.filter((d) => d.name.trim()),
             model: createModel,
             provider: createProvider,
+            iterate,
           }),
           signal: abort.signal,
         });
@@ -398,6 +411,11 @@ export function ToolInterface() {
                       ...historialRef.current,
                       { role: "assistant", content: accumulatedContent },
                     ];
+                  } else if (action === "iterating") {
+                    historialRef.current = [
+                      ...historialRef.current,
+                      { role: "assistant", content: accumulatedContent },
+                    ];
                   }
                   break;
                 }
@@ -411,6 +429,8 @@ export function ToolInterface() {
                   if (data.status === "success") {
                     setResultType("success");
                     setResultMsg(data.message || "Tool creada exitosamente.");
+                    const toolName = data.data?.tool || null;
+                    if (toolName) setCreatedToolName(toolName);
                   } else {
                     setResultType("error");
                     setResultMsg("Error: " + (data.message || "Error desconocido"));
@@ -458,21 +478,95 @@ export function ToolInterface() {
         abortRef.current = null;
       }
     },
-    [isStreaming, descripcion, nombre, parametros, datos, createModel, createProvider],
+    [isStreaming, descripcion, nombre, parametros, datos, createModel, createProvider, isIterating],
   );
 
   /* ---- enviar desde el chat ---- */
   const handleSend = useCallback(() => {
     const text = input.trim();
     if (!text || isStreaming) return;
-    enviar(text);
-  }, [input, isStreaming, enviar]);
+    const iterate = isIterating;
+    setIsIterating(false);
+    enviar(text, iterate);
+  }, [input, isStreaming, enviar, isIterating]);
 
   /* ---- detener streaming ---- */
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);
+
+  /* ---- sandbox: cargar schema y abrir panel ---- */
+  const openSandbox = useCallback(async () => {
+    if (!createdToolName) return;
+    setSandboxOpen(true);
+    setSandboxResult(null);
+    setSandboxError(null);
+    setSandboxLoading(true);
+    setTimeout(() => scrollToBottom("smooth"), 50);
+    try {
+      const res = await fetch(`${API}/agent/tools/${createdToolName}/schema`);
+      const json = await res.json();
+      if (json.status === "success" && json.data) {
+        setSandboxSchema(json.data.properties || {});
+        setSandboxRequired(json.data.required || []);
+        // Initialize args with defaults
+        const initial: Record<string, string> = {};
+        const props = (json.data.properties || {}) as Record<string, { default?: unknown }>;
+        for (const [k, v] of Object.entries(props)) {
+          initial[k] = v.default != null ? String(v.default) : "";
+        }
+        setSandboxArgs(initial);
+        setTimeout(() => scrollToBottom("smooth"), 50);
+      } else {
+        setSandboxError(json.message || "No se pudo cargar el schema.");
+      }
+    } catch (err) {
+      setSandboxError(err instanceof Error ? err.message : "Error de conexión.");
+    } finally {
+      setSandboxLoading(false);
+    }
+  }, [createdToolName]);
+
+  const runSandbox = useCallback(async () => {
+    if (!createdToolName) return;
+    setSandboxLoading(true);
+    setSandboxResult(null);
+    setSandboxError(null);
+    try {
+      // Parse args: try to infer types from schema
+      const parsed: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(sandboxArgs)) {
+        const propType = sandboxSchema?.[k]?.type ?? "string";
+        const val = v.trim();
+        if (val === "") continue;
+        if (propType === "integer" || propType === "number") {
+          parsed[k] = Number(val);
+        } else if (propType === "boolean") {
+          parsed[k] = val === "true";
+        } else if (propType === "array" || propType === "object") {
+          try { parsed[k] = JSON.parse(val); } catch { parsed[k] = val; }
+        } else {
+          parsed[k] = val;
+        }
+      }
+      const res = await fetch(`${API}/agent/tools/${createdToolName}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      const json = await res.json();
+      if (json.status === "success") {
+        setSandboxResult(JSON.stringify(json.data, null, 2));
+      } else {
+        setSandboxError(json.message || "Error ejecutando la tool.");
+      }
+    } catch (err) {
+      setSandboxError(err instanceof Error ? err.message : "Error de conexión.");
+    } finally {
+      setSandboxLoading(false);
+    }
+  }, [createdToolName, sandboxArgs, sandboxSchema, sandboxRequired]);
 
   /* ---- keyboard ---- */
   const handleKeyDown = useCallback(
@@ -821,6 +915,34 @@ export function ToolInterface() {
                         <Download size={14} />
                         Descargar conversación
                       </button>
+                      {resultType === "success" && (
+                        <button
+                          onClick={() => {
+                            setResultMsg(null);
+                            setResultType(null);
+                            setIsIterating(true);
+                            setCreatedToolName(null);
+                            setSandboxOpen(false);
+                            setSandboxSchema(null);
+                            setSandboxArgs({});
+                            setSandboxResult(null);
+                            setSandboxError(null);
+                            setTimeout(() => scrollToBottom("smooth"), 50);
+                          }}
+                          className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
+                        >
+                          Seguir iterando
+                        </button>
+                      )}
+                      {resultType === "success" && createdToolName && (
+                        <button
+                          onClick={openSandbox}
+                          className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
+                        >
+                          <Play size={14} />
+                          Probar
+                        </button>
+                      )}
                       <button
                         onClick={() => window.close()}
                         className="bg-gradient-to-r from-app-primary to-app-gradient-secondary text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
@@ -828,6 +950,80 @@ export function ToolInterface() {
                         Aceptar
                       </button>
                     </div>
+
+                    {/* Sandbox panel */}
+                    {sandboxOpen && (
+                      <div className="mt-3 rounded-2xl border border-app-border bg-white p-4 sm:p-5">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-semibold text-app-text">
+                            Sandbox — {createdToolName}
+                          </h3>
+                          <button
+                            onClick={() => setSandboxOpen(false)}
+                            className="text-app-text-secondary hover:text-app-text text-xs"
+                          >
+                            Cerrar
+                          </button>
+                        </div>
+
+                        {sandboxLoading && (
+                          <p className="text-xs text-app-text-secondary animate-pulse">Cargando...</p>
+                        )}
+                        {sandboxError && (
+                          <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">
+                            {sandboxError}
+                          </p>
+                        )}
+
+                        {sandboxSchema && !sandboxLoading && (
+                          <div className="space-y-2">
+                            {Object.entries(sandboxSchema).map(([key, prop]) => (
+                              <div key={key}>
+                                <label className="block text-xs font-medium text-app-text mb-0.5">
+                                  {key}
+                                  {sandboxRequired.includes(key) && (
+                                    <span className="text-red-500 ml-0.5">*</span>
+                                  )}
+                                  {prop.description && (
+                                    <span className="text-app-text-secondary ml-1">
+                                      — {prop.description}
+                                    </span>
+                                  )}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={sandboxArgs[key] ?? ""}
+                                  onChange={(e) =>
+                                    setSandboxArgs((prev) => ({ ...prev, [key]: e.target.value }))
+                                  }
+                                  placeholder={prop.type}
+                                  className="w-full text-sm rounded-lg border border-app-border px-3 py-1.5
+                                             bg-app-bg text-app-text placeholder:text-app-text-secondary
+                                             focus:outline-none focus:ring-1 focus:ring-app-primary/30 focus:border-app-primary"
+                                />
+                              </div>
+                            ))}
+                            <button
+                              onClick={runSandbox}
+                              disabled={sandboxLoading}
+                              className="mt-2 w-full text-sm font-medium text-white bg-gradient-to-r from-app-primary to-app-gradient-secondary
+                                         py-2 rounded-lg hover:opacity-90 transition-colors disabled:opacity-50"
+                            >
+                              Ejecutar
+                            </button>
+                          </div>
+                        )}
+
+                        {sandboxResult && (
+                          <div className="mt-3 rounded-lg bg-app-bg border border-app-border p-3">
+                            <p className="text-xs font-medium text-app-text mb-1">Resultado:</p>
+                            <pre className="text-xs text-app-text whitespace-pre-wrap break-all overflow-auto max-h-60">
+                              {sandboxResult}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
                 </div>
               ) : (
                 <>

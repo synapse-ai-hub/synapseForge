@@ -161,13 +161,13 @@ React/Vite/TypeScript SPA with Tailwind v4 and shadcn/ui. Multi-page: chat, skil
 | Ollama | Local | Optional, requires local install |
 | Groq | Cloud | Free tier |
 | Google Gemini | Cloud | Free tier |
-| OpenRouter | Cloud | Free tier, required for RAG embeddings |
+| Gemini Embedding 2 | Cloud | Free tier, required for RAG embeddings |
 
 API keys are validated on save and stored encrypted (Fernet) in SQLite. No environment variables needed.
 
 ### Knowledge base (RAG)
 
-ChromaDB with OpenRouter-hosted embeddings (`liquid/lfm-2.5-embedding-350m:free`). Upload files and web pages — content is extracted, chunked and indexed for semantic retrieval. Long-term memory: every conversation turn is automatically indexed and searchable across sessions via `search_memory`.
+ChromaDB with Gemini Embedding 2 (`gemini-embedding-exp-02-05`). Upload files and web pages — content is extracted, chunked and indexed for semantic retrieval. Long-term memory: every conversation turn is automatically indexed and searchable across sessions via `search_memory`.
 
 ### Telegram
 

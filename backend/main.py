@@ -250,8 +250,8 @@ async def lifespan(app: FastAPI):
 
     logger.info("<descripcion>Nombre del proyecto</descripcion> API started successfully.")
 
-    # Pre-create the RAG vector DB (OpenRouter embeddings) once at startup,
-    # only if the OpenRouter key is configured. It is shared and never
+    # Pre-create the RAG vector DB (Gemini Embedding 2) once at startup,
+    # only if the Gemini key is configured. It is shared and never
     # killed, so the first use of RAG does not pay the init cost.
     try:
         from backend.agent.utils import provider_keys

@@ -15,6 +15,8 @@ import {
   Search,
   Menu,
   BarChart3,
+  TrendingUp,
+  DollarSign,
   LogOut,
   BookOpen,
   AlarmClock,
@@ -1031,6 +1033,28 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           >
             <BookOpen size={16} />
             <span className="hidden sm:inline">Docs</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {}}
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
+            title="Uso"
+          >
+            <TrendingUp size={16} />
+            <span className="hidden sm:inline">Uso</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {}}
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
+            title="Facturación"
+          >
+            <DollarSign size={16} />
+            <span className="hidden sm:inline">Facturación</span>
           </Button>
 
           <Button

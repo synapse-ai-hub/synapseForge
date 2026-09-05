@@ -306,6 +306,29 @@ export function MetricsModal({ open, onClose }: MetricsModalProps) {
                     />
                   </div>
 
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <KpiCard
+                      title="Tokens totales"
+                      value={formatNumber(metrics.overview.total_tokens)}
+                      icon={<Cpu size={14} />}
+                    />
+                    <KpiCard
+                      title="Prom. tokens/sesión"
+                      value={formatNumber(metrics.overview.avg_tokens_per_session)}
+                      icon={<BarChart3 size={14} />}
+                    />
+                    <KpiCard
+                      title="Gasto total (USD)"
+                      value={metrics.overview.total_cost.toFixed(4)}
+                      icon={<Activity size={14} />}
+                    />
+                    <KpiCard
+                      title="Prom. gasto/prov-modelo"
+                      value={metrics.overview.avg_cost_per_provider_model.toFixed(4)}
+                      icon={<BarChart3 size={14} />}
+                    />
+                  </div>
+
                   <div>
                     <SectionTitle>Sesiones por día (últimos 30 días)</SectionTitle>
                     <DailyBarChart data={metrics.overview.sessions_by_day || []} />
@@ -340,6 +363,29 @@ export function MetricsModal({ open, onClose }: MetricsModalProps) {
                     <KpiCard
                       title="Prom. mensajes/sesión"
                       value={formatNumber(metrics.sessions.avg_messages_per_session)}
+                      icon={<BarChart3 size={14} />}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <KpiCard
+                      title="Tokens totales"
+                      value={formatNumber(metrics.sessions.total_tokens)}
+                      icon={<Cpu size={14} />}
+                    />
+                    <KpiCard
+                      title="Prom. tokens/sesión"
+                      value={formatNumber(metrics.sessions.avg_tokens_per_session)}
+                      icon={<BarChart3 size={14} />}
+                    />
+                    <KpiCard
+                      title="Gasto total (USD)"
+                      value={metrics.sessions.total_cost.toFixed(4)}
+                      icon={<Activity size={14} />}
+                    />
+                    <KpiCard
+                      title="Prom. gasto/prov-modelo"
+                      value={metrics.sessions.avg_cost_per_provider_model.toFixed(4)}
                       icon={<BarChart3 size={14} />}
                     />
                   </div>

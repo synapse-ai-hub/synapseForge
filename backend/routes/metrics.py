@@ -63,6 +63,64 @@ async def get_session_metrics():
             if total_sessions > 0:
                 avg_messages = round(total_messages / total_sessions, 1)
 
+            # Token consumption metrics
+            token_rows = conn.execute(
+                "SELECT SUM(total_tokens) AS total FROM messages WHERE total_tokens IS NOT NULL"
+            ).fetchall()
+            total_tokens = token_rows[0]["total"] or 0
+
+            avg_tokens_per_session = 0.0
+            if total_sessions > 0:
+                avg_tokens_per_session = round(total_tokens / total_sessions, 1)
+
+            avg_tokens_per_message = 0.0
+            if total_messages > 0:
+                avg_tokens_per_message = round(total_tokens / total_messages, 1)
+
+            # Average tokens per tool call
+            tool_token_rows = conn.execute(
+                "SELECT SUM(total_tokens) AS total FROM messages WHERE tool_name IS NOT NULL AND tool_name != '' AND total_tokens IS NOT NULL"
+            ).fetchall()
+            total_tool_tokens = tool_token_rows[0]["total"] or 0
+            tool_call_rows = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM messages WHERE tool_name IS NOT NULL AND tool_name != ''"
+            ).fetchall()
+            total_tool_calls_for_avg = tool_call_rows[0]["cnt"] if tool_call_rows else 0
+            avg_tokens_per_tool = 0.0
+            if total_tool_calls_for_avg > 0:
+                avg_tokens_per_tool = round(total_tool_tokens / total_tool_calls_for_avg, 1)
+
+            # Cost metrics (from messages table — per call cost)
+            cost_rows = conn.execute(
+                "SELECT SUM(cost_total) AS total FROM messages WHERE cost_total IS NOT NULL"
+            ).fetchall()
+            total_cost = cost_rows[0]["total"] or 0.0
+
+            avg_cost_per_session = 0.0
+            if total_sessions > 0:
+                avg_cost_per_session = round(total_cost / total_sessions, 4)
+
+            avg_cost_per_message = 0.0
+            if total_messages > 0:
+                avg_cost_per_message = round(total_cost / total_messages, 4)
+
+            # Average cost per tool call
+            tool_cost_rows = conn.execute(
+                "SELECT SUM(cost_total) AS total FROM messages WHERE tool_name IS NOT NULL AND tool_name != '' AND cost_total IS NOT NULL"
+            ).fetchall()
+            total_tool_cost = tool_cost_rows[0]["total"] or 0.0
+            avg_cost_per_tool = 0.0
+            if total_tool_calls_for_avg > 0:
+                avg_cost_per_tool = round(total_tool_cost / total_tool_calls_for_avg, 4)
+
+            # Average cost per provider-model (from spend table — aggregated)
+            spend_avg_rows = conn.execute(
+                "SELECT AVG(cost_total) AS avg FROM spend WHERE cost_total > 0"
+            ).fetchall()
+            avg_cost_per_provider_model = spend_avg_rows[0]["avg"] or 0.0
+            if avg_cost_per_provider_model is not None:
+                avg_cost_per_provider_model = round(float(avg_cost_per_provider_model), 4)
+
             # Sessions by day (last 30 days)
             day_rows = conn.execute(
                 """
@@ -87,6 +145,15 @@ async def get_session_metrics():
                     "total_sessions": total_sessions,
                     "total_messages": total_messages,
                     "avg_messages_per_session": avg_messages,
+                    "total_tokens": total_tokens,
+                    "avg_tokens_per_session": avg_tokens_per_session,
+                    "avg_tokens_per_message": avg_tokens_per_message,
+                    "avg_tokens_per_tool": avg_tokens_per_tool,
+                    "total_cost": total_cost,
+                    "avg_cost_per_session": avg_cost_per_session,
+                    "avg_cost_per_message": avg_cost_per_message,
+                    "avg_cost_per_tool": avg_cost_per_tool,
+                    "avg_cost_per_provider_model": avg_cost_per_provider_model,
                     "sessions_by_day": sessions_by_day,
                 },
                 usage=zero_usage(),
@@ -160,11 +227,13 @@ async def get_error_metrics():
     """
     try:
         with get_connection() as conn:
-            # Total errors
-            total_rows = conn.execute("SELECT COUNT(*) AS cnt FROM error_log").fetchall()
+            # Total errors (excluding provider key errors)
+            total_rows = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM error_log WHERE exception NOT LIKE '%key%' AND exception NOT LIKE '%api_key%'"
+            ).fetchall()
             total_errors = total_rows[0]["cnt"] if total_rows else 0
 
-            # Errors by day (last 30 days)
+            # Errors by day (last 30 days, excluding provider key errors)
             day_rows = conn.execute(
                 """
                 SELECT 
@@ -172,6 +241,8 @@ async def get_error_metrics():
                     COUNT(*) AS cnt
                 FROM error_log
                 WHERE created_at >= date('now', '-30 days')
+                    AND exception NOT LIKE '%key%'
+                    AND exception NOT LIKE '%api_key%'
                 GROUP BY date(created_at)
                 ORDER BY day ASC
                 """
@@ -180,12 +251,15 @@ async def get_error_metrics():
                 {"date": row["day"], "count": row["cnt"]} for row in day_rows
             ]
 
-            # Errors by source
+            # Errors by source (excluding provider key errors — missing API keys are not agent errors)
             source_rows = conn.execute(
                 """
                 SELECT source, COUNT(*) AS cnt
                 FROM error_log
                 WHERE source IS NOT NULL AND source != ''
+                    AND source NOT LIKE '%provider_keys%'
+                    AND exception NOT LIKE '%key%'
+                    AND exception NOT LIKE '%api_key%'
                 GROUP BY source
                 ORDER BY cnt DESC
                 LIMIT 10
@@ -291,8 +365,34 @@ async def get_metrics_overview():
                 {"name": row["tool_name"], "count": row["cnt"]} for row in tool_rows
             ]
 
-            # Errors
-            err_rows = conn.execute("SELECT COUNT(*) AS cnt FROM error_log").fetchall()
+            # Token consumption metrics
+            token_rows = conn.execute(
+                "SELECT SUM(total_tokens) AS total FROM messages WHERE total_tokens IS NOT NULL"
+            ).fetchall()
+            total_tokens = token_rows[0]["total"] or 0
+            avg_tokens_per_session = round(total_tokens / total_sessions, 1) if total_sessions > 0 else 0.0
+            avg_tokens_per_message = round(total_tokens / total_messages, 1) if total_messages > 0 else 0.0
+
+            # Cost metrics
+            cost_rows = conn.execute(
+                "SELECT SUM(cost_total) AS total FROM messages WHERE cost_total IS NOT NULL"
+            ).fetchall()
+            total_cost = cost_rows[0]["total"] or 0.0
+            avg_cost_per_session = round(total_cost / total_sessions, 4) if total_sessions > 0 else 0.0
+            avg_cost_per_message = round(total_cost / total_messages, 4) if total_messages > 0 else 0.0
+
+            # Average cost per provider-model (from spend table)
+            spend_avg_rows = conn.execute(
+                "SELECT AVG(cost_total) AS avg FROM spend WHERE cost_total > 0"
+            ).fetchall()
+            avg_cost_per_provider_model = spend_avg_rows[0]["avg"] or 0.0
+            if avg_cost_per_provider_model is not None:
+                avg_cost_per_provider_model = round(float(avg_cost_per_provider_model), 4)
+
+            # Errors (excluding provider key errors)
+            err_rows = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM error_log WHERE exception NOT LIKE '%key%' AND exception NOT LIKE '%api_key%'"
+            ).fetchall()
             total_errors = err_rows[0]["cnt"] if err_rows else 0
 
             # Sessions by day (last 30 days)
@@ -322,6 +422,13 @@ async def get_metrics_overview():
                     "total_errors": total_errors,
                     "top_tools": top_tools,
                     "sessions_by_day": sessions_by_day,
+                    "total_tokens": total_tokens,
+                    "avg_tokens_per_session": avg_tokens_per_session,
+                    "avg_tokens_per_message": avg_tokens_per_message,
+                    "total_cost": total_cost,
+                    "avg_cost_per_session": avg_cost_per_session,
+                    "avg_cost_per_message": avg_cost_per_message,
+                    "avg_cost_per_provider_model": avg_cost_per_provider_model,
                 },
                 usage=zero_usage(),
             )

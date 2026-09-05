@@ -79,6 +79,7 @@ class CreateSkillRequest(BaseModel):
     mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
     model: str | None = None  # Modelo cloud elegido para esta tarea (efímero)
     provider: str | None = None  # Provider cloud elegido para esta tarea (efímero)
+    iterate: bool = False  # True = fase de iteración (modificar creación existente)
 
 
 class CreateToolRequest(BaseModel):
@@ -91,6 +92,7 @@ class CreateToolRequest(BaseModel):
     datos: list[str] | None = None  # Lista de env vars / datos externos
     model: str | None = None  # Modelo cloud elegido para esta tarea (efímero)
     provider: str | None = None  # Provider cloud elegido para esta tarea (efímero)
+    iterate: bool = False  # True = fase de iteración (modificar creación existente)
 
 
 class CreateAgentRequest(BaseModel):
@@ -101,6 +103,7 @@ class CreateAgentRequest(BaseModel):
     mensajes: list[dict] | None = None  # [{"role": "user"|"assistant", "content": "..."}]
     model: str | None = None  # Modelo cloud elegido para esta tarea (efímero)
     provider: str | None = None  # Provider cloud elegido para esta tarea (efímero)
+    iterate: bool = False  # True = fase de iteración (modificar creación existente)
 
 
 # ── Tool definition for interview ─────────────────────────────────────
@@ -230,6 +233,7 @@ async def post_create_skill_stream(
     mensajes: str | None = Form(None),
     model: str | None = Form(None),
     provider: str | None = Form(None),
+    iterate: bool = Form(False),
     files: Optional[list[UploadFile]] = File(None),
 ):
     """Streaming endpoint to create a skill via an LLM interview.
@@ -299,13 +303,62 @@ async def post_create_skill_stream(
 
     async def event_stream() -> AsyncGenerator[str, None]:
         """Generate SSE events for the skill creation flow."""
+        _create_model, _create_provider = resolve_create_model_provider(model, provider)
+
+        # ════════════════════════════════════════════════════════════════
+        # FASE ITERACIÓN — si iterate=True, modificar creación existente
+        # ════════════════════════════════════════════════════════════════
+        if iterate:
+            yield _sse({"type": "skill_action", "content": {"action": "iterating"}})
+
+            try:
+                iter_template = agent.prompt("iterate_skill")
+            except FileNotFoundError:
+                logger.exception("Prompt iterate_skill.md no encontrado.")
+                yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
+                return
+
+            # Buscar la skill existente por nombre
+            skill_carpeta = str(_SKILLS_DIR / (nombre or "skill"))
+            iter_prompt = iter_template.format(
+                nombre=nombre or "(inferir)",
+                carpeta=skill_carpeta,
+                conversacion=_formatear_mensajes(mensajes),
+            )
+
+            try:
+                tools = list(agent.tools.tools_registry(_AGENT_TOOLS_PERMS))
+            except AttributeError as e:
+                logger.exception("Error obteniendo tools: %s", e)
+                yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
+                return
+
+            msgs: list[dict[str, Any]] = [
+                {"role": "system", "content": iter_prompt},
+                {"role": "user", "content": mensajes[-1]["content"] if mensajes else "Modificá la skill."},
+            ]
+
+            async for event in stream_tool_calling_loop(
+                msgs, tools, _FRIENDLY_ERROR, model=_create_model, provider=_create_provider
+            ):
+                yield _sse(event)
+                if event["type"] == "error":
+                    return
+
+            yield _sse({"type": "skill_result", "content": {
+                "status": "success",
+                "message": f"Skill '{nombre}' modificada exitosamente.",
+                "data": {"exist": "Sí", "skill": nombre, "skill_path": skill_carpeta},
+            }})
+            return
+
         # ════════════════════════════════════════════════════════════════
         # FASE 1: INTERVIEW — stream texto + tool responder_interview
         # ════════════════════════════════════════════════════════════════
         try:
-            template = agent.prompt("iterar_skill")
+            template = agent.prompt("interview_skill")
         except FileNotFoundError:
-            logger.exception("Prompt iterar_skill.md no encontrado.")
+            logger.exception("Prompt interview_skill.md no encontrado.")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
@@ -396,9 +449,9 @@ async def post_create_skill_stream(
 
         # Build the generate prompt
         try:
-            sys_prompt_template = agent.prompt("generar_skill")
+            sys_prompt_template = agent.prompt("create_skill")
         except FileNotFoundError:
-            logger.exception("Prompt generar_skill.md no encontrado.")
+            logger.exception("Prompt create_skill.md no encontrado.")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR})
             return
 
@@ -595,6 +648,54 @@ async def post_create_tool_stream(req: CreateToolRequest):
 
     async def event_stream() -> AsyncGenerator[str, None]:
         """Generate SSE events for the tool creation flow."""
+        _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
+
+        # ════════════════════════════════════════════════════════════════
+        # FASE ITERACIÓN — si iterate=True, modificar creación existente
+        # ════════════════════════════════════════════════════════════════
+        if req.iterate:
+            yield _sse({"type": "tool_action", "content": {"action": "iterating"}})
+
+            try:
+                iter_template = agent.prompt("iterate_tool")
+            except FileNotFoundError:
+                logger.exception("Prompt iterate_tool.md no encontrado.")
+                yield _sse({"type": "error", "content": _FRIENDLY_ERROR_TOOL})
+                return
+
+            tool_carpeta = str(_TOOLS_DIR / (nombre or "tool"))
+            iter_prompt = iter_template.format(
+                nombre=nombre or "(inferir)",
+                carpeta=tool_carpeta,
+                conversacion=_formatear_mensajes(mensajes),
+            )
+
+            try:
+                tools = list(agent.tools.tools_registry(_AGENT_TOOLS_PERMS))
+            except AttributeError as e:
+                logger.exception("Error obteniendo tools: %s", e)
+                yield _sse({"type": "error", "content": _FRIENDLY_ERROR_TOOL})
+                return
+
+            msgs: list[dict[str, Any]] = [
+                {"role": "system", "content": iter_prompt},
+                {"role": "user", "content": mensajes[-1]["content"] if mensajes else "Modificá la tool."},
+            ]
+
+            async for event in stream_tool_calling_loop(
+                msgs, tools, _FRIENDLY_ERROR_TOOL, model=_create_model, provider=_create_provider
+            ):
+                yield _sse(event)
+                if event["type"] == "error":
+                    return
+
+            yield _sse({"type": "tool_result_final", "content": {
+                "status": "success",
+                "message": f"Tool '{nombre}' modificada exitosamente.",
+                "data": {"exist": "Sí", "tool": nombre, "tool_path": tool_carpeta},
+            }})
+            return
+
         # ════════════════════════════════════════════════════════════════
         # FASE 1: EVALUAR — ¿ya existe una tool que cubra esto?
         # (antes de iterar para no gastar tokens si ya hay una)
@@ -621,9 +722,9 @@ async def post_create_tool_stream(req: CreateToolRequest):
         # FASE 2: ENTREVISTA — stream texto + tool responder_interview_tool
         # ════════════════════════════════════════════════════════════════
         try:
-            template = agent.prompt("iterar_tool")
+            template = agent.prompt("interview_tool")
         except FileNotFoundError:
-            logger.exception("Prompt iterar_tool.md no encontrado.")
+            logger.exception("Prompt interview_tool.md no encontrado.")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR_TOOL})
             return
 
@@ -712,9 +813,9 @@ async def post_create_tool_stream(req: CreateToolRequest):
         yield _sse({"type": "tool_action", "content": {"action": "creating"}})
 
         try:
-            sys_prompt_template = agent.prompt("generar_tool")
+            sys_prompt_template = agent.prompt("create_tool")
         except FileNotFoundError:
-            logger.exception("Prompt generar_tool.md no encontrado.")
+            logger.exception("Prompt create_tool.md no encontrado.")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR_TOOL})
             return
 
@@ -928,11 +1029,11 @@ async def post_create_agent_stream(req: CreateAgentRequest):
     Returns:
         A StreamingResponse with SSE events.
     """
-    logger.info(
-        "POST /api/create/agent — descripcion='%s' name=%s mensajes=%d",
-        req.descripcion, req.name,
-        len(req.mensajes) if req.mensajes else 0,
-    )
+    # logger.info(
+    #     "POST /api/create/agent — descripcion='%s' name=%s mensajes=%d",
+    #     req.descripcion, req.name,
+    #     len(req.mensajes) if req.mensajes else 0,
+    # )
 
     descripcion = req.descripcion.strip()
     nombre = req.name.strip() if req.name else None
@@ -946,6 +1047,82 @@ async def post_create_agent_stream(req: CreateAgentRequest):
 
     async def event_stream() -> AsyncGenerator[str, None]:
         """Generate SSE events for the agent creation flow."""
+        _create_model, _create_provider = resolve_create_model_provider(req.model, req.provider)
+
+        # ════════════════════════════════════════════════════════════════
+        # FASE ITERACIÓN — si iterate=True, modificar creación existente
+        # ════════════════════════════════════════════════════════════════
+        if req.iterate:
+            yield _sse({"type": "agent_action", "content": {"action": "iterating"}})
+
+            try:
+                iter_template = agent.prompt("iterate_agent")
+            except FileNotFoundError:
+                logger.exception("Prompt iterate_agent.md no encontrado.")
+                yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
+                return
+
+            # Obtener tools, skills, subagentes, MCPs y RAG disponibles
+            try:
+                available_tools = _listar_tools_locales()
+                available_skills = _listar_skills_locales()
+                available_subagents = _listar_agentes_locales()
+                from backend.agent.utils.agent_helpers import get_mcp_list
+                available_mcps = await get_mcp_list()
+                from backend.agent.utils.rag_helpers import list_collections
+                available_rag = list_collections()
+            except Exception as e:
+                logger.warning("No se pudieron listar recursos: %s", e)
+                available_tools = []
+                available_skills = []
+                available_subagents = []
+                available_mcps = []
+                available_rag = []
+
+            tools_list_text = "\n".join(f"- {t['name']}: {t['description'][:150]}" for t in available_tools) if available_tools else "(ninguna)"
+            skills_list_text = "\n".join(f"- {s['name']}: {s['description'][:150]}" for s in available_skills) if available_skills else "(ninguna)"
+            subagents_list_text = "\n".join(f"- {a['name']}: {a['description'][:150]}" for a in available_subagents) if available_subagents else "(ninguno)"
+            mcp_list_text = "\n".join(f"- {m.get('label', 'mcp')}" for m in available_mcps) if available_mcps else "(ninguno)"
+            rag_list_text = "\n".join(f"- {r}" for r in available_rag) if available_rag else "(ninguna)"
+
+            agent_carpeta = str(_AGENTS_DIR)
+            iter_prompt = iter_template.format(
+                nombre=nombre or "(inferir)",
+                carpeta=agent_carpeta,
+                conversacion=_formatear_mensajes(mensajes),
+                tools_disponibles=tools_list_text,
+                skills_disponibles=skills_list_text,
+                subagentes_disponibles=subagents_list_text,
+                mcp_disponibles=mcp_list_text,
+                rag_disponibles=rag_list_text,
+            )
+
+            try:
+                tools = list(agent.tools.tools_registry(_AGENT_TOOLS_PERMS))
+            except AttributeError as e:
+                logger.exception("Error obteniendo tools: %s", e)
+                yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
+                return
+
+            msgs: list[dict[str, Any]] = [
+                {"role": "system", "content": iter_prompt},
+                {"role": "user", "content": mensajes[-1]["content"] if mensajes else "Modificá el agente."},
+            ]
+
+            async for event in stream_tool_calling_loop(
+                msgs, tools, _FRIENDLY_ERROR_AGENT, model=_create_model, provider=_create_provider
+            ):
+                yield _sse(event)
+                if event["type"] == "error":
+                    return
+
+            yield _sse({"type": "agent_result_final", "content": {
+                "status": "success",
+                "message": f"Agente '{nombre}' modificado exitosamente.",
+                "data": {"exist": "Sí", "agent": nombre, "agent_path": agent_carpeta},
+            }})
+            return
+
         # ════════════════════════════════════════════════════════════════
         # FASE 1: EVALUAR — ¿ya existe un agente que cubra esto?
         # ════════════════════════════════════════════════════════════════
@@ -968,51 +1145,16 @@ async def post_create_agent_stream(req: CreateAgentRequest):
         # FASE 2: ENTREVISTA — stream texto + tool responder_interview
         # ════════════════════════════════════════════════════════════════
         try:
-            template = agent.prompt("iterar_agent")
+            template = agent.prompt("interview_agent")
         except FileNotFoundError:
-            logger.exception("Prompt iterar_agent.md no encontrado.")
+            logger.exception("Prompt interview_agent.md no encontrado.")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
             return
 
-        # Obtener tools, skills, subagentes, MCPs y RAG disponibles para pasar al prompt
-        try:
-            available_tools = _listar_tools_locales()
-            available_skills = _listar_skills_locales()
-            available_subagents = _listar_agentes_locales()
-            # MCPs y RAG (necesitan helpers)
-            from backend.agent.utils.agent_helpers import get_mcp_list
-            available_mcps = await get_mcp_list()
-            from backend.agent.utils.rag_helpers import list_collections
-            available_rag = list_collections()
-        except Exception as e:
-            logger.warning("No se pudieron listar recursos: %s", e)
-            available_tools = []
-            available_skills = []
-            available_subagents = []
-            available_mcps = []
-            available_rag = []
-
-        # Formatear texto de recursos disponibles
-        tools_list_text = "\n".join(f"- {t['name']}: {t['description'][:150]}" for t in available_tools) if available_tools else "(ninguna creada todavía)"
-        skills_list_text = "\n".join(f"- {s['name']}: {s['description'][:150]}" for s in available_skills) if available_skills else "(ninguna creada todavía)"
-        subagents_list_text = "\n".join(f"- {a['name']}: {a['description'][:150]}" for a in available_subagents) if available_subagents else "(ninguno creado todavía)"
-        mcp_list_text = "\n".join(f"- {m.get('label', 'mcp')}" for m in available_mcps) if available_mcps else "(ninguno configurado)"
-        rag_list_text = "\n".join(f"- {r}" for r in available_rag) if available_rag else "(ninguna colección creada)"
-
-        # Escape { y } en inputs de usuario para evitar KeyError en format()
-        desc_esc = descripcion.replace("{", "{{").replace("}", "}}")
-        nombre_esc = nombre.replace("{", "{{").replace("}}", "}") if nombre else ""
-        mensajes_esc = _formatear_mensajes(mensajes).replace("{", "{{").replace("}}", "}") if mensajes else ""
-
         prompt = template.format(
-            descripcion=desc_esc,
-            nombre=nombre_esc or "(inferir)",
-            mensajes=mensajes_esc,
-            tools_disponibles=tools_list_text,
-            skills_disponibles=skills_list_text,
-            subagentes_disponibles=subagents_list_text,
-            mcp_disponibles=mcp_list_text,
-            rag_disponibles=rag_list_text,
+            descripcion=descripcion,
+            nombre=nombre or "(inferir)",
+            mensajes=_formatear_mensajes(mensajes),
         )
 
         collected_content = ""
@@ -1079,9 +1221,9 @@ async def post_create_agent_stream(req: CreateAgentRequest):
         yield _sse({"type": "agent_action", "content": {"action": "creating"}})
 
         try:
-            sys_prompt_template = agent.prompt("generar_agent")
+            sys_prompt_template = agent.prompt("create_agent")
         except FileNotFoundError:
-            logger.exception("Prompt generar_agent.md no encontrado.")
+            logger.exception("Prompt create_agent.md no encontrado.")
             yield _sse({"type": "error", "content": _FRIENDLY_ERROR_AGENT})
             return
 
@@ -1093,8 +1235,8 @@ async def post_create_agent_stream(req: CreateAgentRequest):
             nombre=name or "(inferir del contexto)",
             conversacion=conversacion,
             carpeta=carpeta,
-            tools=tools_text,
-            skills=skills_text,
+            tools_seleccionadas=tools_text,
+            skills_seleccionadas=skills_text,
             tools_disponibles=tools_list_text,
             skills_disponibles=skills_list_text,
             subagentes_disponibles=subagents_list_text,

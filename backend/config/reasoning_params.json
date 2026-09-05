@@ -1,0 +1,38 @@
+{
+  "groq": {
+    "reasoning_effort": {
+      "type": "string",
+      "off": "none"
+    },
+    "reasoning_format": {
+      "type": "string",
+      "streaming_default": "parsed"
+    }
+  },
+  "openrouter": {
+    "reasoning": {
+      "type": "object",
+      "fields": {
+        "effort": "string",
+        "max_tokens": "integer",
+        "exclude": "boolean",
+        "enabled": "boolean"
+      },
+      "off": {"exclude": true}
+    },
+    "reasoning_effort": {
+      "type": "string",
+      "off": "none"
+    }
+  },
+  "google": {
+    "thinking_config": {
+      "type": "object",
+      "fields": {
+        "thinking_budget": "integer",
+        "thinking_level": "string"
+      },
+      "off": {"thinking_budget": 0}
+    }
+  }
+}

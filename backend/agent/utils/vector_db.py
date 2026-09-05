@@ -3,13 +3,12 @@
 Abstracts ChromaDB operations behind a simple interface. If the engine is
 switched later (e.g. pgvector), only this file needs to change.
 
-The embedding model runs on OpenRouter (``liquid/lfm-2.5-embedding-350m:free``)
-through the OpenAI-compatible ``/api/v1/embeddings`` endpoint, so no local
-model is downloaded or kept in memory. The same function is used to index
-documents and to embed queries (Chroma calls it in both paths). The
-OpenRouter API key is resolved from the encrypted DB storage
-(``provider_keys``) — without it the VectorDB cannot be instantiated and
-RAG stays disabled.
+The embedding model runs on Gemini Embedding 2 (``gemini-embedding-exp-02-05``)
+through the ``google-genai`` SDK, so no local model is downloaded or kept
+in memory. The same function is used to index documents and to embed queries
+(Chroma calls it in both paths). The Gemini API key is resolved from the
+encrypted DB storage (``provider_keys``) — without it the VectorDB cannot be
+instantiated and RAG stays disabled.
 
 Typical usage::
 
@@ -35,19 +34,18 @@ from backend.agent.utils.error_logger import log_error
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "liquid/lfm-2.5-embedding-350m:free"
-_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
+_DEFAULT_MODEL = "gemini-embedding-exp-02-05"
 _BATCH_SIZE = 32  # texts per embeddings request
 
 
-class OpenRouterEmbeddingFunction(EmbeddingFunction[Documents]):
-    """Chroma embedding function backed by the OpenRouter embeddings API.
+class GeminiEmbeddingFunction(EmbeddingFunction[Documents]):
+    """Chroma embedding function backed by the Gemini Embedding 2 API.
 
-    Sends texts in batches to ``POST /api/v1/embeddings`` using an
-    OpenAI-compatible payload and returns the resulting vectors.
+    Sends texts in batches to ``client.models.embed_content`` using the
+    ``google-genai`` SDK and returns the resulting vectors.
 
     Attributes:
-        model_name: OpenRouter embedding model identifier.
+        model_name: Gemini embedding model identifier.
         batch_size: Maximum number of texts sent per request.
     """
 
@@ -55,11 +53,13 @@ class OpenRouterEmbeddingFunction(EmbeddingFunction[Documents]):
         """Initialize the embedding function.
 
         Args:
-            api_key: OpenRouter API key (resolved from the encrypted DB).
-            model_name: OpenRouter embedding model identifier.
+            api_key: Gemini API key (resolved from the encrypted DB).
+            model_name: Gemini embedding model identifier.
         """
+        from google import genai
         self.api_key = api_key
         self.model_name = model_name
+        self.client = genai.Client(api_key=api_key)
 
     def __call__(self, input: Documents) -> Embeddings:
         """Embed a batch of documents.
@@ -71,33 +71,25 @@ class OpenRouterEmbeddingFunction(EmbeddingFunction[Documents]):
             A list of embedding vectors (one per input text).
 
         Raises:
-            RuntimeError: If the OpenRouter API call fails.
+            RuntimeError: If the Gemini API call fails.
         """
-        import requests
-
         vectors: list[list[float]] = []
         try:
             for start in range(0, len(input), _BATCH_SIZE):
                 batch = list(input[start:start + _BATCH_SIZE])
-                resp = requests.post(
-                    _EMBEDDINGS_URL,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={"model": self.model_name, "input": batch},
-                    timeout=120,
+                resp = self.client.models.embed_content(
+                    model=self.model_name,
+                    contents=batch,
                 )
-                resp.raise_for_status()
-                data = resp.json().get("data", [])
-                if len(data) != len(batch):
+                embeddings = resp.embeddings or []
+                if len(embeddings) != len(batch):
                     raise RuntimeError(
-                        f"OpenRouter devolvió {len(data)} embeddings para "
+                        f"Gemini devolvió {len(embeddings)} embeddings para "
                         f"{len(batch)} textos."
                     )
-                vectors.extend(item["embedding"] for item in data)
+                vectors.extend([e.values for e in embeddings])
         except Exception as e:
-            logger.error("Error llamando a OpenRouter embeddings: %s", e)
+            logger.error("Error llamando a Gemini embeddings: %s", e)
             raise RuntimeError(f"No se pudieron generar los embeddings: {e}") from e
         return vectors
 
@@ -107,7 +99,7 @@ class VectorDB:
 
     Attributes:
         chroma_path: Absolute path to the persistent Chroma directory.
-        embed_func: Embedding function (OpenRouter API), created once at init.
+        embed_func: Embedding function (Gemini Embedding 2 API), created once at init.
         _client: ``chromadb.PersistentClient`` instance.
     """
 
@@ -119,20 +111,20 @@ class VectorDB:
                 stores it as ``self.collection``.
 
         Raises:
-            ValueError: If no OpenRouter API key is stored in the DB (RAG
+            ValueError: If no Gemini API key is stored in the DB (RAG
                 requires it to generate embeddings).
         """
         self.chroma_path = get_knowledge_dir()
         self.chroma_path.mkdir(parents=True, exist_ok=True)
 
-        api_key = provider_keys.get_key("OPENROUTER")
+        api_key = provider_keys.get_key("GEMINI")
         if not api_key:
             raise ValueError(
-                "No hay una API key de OpenRouter configurada. Cargala en "
+                "No hay una API key de Gemini configurada. Cargala en "
                 "Configuración → Providers: es necesaria para la fuente de "
                 "conocimiento."
             )
-        self.embed_func = OpenRouterEmbeddingFunction(api_key=api_key)
+        self.embed_func = GeminiEmbeddingFunction(api_key=api_key)
 
         self._client = chromadb.PersistentClient(path=str(self.chroma_path))
 
@@ -472,10 +464,10 @@ _db_singleton: VectorDB | None = None
 def get_vector_db() -> VectorDB:
     """Return the process-wide shared VectorDB instance.
 
-    The embedding function (OpenRouter API) is created once and shared by
+    The embedding function (Gemini Embedding 2 API) is created once and shared by
     every consumer (RAG routes, the ``rag`` tool and the AgentInfo listing).
     It is never killed, so repeated RAG calls reuse the same client. Raises
-    ``ValueError`` if no OpenRouter key is configured — callers should
+    ``ValueError`` if no Gemini API key is configured — callers should
     surface that message to the user.
 
     Returns:

@@ -73,6 +73,10 @@ Además de las tools internas del sistema, se pueden crear herramientas personal
 4. La función debe ser `async` y debe devolver el contrato `{status, message, data, usage}`.
 5. Una vez creada, se puede habilitar para cualquier agente agregándola en su `permission`.
 
+### Sandbox de prueba
+
+Al crear una tool con el LLM, aparece un botón **Probar** que abre un panel interactivo. El sistema introspea la función y genera automáticamente un formulario con los parámetros detectados (nombres, tipos, valores por defecto y campos requeridos). Completás los campos, hacés clic en **Ejecutar** y ves el resultado sin tener que salir de la pantalla.
+
 ---
 
 ## Tools nativas
@@ -275,8 +279,8 @@ Las tareas se persisten en la base de datos SQLite interna.
 
 El sistema soporta **colecciones RAG** (bases de conocimiento vectoriales con ChromaDB) que se crean desde la interfaz de creación (pestaña **RAG**). Cada colección vive en `~/.config/synapseForge/knowledge/` y se construye subiendo archivos y URLs, que se procesan y almacenan como documentos vectoriales.
 
-- Los embeddings se calculan en la nube vía OpenRouter (`liquid/lfm-2.5-embedding-350m:free`).
-- **Requiere una API key de OpenRouter** cargada en **Providers**: sin ella, la sección de fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
+- Los embeddings se calculan con Gemini Embedding 2 (`gemini-embedding-exp-02-05`).
+- **Requiere una API key de Gemini** cargada en **Providers**: sin ella, la sección de fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
 - Las colecciones se listan y consultan desde la interfaz.
 - Sirven para darle al agente acceso a conocimiento específico del dominio (documentos, manuales, bases de datos de texto) mediante búsqueda semántica.
 

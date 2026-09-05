@@ -540,6 +540,25 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
     return result
 
 
+def _load_reasoning_config() -> dict[str, Any]:
+    """Load reasoning parameter definitions from JSON.
+
+    Reads fresh on every call so runtime changes (provider/model switches)
+    are picked up immediately without a restart.
+
+    Returns:
+        The parsed JSON dict, or ``{}`` on failure.
+    """
+    json_path = os.path.join(_project_root, "config", "reasoning_params.json")
+    try:
+        with open(json_path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log_error(str(e), source="model_catalog.py:_load_reasoning_config")
+        logger.warning("Could not load reasoning config: %s", e)
+        return {}
+
+
 def translate_reasoning(
     provider: str,
     reasoning_value: str | bool | None,
@@ -548,16 +567,17 @@ def translate_reasoning(
 ) -> dict[str, Any]:
     """Translate a user-facing reasoning value into provider-specific kwargs.
 
-    Takes the abstract reasoning value from the UI (effort level, ``"off"``,
-    ``"default"``, or ``None``) and returns the correct keyword arguments
-    for the provider's API call.
+    Reads the parameter structure from ``backend/config/reasoning_params.json``
+    on every call so runtime changes are picked up immediately.  The JSON
+    defines *what* parameters each provider API accepts; the code constructs
+    the correct kwargs based on type and mode.
 
     Args:
         provider: Provider name (``"openrouter"``, ``"groq"``, ``"google"``).
-        reasoning_value: User-selected value (``"default"``, ``"off"``,
-            ``"low"``, ``"medium"``, ``"high"``, ``"max"``, ``"xhigh"``,
-            ``"minimal"``, ``True``, ``False``, or ``None``).
-        model_id: Optional model ID for catalog lookup.
+        reasoning_value: User-selected value from DB/UI (``"default"``,
+            ``"off"``, ``"low"``, ``"medium"``, ``"high"``, ``"max"``,
+            ``"xhigh"``, ``"minimal"``, ``True``, ``False``, or ``None``).
+        model_id: Optional model ID for catalog lookup (reserved).
         budget_tokens: Optional token budget (overrides effort-based defaults).
 
     Returns:
@@ -568,7 +588,6 @@ def translate_reasoning(
 
     # --- Normalize legacy boolean ---
     if val is True or val == "on" or val == "true":
-        # Boolean true → let the provider decide (don't pass anything).
         return {}
     if val is False or val == "off" or val == "false":
         val = "off"
@@ -579,60 +598,61 @@ def translate_reasoning(
     if val is None or val == "default" or val == "":
         return {}
 
+    # --- Load provider config from JSON (fresh read, no cache) ---
+    config = _load_reasoning_config()
+    provider_config = config.get(prov.lower())
+    if not provider_config:
+        return {}
+
     # --- "off" → disable reasoning ---
     if val == "off":
-        if prov == "GROQ":
-            return {"reasoning_effort": "none"}
-        if prov == "OPENROUTER":
-            return {"reasoning": False}
-        if prov == "GOOGLE":
-            # Gemini: set thinking budget to 0 to disable.
-            return {"thinking_config": {"thinking_budget": 0}}
+        for _param_name, param_def in provider_config.items():
+            if isinstance(param_def, dict) and "off" in param_def:
+                return {_param_name: param_def["off"]}
         return {}
 
     # --- Budget tokens take precedence when provided ---
     if budget_tokens is not None and budget_tokens > 0:
-        if prov == "OPENROUTER":
-            return {"reasoning": {"budget_tokens": budget_tokens}}
-        if prov == "GROQ":
-            # Groq doesn't support budget_tokens; use effort level.
-            return {"reasoning_effort": _groq_effort_from_tokens(budget_tokens)}
-        if prov == "GOOGLE":
-            return {"thinking_config": {"thinking_budget": budget_tokens}}
+        for param_name, param_def in provider_config.items():
+            if isinstance(param_def, dict) and param_def.get("type") == "object":
+                fields = param_def.get("fields", {})
+                if "max_tokens" in fields:
+                    return {param_name: {"max_tokens": budget_tokens}}
+                if "thinking_budget" in fields:
+                    return {param_name: {"thinking_budget": budget_tokens}}
         return {}
 
     # --- Effort level ---
-    if prov == "GROQ":
-        # Groq accepts: "low", "medium", "high" (no "none" here, handled above).
-        groq_val = val if val in ("low", "medium", "high") else "medium"
-        return {"reasoning_effort": groq_val}
-
-    if prov == "OPENROUTER":
-        return {"reasoning": {"effort": val}}
-
-    if prov == "GOOGLE":
-        # Gemini: translate effort to budget_tokens approximation.
-        effort_to_budget = {
-            "minimal": 128,
-            "low": 1024,
-            "medium": 8192,
-            "high": 32768,
-            "xhigh": 65536,
-            "max": 131072,
-        }
-        budget = effort_to_budget.get(val, 8192)
-        return {"thinking_config": {"thinking_budget": budget}}
+    for param_name, param_def in provider_config.items():
+        if isinstance(param_def, dict) and param_def.get("type") == "object":
+            fields = param_def.get("fields", {})
+            if "effort" in fields:
+                return {param_name: {"effort": val}}
+            if "thinking_level" in fields:
+                return {param_name: {"thinking_level": val}}
+        if isinstance(param_def, dict) and param_def.get("type") == "string":
+            if param_name != "reasoning_format":
+                return {param_name: val}
 
     return {}
 
 
-def _groq_effort_from_tokens(tokens: int) -> str:
-    """Map a token budget to a Groq reasoning_effort level."""
-    if tokens <= 1024:
-        return "low"
-    if tokens <= 8192:
-        return "medium"
-    return "high"
+def get_reasoning_streaming_config(provider: str) -> dict[str, Any]:
+    """Get provider-specific streaming config from reasoning_params.json.
+
+    Args:
+        provider: Provider name (e.g. ``"groq"``).
+
+    Returns:
+        Dict of streaming-specific kwargs (e.g. ``{"reasoning_format": "parsed"}``).
+    """
+    config = _load_reasoning_config()
+    provider_config = config.get(provider.lower(), {})
+    result: dict[str, Any] = {}
+    for param_name, param_def in provider_config.items():
+        if isinstance(param_def, dict) and "streaming_default" in param_def:
+            result[param_name] = param_def["streaming_default"]
+    return result
 
 
 def list_configured_providers() -> list[str]:

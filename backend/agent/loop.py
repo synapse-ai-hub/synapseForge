@@ -787,11 +787,14 @@ class AgentLoop:
                                 session_id, "assistant", content=collected_content,
                                 reasoning=collected_reasoning or None,
                                 model=model,
+                                provider=effective_provider,
                                 turn_number=turn_number, step=step
                             )
                         else:
                             session_manager.save_message(
-                                session_id, "assistant", content=final_msg, model=model, turn_number=turn_number, step=step
+                                session_id, "assistant", content=final_msg, model=model,
+                                provider=effective_provider,
+                                turn_number=turn_number, step=step
                             )
                         yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
                         yield "data: [DONE]\n\n"
@@ -837,6 +840,7 @@ class AgentLoop:
                         reasoning=collected_reasoning or None,
                         tool_calls=tool_calls,
                         model=model,
+                        provider=effective_provider,
                         turn_number=turn_number,
                         step=step,
                         status="success",
@@ -1106,6 +1110,7 @@ class AgentLoop:
                     session_manager.save_message(
                         session_id, "assistant", content=final_msg,
                         model=model,
+                        provider=effective_provider,
                         turn_number=turn_number, step=step,
                     )
                     yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
@@ -1125,6 +1130,7 @@ class AgentLoop:
                     session_id, "assistant", content=cleaned,
                     reasoning=collected_reasoning or None,
                     model=model,
+                    provider=effective_provider,
                     turn_number=turn_number, step=step,
                     status="success",
                     message="",

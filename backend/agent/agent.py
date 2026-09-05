@@ -45,7 +45,7 @@ from backend.agent.utils.contract import (
 
 from backend.agent.tools import Tools
 
-from backend.agent.utils.model_catalog import translate_reasoning
+from backend.agent.utils.model_catalog import translate_reasoning, get_reasoning_streaming_config
 from backend.utils.spend_handler import calculate_cost, record_spend
 
 # Marcadores de comentarios usados en este proyecto:
@@ -703,14 +703,14 @@ class Agent():
                 if json_format:
                     oa_kwargs["response_format"] = {"type": "json_object"}
 
-                # Use translator for reasoning (Groq, OpenRouter, Google)
                 reasoning_kwargs = translate_reasoning(
                     provider=effective_provider,
                     reasoning_value=reasoning,
                     model_id=model,
                     budget_tokens=budget_tokens,
                 )
-                oa_kwargs.update(reasoning_kwargs)
+                if reasoning_kwargs:
+                    oa_kwargs.setdefault("extra_body", {}).update(reasoning_kwargs)
 
                 try:
                     response = await client.chat.completions.create(
@@ -720,9 +720,9 @@ class Agent():
                         **kwargs,
                     )
                 except Exception as _ex:
-                    if is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
-                        oa_kwargs.pop("reasoning_effort", None)
-                        oa_kwargs.pop("reasoning", None)
+                    if is_groq and "reasoning" in str(_ex).lower():
+                        extra = oa_kwargs.get("extra_body", {})
+                        extra.pop("reasoning_effort", None)
                         response = await client.chat.completions.create(
                             model=model,
                             messages=msgs,
@@ -991,36 +991,30 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                 oa_kwargs["tools"] = tools
                 oa_kwargs["tool_choice"] = "auto"
 
-            # Use translator for reasoning (Groq, OpenRouter, Google)
             reasoning_kwargs = translate_reasoning(
                 provider=effective_provider,
                 reasoning_value=reasoning,
                 model_id=model,
                 budget_tokens=budget_tokens,
             )
-            oa_kwargs.update(reasoning_kwargs)
+            if reasoning_kwargs:
+                oa_kwargs.setdefault("extra_body", {}).update(reasoning_kwargs)
 
             if is_groq:
-                # Groq: pedir reasoning como campo separado (delta.reasoning_content).
-                # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
-                # lo rechaza, reintentar sin el campo (igual que en llm_process).
-                oa_kwargs["reasoning_format"] = "parsed"
+                stream_cfg = get_reasoning_streaming_config(effective_provider)
+                oa_kwargs.setdefault("extra_body", {}).update(stream_cfg)
             else:
-                # OpenRouter: pedir el usage en el último chunk del stream.
                 oa_kwargs["stream_options"] = {"include_usage": True}
             try:
                 stream = await client.chat.completions.create(**oa_kwargs)
             except Exception as _ex:
-                if is_groq and "reasoning_format" in str(_ex):
-                    oa_kwargs.pop("reasoning_format", None)
-                    stream = await client.chat.completions.create(**oa_kwargs)
-                elif is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
-                    oa_kwargs.pop("reasoning_effort", None)
-                    oa_kwargs.pop("reasoning", None)
+                if is_groq and "reasoning" in str(_ex).lower():
+                    extra = oa_kwargs.get("extra_body", {})
+                    extra.pop("reasoning_effort", None)
+                    extra.pop("reasoning_format", None)
                     stream = await client.chat.completions.create(**oa_kwargs)
                 else:
                     raise
-            # Groq: el usage llega en el campo x_groq.usage del último chunk
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
             in_think_tag = False  #  thinking tag state machine

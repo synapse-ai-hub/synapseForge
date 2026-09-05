@@ -39,7 +39,7 @@ from backend.utils.db import db_transaction, get_connection
 
 logger = logging.getLogger(__name__)
 
-_VALID_PROVIDERS = frozenset({"GROQ", "GOOGLE", "OPENROUTER"})
+_VALID_PROVIDERS = frozenset({"GROQ", "GOOGLE", "GEMINI"})
 """Providers whose API keys can be managed through this module."""
 
 _fernet_cache: Any = None
@@ -115,7 +115,7 @@ def save_key(provider: str, api_key: str) -> dict:
     """Encrypt and persist an API key for the given provider.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: One of ``GROQ``, ``GOOGLE``, ``GEMINI``.
         api_key: The plain-text API key (never stored in clear).
 
     Returns:
@@ -209,7 +209,7 @@ def delete_key(provider: str) -> dict:
     """Remove the stored API key for a provider.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: One of ``GROQ``, ``GOOGLE``, ``GEMINI``.
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
@@ -284,7 +284,7 @@ def validate_key(provider: str, api_key: str) -> dict:
     this check succeeds.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: One of ``GROQ``, ``GOOGLE``, ``GEMINI``.
         api_key: The plain-text API key to verify.
 
     Returns:
@@ -297,19 +297,22 @@ def validate_key(provider: str, api_key: str) -> dict:
         return {"status": "error", "message": "La API key no puede estar vacía."}
     key = api_key.strip()
     try:
-        if provider_u == "OPENROUTER":
-            # The model catalog is public, so validation uses the /key
-            # endpoint which requires a valid Bearer token (401 otherwise).
-            import requests
-
-            resp = requests.get(
-                "https://openrouter.ai/api/v1/key",
-                headers={"Authorization": f"Bearer {key}"},
-                timeout=30,
-            )
-            if resp.status_code == 401:
-                return {"status": "error", "message": "API key de OpenRouter inválida."}
-            resp.raise_for_status()
+        if provider_u == "GEMINI":
+            # Validate by listing models via Google GenAI SDK (Gemini Embedding 2)
+            try:
+                from google import genai
+                client = genai.Client(api_key=key)
+                models = list(client.models.list())
+                if not models:
+                    return {
+                        "status": "error",
+                        "message": "API key de Gemini inválida o sin modelos disponibles.",
+                    }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"API key de Gemini inválida: {e}",
+                }
         elif provider_u == "GOOGLE":
             # Validate by listing models via Google GenAI API
             try:

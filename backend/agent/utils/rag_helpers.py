@@ -567,7 +567,7 @@ def _index_turn_sync(
 
     Resolves the session title from SQLite, builds the turn document and
     stores it in the ``agent_conversations`` collection using the shared
-    VectorDB (OpenRouter embeddings). If the document exceeds
+        VectorDB (Gemini Embedding 2). If the document exceeds
     ``MAX_TURN_DOC_CHARS`` it is split with the existing chunking helper.
 
     Args:

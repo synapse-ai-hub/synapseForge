@@ -6,6 +6,8 @@ import {
 } from "./chat/ChatInterface";
 import { HistoryModal } from "./components/HistoryModal";
 import { MetricsModal } from "./components/MetricsModal";
+import { UsageTab } from "./components/UsageTab";
+import { BillingTab } from "./components/BillingTab";
 import { SchedulerModal } from "./components/SchedulerModal";
 import { SetupScreen } from "./components/SetupScreen";
 import { Sidebar } from "./components/Sidebar";
@@ -122,6 +124,8 @@ function App() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showMetrics, setShowMetrics] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const [showBilling, setShowBilling] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
   const [verboseMode, setVerboseMode] = useState<boolean>(
     () => localStorage.getItem("verboseMode") === "true"
@@ -415,6 +419,8 @@ const handleTelegramToggle = useCallback((val: boolean) => {
           onNewChat={handleNewChat}
           onSessionEnd={handleSessionEnd}
           onShowMetrics={() => setShowMetrics(true)}
+          onShowUsage={() => setShowUsage(true)}
+          onShowBilling={() => setShowBilling(true)}
           onSessionTitleUpdate={handleSessionTitleUpdate}
           verboseMode={verboseMode}
           telegramEnabled={telegramEnabled}
@@ -434,6 +440,22 @@ const handleTelegramToggle = useCallback((val: boolean) => {
         open={showMetrics}
         onClose={() => setShowMetrics(false)}
       />
+
+      {(showUsage || showBilling) && (
+        <div className="fixed bottom-4 right-4 z-40 w-[420px] max-h-[70vh] overflow-y-auto rounded-2xl border border-app-border bg-white shadow-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-app-text">{showUsage ? "Uso" : "Facturación"}</h3>
+            <button
+              onClick={() => { setShowUsage(false); setShowBilling(false); }}
+              className="text-xs text-app-text-secondary hover:text-app-text"
+            >
+              Cerrar
+            </button>
+          </div>
+          {showUsage && <UsageTab />}
+          {showBilling && <BillingTab />}
+        </div>
+      )}
 
       <SchedulerModal
         open={showScheduler}

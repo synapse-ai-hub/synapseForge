@@ -96,6 +96,8 @@ interface ChatInterfaceProps {
   onNewChat: () => void;
   onSessionEnd?: () => void;
   onShowMetrics: () => void;
+  onShowUsage?: () => void;
+  onShowBilling?: () => void;
   onSessionTitleUpdate?: (sessionId: string, title: string) => void;
   onToggleSidebar?: () => void;
   verboseMode: boolean;
@@ -1038,7 +1040,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {}}
+            onClick={onShowUsage || (() => {})}
             className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
             title="Uso"
           >
@@ -1049,7 +1051,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {}}
+            onClick={onShowBilling || (() => {})}
             className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
             title="Facturación"
           >

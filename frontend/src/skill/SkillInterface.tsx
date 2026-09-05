@@ -753,12 +753,6 @@ export function SkillInterface() {
                         Descargar conversación
                       </button>
                       <button
-                        onClick={() => { setResultMsg(null); setResultType(null); setInput(""); }}
-                        className="flex items-center gap-1 bg-app-bg-tertiary text-app-text text-sm font-medium px-4 py-2 rounded-lg hover:bg-app-bg-secondary transition-colors border border-app-border"
-                      >
-                        Seguir iterando
-                      </button>
-                      <button
                         onClick={() => window.close()}
                         className="bg-gradient-to-r from-[#4f46e5] to-[#8b5cf6] text-white text-sm font-medium px-5 py-2 rounded-lg hover:opacity-90 transition-colors"
                       >

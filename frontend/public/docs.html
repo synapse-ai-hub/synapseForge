@@ -636,7 +636,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </ul>
           <h3>Funcionalidades</h3>
           <ul>
-            <li><strong>Notas de voz</strong>: se transcriben localmente con faster-whisper y se envían como mensaje.</li>
+            <li><strong>Notas de voz</strong>: se transcriben a través de Groq Whisper (whisper-large-v3-turbo) y se envían como mensaje. Requiere API key de Groq (free tier). Sin ella, Telegram funciona solo por texto y comandos.</li>
             <li><strong>Adjuntos</strong>: los archivos enviados con el botón de adjuntar de Telegram se descargan y procesan igual que el backend (extracción de texto con <code>extract_text_from_bytes</code>).</li>
             <li><strong>Toggle en el frontend</strong>: el header tiene un toggle para activar/desactivar el bot (persistido en SQLite).</li>
             <li><strong>Descarte de mensajes en cola</strong>: al reactivar el bot, se descartan los mensajes que llegaron mientras estaba apagado (solo se procesan los nuevos). Al activar, el frontend muestra un contador de 3 segundos para que no envíes durante el descarte.</li>

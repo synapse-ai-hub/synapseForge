@@ -57,3 +57,7 @@ ideas.md
 
 # DB
 backend/agent/agent_db/agent.db
+
+# Test Whisper
+tests/whisper/data/
+tests/whisper/result/

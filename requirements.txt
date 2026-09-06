@@ -45,5 +45,4 @@ cryptography>=42.0.0
 # --- MCP (Model Context Protocol) ---
 mcp>=1.0.0
 
-# --- Voice transcription (Telegram voice notes) ---
-faster-whisper>=1.0.0
+

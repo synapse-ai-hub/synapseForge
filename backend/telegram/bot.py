@@ -29,8 +29,6 @@ from pathlib import Path
 
 import httpx
 
-from faster_whisper import WhisperModel
-
 from backend.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
@@ -59,7 +57,6 @@ class TelegramBot:
         self._task: asyncio.Task | None = None
         self._enabled = False
         self._client = httpx.AsyncClient(timeout=30.0)
-        self._whisper_model = None
         self.mode = os.getenv("MODE", os.getenv("VITE_MODE", "dev")).strip().lower()
         self.is_dev = self.mode == "dev"
         # Mode state for skill/RAG creation via Telegram (remote control).
@@ -1716,8 +1713,38 @@ class TelegramBot:
         return resp.content
 
     async def _transcribe(self, content: bytes) -> str:
-        """Transcribe audio bytes with faster-whisper (model cached)."""
-        if self._whisper_model is None:
-            self._whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
-        segments, _ = self._whisper_model.transcribe(io.BytesIO(content))
-        return "".join(s.text for s in segments).strip()
+        """Transcribe audio bytes using Groq Whisper API (whisper-large-v3-turbo).
+
+        Requires a Groq API key configured in the provider_api_keys table.
+        If no key is configured, raises RuntimeError.
+        """
+        from backend.agent.utils.provider_keys import get_key
+
+        api_key = get_key("GROQ")
+        if not api_key:
+            raise RuntimeError(
+                "No hay API key de Groq configurada. "
+                "Las notas de voz requieren una API key de Groq (free tier). "
+                "Sin ella, Telegram funciona solo por texto y comandos."
+            )
+
+        # Detect format from magic bytes
+        if content[:4] == b"OggS":
+            media_type = "audio/ogg"
+        elif content[:4] == b"RIFF":
+            media_type = "audio/wav"
+        elif content[:4] in (b"\xff\xfb", b"ID3"):
+            media_type = "audio/mpeg"
+        else:
+            media_type = "audio/ogg"
+
+        resp = await self._client.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            files={"file": ("audio.ogg", content, media_type)},
+            data={"model": "whisper-large-v3-turbo", "language": "es"},
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"Groq Whisper API error: {resp.status_code} — {resp.text[:200]}")
+        return resp.json().get("text", "").strip()

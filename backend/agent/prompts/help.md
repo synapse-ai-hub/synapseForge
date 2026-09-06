@@ -243,7 +243,7 @@ Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/mod
 
 ### Funcionalidades
 
-- **Notas de voz**: se transcriben localmente con faster-whisper y se envían como mensaje.
+- **Notas de voz**: se transcriben a través de Groq Whisper (whisper-large-v3-turbo) y se envían como mensaje. Requiere API key de Groq (free tier). Sin ella, Telegram funciona solo por texto y comandos.
 - **Adjuntos**: los archivos enviados con el botón de adjuntar de Telegram se descargan y procesan igual que el backend (extracción de texto).
 - **Toggle en el frontend**: el header tiene un toggle para activar/desactivar el bot (persistido en SQLite).
 - **Descarte de mensajes en cola**: al reactivar el bot, se descartan los mensajes que llegaron mientras estaba apagado (solo se procesan los nuevos).

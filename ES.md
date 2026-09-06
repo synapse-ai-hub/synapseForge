@@ -101,7 +101,7 @@ El resultado es una distribución de aplicación autónoma. Elegí la modalidad 
 
 ## Inicio rápido
 
-> Actualmente disponible en [TestPyPI](https://test.pypi.org/project/synapseforge/).
+> Actualmente disponible en [TestPyPI](https://pypi.org/project/synapseForge/).
 
 ```bash
 pip install synapseForge

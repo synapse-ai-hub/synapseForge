@@ -101,7 +101,7 @@ The result is a self-contained application distribution. Choose the modality tha
 
 ## Quick start
 
-> Currently available on [TestPyPI](https://test.pypi.org/project/synapseforge/).
+> Currently available on [TestPyPI](https://pypi.org/project/synapseForge/).
 
 ```bash
 pip install synapseForge

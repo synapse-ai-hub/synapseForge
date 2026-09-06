@@ -228,6 +228,8 @@ El sistema incluye un **bot de Telegram** que actúa como puente hacia el agente
 | `/detener` | Detiene la tarea en curso. |
 | `/proveedor` | Cambia el proveedor (entre los disponibles; pregunta y espera respuesta). |
 | `/modelo` | Cambia el modelo (lista y espera respuesta). |
+| `/uso` | Muestra uso por proveedor/modelo (tokens, costo). |
+| `/facturacion` | Muestra/configura límites de gasto (flujo pregunta-respuesta). |
 | `/skills` | Lista skills (solo dev). |
 | `/tools` | Lista tools (solo dev). |
 | `/agentes` | Lista agentes (solo dev). |
@@ -239,7 +241,7 @@ El sistema incluye un **bot de Telegram** que actúa como puente hacia el agente
 | `/eliminar_tarea` | Elimina una tarea programada (pregunta y espera respuesta). |
 | `/ayuda` | Muestra la ayuda. |
 
-Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`, `/crear`, `/archivo`, `/agendar`, `/horario`, `/eliminar_tarea`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
+Los comandos que necesitan un argumento (`/usar`, `/borrar`, `/proveedor`, `/modelo`, `/crear`, `/archivo`, `/agendar`, `/horario`, `/eliminar_tarea`, `/facturacion`) usan un sistema de **pregunta y respuesta**: el bot muestra la lista de opciones y espera que el usuario responda con el texto. `/cancelar` (o la palabra "cancelar") aborta la espera.
 
 ### Funcionalidades
 

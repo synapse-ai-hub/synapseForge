@@ -104,6 +104,14 @@ synapseforge update ./my-project
 
 Backs up the entire project (including `agent.db` and `config/replace.json`), downloads the latest template, and restores your data. If anything fails, the project is automatically restored from the backup.
 
+### Update to latest template
+
+```bash
+synapseforge update ./my-project
+```
+
+Backs up the entire project (including `agent.db` and `config/replace.json`), downloads the latest template, and restores your data. If anything fails, the project is automatically restored from the backup.
+
 ### Edit colors at runtime (no rebuild)
 
 ```bash

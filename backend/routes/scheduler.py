@@ -25,6 +25,12 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.error_logger import log_error
+from backend.agent.utils.contract import (
+    make_error_response,
+    make_success_response,
+    validate_response,
+    zero_usage,
+)
 from backend.agent.utils import scheduler_helpers as scheduler_db
 from backend.instances import agent
 
@@ -106,13 +112,17 @@ async def craft_scheduled_prompt(data: dict[str, Any]) -> JSONResponse:
     """Refine a user's natural-language task description into a clear agent prompt.
 
     Body: ``{"prompt": "user text"}``.
-    Returns: ``{"status": "success", "prompt": "refined prompt"}``.
+    Returns: ``{"status": "success", "message": "...", "data": {"prompt": "refined prompt"}, "usage": ...}``.
     """
     raw = (data.get("prompt") or "").strip()
     if not raw:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "El prompt no puede estar vacío."},
+        return validate_response(
+            make_error_response(message="El prompt no puede estar vacío.")
+        )
+
+    if not agent.default_model:
+        return validate_response(
+            make_error_response(message="No hay modelo seleccionado. Elegí uno en Configuración.")
         )
 
     system = (
@@ -130,20 +140,21 @@ async def craft_scheduled_prompt(data: dict[str, Any]) -> JSONResponse:
             max_tokens=256,
             temperature=0.3,
         )
-        refined = (response.data or "").strip()
+        refined = str(response.data or "").strip()
         if not refined:
-            return JSONResponse(
-                status_code=502,
-                content={"status": "error", "message": "El modelo no devolvió un prompt."},
+            return validate_response(
+                make_error_response(message="El modelo no devolvió un prompt.")
             )
-        return JSONResponse(
-            status_code=200,
-            content={"status": "success", "prompt": refined},
+        return validate_response(
+            make_success_response(
+                message="Prompt refinado",
+                data={"prompt": refined},
+                usage=zero_usage(),
+            )
         )
     except Exception as exc:
         logger.exception("craft-prompt LLM call failed")
         log_error(str(exc), source="backend/routes/scheduler.py:craft-prompt")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"Error mejorando el prompt: {exc}"},
+        return validate_response(
+            make_error_response(message="No se pudo mejorar el prompt. Intentá de nuevo.")
         )

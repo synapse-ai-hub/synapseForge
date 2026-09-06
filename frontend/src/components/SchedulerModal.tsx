@@ -82,6 +82,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
       setSavedMsg(null);
       setSaveError(null);
       setFormError(null);
+      setCraftError(null);
       setEditingId(null);
       reloadTasks();
     }

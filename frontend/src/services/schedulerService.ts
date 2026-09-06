@@ -97,11 +97,15 @@ async function craftPrompt(prompt: string): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }),
   });
-  const data = await res.json();
-  if (!res.ok || data.status === "error") {
-    throw new Error(data.message || "Error mejorando el prompt");
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.status === "error") {
+    throw new Error(data?.message || "Error mejorando el prompt");
   }
-  return data.prompt as string;
+  const refined = data?.data?.prompt;
+  if (typeof refined !== "string" || !refined) {
+    throw new Error("Respuesta inválida del servidor.");
+  }
+  return refined;
 }
 
 const schedulerService = {

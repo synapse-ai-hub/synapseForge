@@ -14,6 +14,7 @@ import {
   Clock,
   Check,
   X,
+  Sparkles,
 } from "lucide-react";
 import schedulerService, { SchedulerTask } from "../services/schedulerService";
 
@@ -61,6 +62,10 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
   /* ---- save feedback ---- */
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  /* ---- prompt crafting ---- */
+  const [craftingLoading, setCraftingLoading] = useState(false);
+  const [craftError, setCraftError] = useState<string | null>(null);
 
   /* ---- reload tasks from the backend ---- */
   const reloadTasks = useCallback(async () => {
@@ -135,6 +140,25 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
       setFormError(err instanceof Error ? err.message : "No se pudo crear la tarea.");
     }
   }, [newPrompt, newTime, newDays, reloadTasks]);
+
+  /* ---- craft prompt via LLM ---- */
+  const handleCraftPrompt = useCallback(async () => {
+    const raw = newPrompt.trim();
+    if (!raw) {
+      setCraftError("Escribí una descripción primero.");
+      return;
+    }
+    setCraftingLoading(true);
+    setCraftError(null);
+    try {
+      const refined = await schedulerService.craftPrompt(raw);
+      setNewPrompt(refined);
+    } catch (err) {
+      setCraftError(err instanceof Error ? err.message : "No se pudo mejorar el prompt.");
+    } finally {
+      setCraftingLoading(false);
+    }
+  }, [newPrompt]);
 
   /* ---- delete task ---- */
   const handleDelete = useCallback(
@@ -347,6 +371,21 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
               rows={2}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
             />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCraftPrompt}
+                disabled={craftingLoading || !newPrompt.trim()}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-app-text-secondary hover:bg-gray-50 hover:text-app-primary disabled:opacity-50 transition-colors"
+                title="Mejorar el prompt con IA"
+              >
+                <Sparkles size={13} className={craftingLoading ? "animate-spin" : ""} />
+                {craftingLoading ? "Mejorando..." : "Mejorar prompt"}
+              </button>
+              {craftError && (
+                <span className="text-xs text-red-600">{craftError}</span>
+              )}
+            </div>
             <div className="flex items-center gap-3 flex-wrap">
               <label className="flex items-center gap-2 text-sm text-app-text-secondary">
                 <Clock size={14} className="text-app-primary" />

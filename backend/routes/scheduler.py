@@ -26,6 +26,7 @@ if _project_root not in sys.path:
 
 from backend.agent.utils.error_logger import log_error
 from backend.agent.utils import scheduler_helpers as scheduler_db
+from backend.instances import agent
 
 logger = logging.getLogger(__name__)
 
@@ -98,3 +99,51 @@ async def get_scheduler_runs() -> JSONResponse:
         status_code=200,
         content={"status": "success", "runs": scheduler_db.list_runs()},
     )
+
+
+@router.post("/scheduler/craft-prompt")
+async def craft_scheduled_prompt(data: dict[str, Any]) -> JSONResponse:
+    """Refine a user's natural-language task description into a clear agent prompt.
+
+    Body: ``{"prompt": "user text"}``.
+    Returns: ``{"status": "success", "prompt": "refined prompt"}``.
+    """
+    raw = (data.get("prompt") or "").strip()
+    if not raw:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "El prompt no puede estar vacío."},
+        )
+
+    system = (
+        "You are a prompt engineer for an AI agent. The user will give you a "
+        "rough description of what they want the agent to do on a schedule. "
+        "Rewrite it as a clear, concise, actionable prompt in the same language "
+        "as the input. Do NOT add explanations, greetings, or markdown — return "
+        "ONLY the refined prompt text. Keep it under 200 characters."
+    )
+    try:
+        response = await agent.llm_process(
+            model=agent.default_model,
+            prompt=raw,
+            system_content=system,
+            max_tokens=256,
+            temperature=0.3,
+        )
+        refined = (response.data or "").strip()
+        if not refined:
+            return JSONResponse(
+                status_code=502,
+                content={"status": "error", "message": "El modelo no devolvió un prompt."},
+            )
+        return JSONResponse(
+            status_code=200,
+            content={"status": "success", "prompt": refined},
+        )
+    except Exception as exc:
+        logger.exception("craft-prompt LLM call failed")
+        log_error(str(exc), source="backend/routes/scheduler.py:craft-prompt")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"Error mejorando el prompt: {exc}"},
+        )

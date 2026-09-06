@@ -91,12 +91,26 @@ async function getRuns(): Promise<SchedulerRun[]> {
   return (data.runs || []) as SchedulerRun[];
 }
 
+async function craftPrompt(prompt: string): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/api/scheduler/craft-prompt`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  const data = await res.json();
+  if (!res.ok || data.status === "error") {
+    throw new Error(data.message || "Error mejorando el prompt");
+  }
+  return data.prompt as string;
+}
+
 const schedulerService = {
   getTasks,
   createTask,
   updateTask,
   deleteTask,
   getRuns,
+  craftPrompt,
 };
 
 export default schedulerService;

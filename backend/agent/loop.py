@@ -366,6 +366,7 @@ class AgentLoop:
             top_p = 0.5
             reasoning = True  # Default: reasoning enabled (boolean or string level)
             budget_tokens = None
+            response_format = None  # Optional structured output (e.g. {"type": "json_object"})
             max_tokens = 8192
             if parameters:
                 if parameters.get("temperature") is not None:
@@ -381,6 +382,9 @@ class AgentLoop:
                         reasoning = r
                     else:
                         reasoning = str(r)
+                # response_format from frontmatter (optional structured output)
+                if parameters.get("response_format") is not None:
+                    response_format = parameters["response_format"]
                 # model override from frontmatter (optional)
                 if parameters.get("model"):
                     model = parameters["model"]
@@ -687,6 +691,7 @@ class AgentLoop:
                             temperature=temperature, top_p=top_p, max_tokens=max_tokens,
                             reasoning=reasoning, budget_tokens=budget_tokens,
                             provider=effective_provider,
+                            response_format=response_format,
                         ):
                             if event["type"] == "chunk":
                                 collected_content += event.get("content", "")

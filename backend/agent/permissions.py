@@ -254,8 +254,8 @@ def get_agent_parameters(agent_name: str | None) -> dict[str, Any]:
     """Resolve an agent's **model parameters** from frontmatter.
 
     Reads ``agents/<agent_name>.md`` and extracts the ``parameters`` block
-    (temperature, top_p, model, provider, max_tokens, seed). Returns
-    defaults if not specified.
+    (temperature, top_p, model, provider, max_tokens, seed, reasoning,
+    response_format). Returns defaults if not specified.
 
     Args:
         agent_name: Agent name (without ``.md``). ``None``/empty → defaults.
@@ -263,7 +263,8 @@ def get_agent_parameters(agent_name: str | None) -> dict[str, Any]:
     Returns:
         Contract response. On success, ``data`` is a JSON string with
         ``{"temperature": float, "top_p": float, "model": str | None,
-        "provider": str | None, "max_tokens": int, "seed": int | None}``.
+        "provider": str | None, "max_tokens": int, "seed": int | None,
+        "reasoning": str | None, "response_format": dict | None}``.
     """
     defaults = {
         "temperature": 0.0,
@@ -272,6 +273,8 @@ def get_agent_parameters(agent_name: str | None) -> dict[str, Any]:
         "provider": None,
         "max_tokens": 3000,
         "seed": None,
+        "reasoning": None,
+        "response_format": None,
     }
 
     if not agent_name:

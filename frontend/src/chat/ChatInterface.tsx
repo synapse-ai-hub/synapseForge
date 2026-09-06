@@ -139,6 +139,8 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
       onNewChat,
       onSessionEnd,
       onShowMetrics,
+      onShowUsage,
+      onShowBilling,
       onSessionTitleUpdate,
       verboseMode,
       telegramEnabled,

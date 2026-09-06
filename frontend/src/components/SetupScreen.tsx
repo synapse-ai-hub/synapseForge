@@ -141,7 +141,7 @@ export function SetupScreen({ onDone }: SetupScreenProps) {
               </ul>
 
               <div className="text-sm text-gray-600 bg-app-bg-secondary border border-app-border rounded-lg px-4 py-3 leading-relaxed">
-                <strong>Importante:</strong> la <strong>fuente de conocimiento</strong> (donde el asistente busca en tus documentos) funciona con OpenRouter. Pod&eacute;s continuar sin esa clave, pero esa funci&oacute;n quedar&aacute; deshabilitada hasta que la cargues.
+                <strong>Importante:</strong> la <strong>fuente de conocimiento</strong> (donde el asistente busca en tus documentos) funciona con Google Gemini. Pod&eacute;s continuar sin esa clave, pero esa funci&oacute;n quedar&aacute; deshabilitada hasta que la cargues.
               </div>
 
               <div className="flex gap-2">
@@ -180,7 +180,7 @@ export function SetupScreen({ onDone }: SetupScreenProps) {
                     className="block text-sm font-medium text-gray-700 mb-1"
                   >
                     {p.label}
-                    {p.id === "OPENROUTER" && (
+                    {p.id === "GOOGLE" && (
                       <span className="text-xs text-app-text-secondary">
                         {" "}— necesario para la fuente de conocimiento
                       </span>

@@ -49,7 +49,7 @@ export function RagInterface() {
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [resultType, setResultType] = useState<"success" | "error" | null>(null);
 
-  /* ---- bloqueo: la fuente de conocimiento necesita la clave de OpenRouter ---- */
+  /* ---- bloqueo: la fuente de conocimiento necesita la clave de Google Gemini ---- */
   const [ragBlocked, setRagBlocked] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -57,8 +57,8 @@ export function RagInterface() {
       .getProviderKeys()
       .then((data) => {
         if (cancelled) return;
-        const openrouter = (data.keys || []).find((k) => k.provider === "OPENROUTER");
-        setRagBlocked(!(openrouter && openrouter.configured));
+        const google = (data.keys || []).find((k) => k.provider === "GOOGLE");
+        setRagBlocked(!(google && google.configured));
       })
       .catch(() => {
         if (!cancelled) setRagBlocked(null);
@@ -382,14 +382,14 @@ export function RagInterface() {
           {ragBlocked && (
             <div className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 leading-relaxed">
               La <strong>fuente de conocimiento</strong> necesita una clave de{" "}
-              <strong>OpenRouter</strong> para funcionar. Pod&eacute;s sacarla gratis en{" "}
+              <strong>Google Gemini</strong> para funcionar. Pod&eacute;s sacarla gratis en{" "}
               <a
-                href="https://openrouter.ai/settings/keys"
+                href="https://aistudio.google.com/apikey"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-app-primary underline"
               >
-                openrouter.ai/settings/keys
+                aistudio.google.com/apikey
               </a>{" "}
               y cargarla en la app principal (Configuraci&oacute;n &rarr; Providers). Mientras no la cargues, esta secci&oacute;n queda deshabilitada.
             </div>

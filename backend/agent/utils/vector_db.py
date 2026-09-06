@@ -117,7 +117,7 @@ class VectorDB:
         self.chroma_path = get_knowledge_dir()
         self.chroma_path.mkdir(parents=True, exist_ok=True)
 
-        api_key = provider_keys.get_key("GEMINI")
+        api_key = provider_keys.get_key("GOOGLE")
         if not api_key:
             raise ValueError(
                 "No hay una API key de Gemini configurada. Cargala en "

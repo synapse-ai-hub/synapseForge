@@ -33,8 +33,8 @@
 The generated project includes:
 
 - **Agent Framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), sessions (SQLite WAL), per-agent permissions, skills and sub-agent delegation
-- **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini and OpenRouter — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
-- **RAG knowledge base**: ChromaDB vector collections with cloud embeddings via OpenRouter; upload files and web pages, cosine-similarity search
+- **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini and Gemini Embedding 2 — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
+- **RAG knowledge base**: ChromaDB vector collections with Gemini Embedding 2; upload files and web pages, cosine-similarity search
 - **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview (with real tools enabled), with ephemeral cloud model selection per task
 - **Scheduled tasks**: user-defined tasks (description + time + weekdays) managed from the header Agenda or via Telegram; the backend runs them with the selected model and notifies the result in the UI bell and on Telegram
 - **Telegram bot**: remote control that bridges messages to the agent through the web UI (commands, voice transcription, attachments)
@@ -92,7 +92,17 @@ Requires the project venv to be activated (`VIRTUAL_ENV`). Starts backend + fron
 synapseforge launch -p ./my-project -n "MyApp"
 ```
 
-Builds the frontend, bundles embedded Python and packages everything into a self-contained zip ready to deliver. By default the backend ships as `.py` sources; pass `-c` / `--compile` to compile it to `.pyc`. Other options: `--skip-frontend`, `--no-embed`.
+Builds the frontend, bundles embedded Python and packages everything into a self-contained desktop app / zip ready to deliver. By default the backend ships as `.py` sources; pass `-c` / `--compile` to compile it to `.pyc`. Other options: `--skip-frontend`, `--no-embed`.
+
+Alternatively, deploy the project as a container with the bundled Docker setup (`docker compose up --build -d`), which serves the built frontend from the backend in a single image.
+
+### Update to latest template
+
+```bash
+synapseforge update ./my-project
+```
+
+Backs up the entire project (including `agent.db` and `config/replace.json`), downloads the latest template, and restores your data. If anything fails, the project is automatically restored from the backup.
 
 ### Update to latest template
 
@@ -117,7 +127,7 @@ GUI editor for `frontend/public/colors.json`. Refresh the browser (F5) to see ch
 | Command | Description |
 |---------|-------------|
 | `synapseforge init [dir]` | Scaffold a project from bundled template (GUI) |
-| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build self-contained distribution zip (`-c` compiles backend to `.pyc`, default ships `.py`) |
+| `synapseforge launch -p <path> -n <exe> [--skip-frontend] [--no-embed] [-c]` | Build self-contained desktop app / distribution zip (`-c` compiles backend to `.pyc`, default ships `.py`) |
 | `synapseforge colors [dir]` | Edit `frontend/public/colors.json` via GUI (live reload) |
 | `synapseforge run [dir]` | Start uvicorn + npm dev servers, open browser (venv must be active) |
 | `synapseforge update [dir]` | Update project to latest template (preserves agent.db, config, colors) |
@@ -160,6 +170,6 @@ Apache 2.0
 
 ---
 
-Copyright (c) 2026 SYNASPE AI SAS
+Copyright (c) 2026 SYNAPSE AI SAS
 
 ---

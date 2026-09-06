@@ -45,7 +45,8 @@ from backend.agent.utils.contract import (
 
 from backend.agent.tools import Tools
 
-from backend.agent.utils.model_catalog import translate_reasoning
+from backend.agent.utils.model_catalog import translate_reasoning, get_reasoning_streaming_config
+from backend.utils.spend_handler import calculate_cost, record_spend
 
 # Marcadores de comentarios usados en este proyecto:
 # TODO   : trabajo pendiente, todavía no implementado.
@@ -580,6 +581,33 @@ class Agent():
 
         return contents, system_instruction
 
+    def _record_spend(self, provider: str, model: str, usage: dict | None) -> None:
+        """Record token usage and cost for a completed LLM call.
+
+        Cloud providers only (LOCAL/Ollama has no cost). Failures are logged
+        and swallowed so they never break the calling flow.
+
+        Args:
+            provider: The provider name (e.g. ``"GROQ"``, ``"OPENROUTER"``).
+            model: The model identifier.
+            usage: The usage report dict (``prompt_tokens``, ``completion_tokens``).
+        """
+        try:
+            if not usage or (provider or "").upper() == "LOCAL":
+                return
+            prompt_tokens = usage.get("prompt_tokens") or 0
+            completion_tokens = usage.get("completion_tokens") or 0
+            cost_input, cost_output, _ = calculate_cost(
+                provider.lower(), model, prompt_tokens, completion_tokens
+            )
+            record_spend(
+                provider.lower(), model, prompt_tokens, completion_tokens,
+                cost_input, cost_output,
+            )
+        except Exception as exc:
+            log_error(str(exc), source="agent.py:_record_spend")
+            logger.warning("Failed to record spend: %s", exc)
+
     async def llm_process(self, model: str, prompt: str | None = None,
                           system_content: str | None = None,
                           messages: list[dict[str, Any]] | None = None,
@@ -675,14 +703,14 @@ class Agent():
                 if json_format:
                     oa_kwargs["response_format"] = {"type": "json_object"}
 
-                # Use translator for reasoning (Groq, OpenRouter, Google)
                 reasoning_kwargs = translate_reasoning(
                     provider=effective_provider,
                     reasoning_value=reasoning,
                     model_id=model,
                     budget_tokens=budget_tokens,
                 )
-                oa_kwargs.update(reasoning_kwargs)
+                if reasoning_kwargs:
+                    oa_kwargs.setdefault("extra_body", {}).update(reasoning_kwargs)
 
                 try:
                     response = await client.chat.completions.create(
@@ -692,9 +720,9 @@ class Agent():
                         **kwargs,
                     )
                 except Exception as _ex:
-                    if is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
-                        oa_kwargs.pop("reasoning_effort", None)
-                        oa_kwargs.pop("reasoning", None)
+                    if is_groq and "reasoning" in str(_ex).lower():
+                        extra = oa_kwargs.get("extra_body", {})
+                        extra.pop("reasoning_effort", None)
                         response = await client.chat.completions.create(
                             model=model,
                             messages=msgs,
@@ -838,6 +866,13 @@ class Agent():
 
             tool_calls = self._normalize_tool_calls(raw_tc)
 
+            self._record_spend(effective_provider, model, {
+                'prompt_tokens': prompt_tokens,
+                'completion_tokens': completion_tokens,
+                'total_tokens': total_tokens,
+                'total_time': total_time,
+            })
+
             return validate_response(make_success_response(
                 message='Proceso ok.',
                 data=output,
@@ -956,36 +991,30 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                 oa_kwargs["tools"] = tools
                 oa_kwargs["tool_choice"] = "auto"
 
-            # Use translator for reasoning (Groq, OpenRouter, Google)
             reasoning_kwargs = translate_reasoning(
                 provider=effective_provider,
                 reasoning_value=reasoning,
                 model_id=model,
                 budget_tokens=budget_tokens,
             )
-            oa_kwargs.update(reasoning_kwargs)
+            if reasoning_kwargs:
+                oa_kwargs.setdefault("extra_body", {}).update(reasoning_kwargs)
 
             if is_groq:
-                # Groq: pedir reasoning como campo separado (delta.reasoning_content).
-                # Solo algunos modelos de Groq aceptan reasoning_format; si el modelo
-                # lo rechaza, reintentar sin el campo (igual que en llm_process).
-                oa_kwargs["reasoning_format"] = "parsed"
+                stream_cfg = get_reasoning_streaming_config(effective_provider)
+                oa_kwargs.setdefault("extra_body", {}).update(stream_cfg)
             else:
-                # OpenRouter: pedir el usage en el último chunk del stream.
                 oa_kwargs["stream_options"] = {"include_usage": True}
             try:
                 stream = await client.chat.completions.create(**oa_kwargs)
             except Exception as _ex:
-                if is_groq and "reasoning_format" in str(_ex):
-                    oa_kwargs.pop("reasoning_format", None)
-                    stream = await client.chat.completions.create(**oa_kwargs)
-                elif is_groq and ("reasoning_effort" in str(_ex) or "reasoning" in str(_ex)):
-                    oa_kwargs.pop("reasoning_effort", None)
-                    oa_kwargs.pop("reasoning", None)
+                if is_groq and "reasoning" in str(_ex).lower():
+                    extra = oa_kwargs.get("extra_body", {})
+                    extra.pop("reasoning_effort", None)
+                    extra.pop("reasoning_format", None)
                     stream = await client.chat.completions.create(**oa_kwargs)
                 else:
                     raise
-            # Groq: el usage llega en el campo x_groq.usage del último chunk
 
             accumulated_tool_calls: dict[int, dict[str, str]] = {}
             in_think_tag = False  #  thinking tag state machine
@@ -1062,6 +1091,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
 
             # After stream finishes, yield usage (if captured) and tool_calls_detected
             if usage_data is not None:
+                self._record_spend(effective_provider, model, usage_data)
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
@@ -1100,7 +1130,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                                options=options, keep_alive=-1)
 
             def _try_stream(use_think=False):
-                """Crear stream con o sin think flag, o con nivel específico."""
+                """Create a stream with or without the think flag, or with a specific level."""
                 if isinstance(use_think, str) and use_think in ("low", "medium", "high", "max"):
                     # String level for GPT-OSS / Qwen max
                     try:
@@ -1233,6 +1263,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
 
             # After stream finishes, yield usage (if captured) and tool_calls_detected
             if usage_data is not None:
+                self._record_spend(effective_provider, model, usage_data)
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
@@ -1326,6 +1357,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
 
             # After stream finishes, yield usage (if captured) and tool_calls_detected
             if usage_data is not None:
+                self._record_spend(effective_provider, model, usage_data)
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 yield {'type': 'tool_calls_detected', 'content': accumulated_tool_calls}

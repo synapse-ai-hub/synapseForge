@@ -1,4 +1,4 @@
-"""Orchestrates the full init pipeline (steps 1-10).
+"""Orchestrates the full init pipeline (steps 1-11).
 
 If any step fails, the entire target directory is removed so the user
 starts from a clean slate on the next attempt.
@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .input_handler import get_user_input
 from .template_handler import extract_template
-from .venv_handler import setup_venv, install_requirements
+from .venv_handler import setup_venv, install_requirements, run_ddl_setup
 from .config_handler import save_config
 from .logo_handler import handle_logo
 from .placeholder_handler import replace_all_placeholders
@@ -46,29 +46,29 @@ def run(target_dir: str, config: dict | None = None) -> None:
     try:
         # Step 1: User input
         if config is None:
-            print("\n[1/10] User input ...")
+            print("\n[1/11] User input ...")
             config = get_user_input()
         else:
-            print("\n[1/10] Using provided configuration ...")
+            print("\n[1/11] Using provided configuration ...")
 
         # Step 2: Download & extract template
-        print("\n[2/10] Downloading & extracting template ...")
+        print("\n[2/11] Downloading & extracting template ...")
         extract_template(target)
 
         # Step 3: Create virtual environment
-        print("\n[3/10] Creating virtual environment ...")
+        print("\n[3/11] Creating virtual environment ...")
         venv_path = setup_venv(target, config["repo"])
 
         # Step 4: Install Python requirements
-        print("\n[4/10] Installing Python requirements ...")
+        print("\n[4/11] Installing Python requirements ...")
         install_requirements(venv_path, target)
 
         # Step 5: npm install
-        print("\n[5/10] Installing npm dependencies ...")
+        print("\n[5/11] Installing npm dependencies ...")
         _run_npm_install(target)
 
         # Step 6: Copy logos
-        print("\n[6/10] Copying logos ...")
+        print("\n[6/11] Copying logos ...")
         company_logo_dest = target / "frontend" / "src" / "assets" / "logo_empresa.png"
         handle_logo(config, company_logo_dest, config_key="logo.path")
         company_logo_root = target / "src" / "logo_empresa.png"
@@ -77,20 +77,24 @@ def run(target_dir: str, config: dict | None = None) -> None:
         handle_logo(config, client_logo_dest, config_key="logo_cliente")
 
         # Step 7: Generate .ico from client logo
-        print("\n[7/10] Generating favicon (.ico) ...")
+        print("\n[7/11] Generating favicon (.ico) ...")
         _run_generate_ico(venv_path, client_logo_dest)
 
         # Step 8: Extract colors from client logo
-        print("\n[8/10] Resolving colors ...")
+        print("\n[8/11] Resolving colors ...")
         _resolve_colors(config, client_logo_dest)
 
         # Step 9: Save user config (colors already in dict)
-        print("\n[9/10] Saving configuration ...")
+        print("\n[9/11] Saving configuration ...")
         save_config(target, config)
 
         # Step 10: Replace placeholders
-        print("\n[10/10] Replacing placeholders ...")
+        print("\n[10/11] Replacing placeholders ...")
         replace_all_placeholders(target, config)
+
+        # Step 11: Initialize database schema (ddl_setup)
+        print("\n[11/11] Initializing database schema (ddl_setup) ...")
+        run_ddl_setup(target, venv_path)
 
     except Exception as exc:
         print(f"\n  ERROR: Init failed at step — {exc}")

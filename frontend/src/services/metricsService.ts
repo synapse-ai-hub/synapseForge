@@ -4,6 +4,15 @@ export interface SessionMetrics {
   total_sessions: number;
   total_messages: number;
   avg_messages_per_session: number;
+  total_tokens: number;
+  avg_tokens_per_session: number;
+  avg_tokens_per_message: number;
+  avg_tokens_per_tool: number;
+  total_cost: number;
+  avg_cost_per_session: number;
+  avg_cost_per_message: number;
+  avg_cost_per_tool: number;
+  avg_cost_per_provider_model: number;
   sessions_by_day: { date: string; count: number }[];
 }
 
@@ -31,6 +40,13 @@ export interface MetricsOverview {
   total_errors: number;
   top_tools: { name: string; count: number }[];
   sessions_by_day: { date: string; count: number }[];
+  total_tokens: number;
+  avg_tokens_per_session: number;
+  avg_tokens_per_message: number;
+  total_cost: number;
+  avg_cost_per_session: number;
+  avg_cost_per_message: number;
+  avg_cost_per_provider_model: number;
 }
 
 /**

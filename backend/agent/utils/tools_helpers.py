@@ -41,10 +41,10 @@ _TOOLS_DIR = get_tools_dir()
 
 
 def _listar_tools_locales() -> list[dict[str, Any]]:
-    """Escanea tools externas y devuelve nombre + descripción.
+    """Scan external tools and return name + description.
 
     Returns:
-        Lista de ``{"name", "description", "path"}``.
+        List of ``{"name", "description", "path"}`` dicts.
     """
     if not _TOOLS_DIR.is_dir():
         return []
@@ -146,5 +146,12 @@ async def _evaluar_si_existe(
 
 
 def _tool_file_path(name: str) -> Path:
-    """Devuelve la ruta absoluta del archivo de la tool."""
+    """Return the absolute path of the tool file.
+
+    Args:
+        name: The tool name (without the ``.py`` extension).
+
+    Returns:
+        The absolute ``Path`` to the tool file.
+    """
     return _TOOLS_DIR / f"{name}.py"

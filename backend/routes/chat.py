@@ -28,6 +28,7 @@ if _project_root not in sys.path:
 
 from backend.agent.loop import AgentLoop
 from backend.agent.utils.error_logger import log_error, set_error_context, reset_error_context
+from backend.utils.db import db_transaction, get_connection
 from backend.instances import agent, session_manager
 from backend.routes.file_text_extractor import (
     ExtractionResult,
@@ -37,9 +38,6 @@ from backend.routes.file_text_extractor import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
-
-# Path to the SQLite database
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 # Limits for attachments
 MAX_ATTACHMENTS = 3
@@ -58,8 +56,7 @@ def _save_attachments(session_id: str, turn_number: int, files_data: list[tuple[
     if not files_data:
         return
     try:
-        conn = sqlite3.connect(_DB_PATH)
-        try:
+        with db_transaction() as conn:
             now = datetime.now(timezone.utc).isoformat()
             for filename, binary_content, _extracted_text in files_data:
                 conn.execute(
@@ -67,9 +64,6 @@ def _save_attachments(session_id: str, turn_number: int, files_data: list[tuple[
                     "VALUES (?, ?, ?, ?, ?, ?)",
                     (session_id, turn_number, filename, len(binary_content), binary_content, now),
                 )
-            conn.commit()
-        finally:
-            conn.close()
     except Exception as exc:
         log_error(str(exc), source="backend/routes/chat.py:_save_attachments")
         logger.warning("Failed to save attachments: %s", exc)

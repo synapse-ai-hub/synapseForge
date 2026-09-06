@@ -34,36 +34,11 @@ from backend.routes.file_text_extractor import (
     ExtractionResult,
     extract_text_from_bytes,
 )
+from backend.utils.db import db_transaction, get_connection
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/context-files", tags=["context-files"])
-
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
-
-
-def _get_connection() -> sqlite3.Connection:
-    """Open a connection to the SQLite database and ensure the table exists.
-
-    Returns:
-        A ``sqlite3.Connection`` instance.
-    """
-    db_dir = os.path.dirname(_DB_PATH)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    conn = sqlite3.connect(_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS context_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            content TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    return conn
 
 
 @router.post("")
@@ -105,16 +80,12 @@ async def upload_context_file(
             )
 
         now = datetime.now(timezone.utc).isoformat()
-        conn = _get_connection()
-        try:
+        with db_transaction() as conn:
             cursor = conn.execute(
                 "INSERT INTO context_files (filename, content, created_at) VALUES (?, ?, ?)",
                 (filename, text, now),
             )
-            conn.commit()
             file_id = cursor.lastrowid
-        finally:
-            conn.close()
 
         return validate_response(
             make_success_response(
@@ -139,13 +110,10 @@ async def list_context_files():
         A contract response with ``data`` containing a ``files`` array.
     """
     try:
-        conn = _get_connection()
-        try:
+        with get_connection() as conn:
             rows = conn.execute(
                 "SELECT id, filename, created_at FROM context_files ORDER BY created_at DESC"
             ).fetchall()
-        finally:
-            conn.close()
 
         files = [
             {
@@ -179,15 +147,11 @@ async def delete_context_file(file_id: int):
         A contract response confirming deletion.
     """
     try:
-        conn = _get_connection()
-        try:
+        with db_transaction() as conn:
             cursor = conn.execute(
                 "DELETE FROM context_files WHERE id = ?", (file_id,)
             )
-            conn.commit()
             deleted = cursor.rowcount
-        finally:
-            conn.close()
 
         if deleted == 0:
             return make_error_response(

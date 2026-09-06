@@ -30,6 +30,7 @@ if _project_root not in sys.path:
 
 from backend.agent.permissions import get_agent_prompt, is_tool_allowed, list_agents
 from backend.agent.utils.error_logger import log_error
+from backend.utils.db import db_transaction, get_connection
 from backend.agent.utils.skill_loader import format_skills_section
 from backend.agent.utils.contract import make_error_response, make_success_response, zero_usage
 from backend.instances import agent
@@ -38,7 +39,6 @@ from backend.agent.utils.config_dir import get_agents_dir
 logger = logging.getLogger(__name__)
 
 _CONFIG_BASE_URL = os.getenv("CONFIG_BASE_URL", "http://127.0.0.1:8000/api/config")
-_SESSION_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 
 def _mandatory_block() -> str:
@@ -64,18 +64,11 @@ def load_context_text() -> str:
     Returns:
         A formatted string ready to be appended to the system prompt.
     """
-    db_dir = os.path.dirname(_SESSION_DB_PATH)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
     try:
-        conn = sqlite3.connect(_SESSION_DB_PATH)
-        conn.row_factory = sqlite3.Row
-        try:
+        with get_connection() as conn:
             rows = conn.execute(
                 "SELECT filename, content FROM context_files ORDER BY id"
             ).fetchall()
-        finally:
-            conn.close()
         if not rows:
             return ""
         parts: list[str] = []

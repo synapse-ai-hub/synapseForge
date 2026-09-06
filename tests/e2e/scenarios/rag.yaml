@@ -50,7 +50,7 @@ description: >
   Memoria de largo plazo: el router (sin config.yaml) tiene search_memory
   entre sus tools por defecto. El bot pregunta por una conversación vieja;
   se aserta stream completo sin errores de tools. La recuperación real
-  requiere OpenRouter key y conversaciones previas indexadas.
+  requiere Gemini API key y conversaciones previas indexadas.
 cleanup: true
 steps:
   - action: chat

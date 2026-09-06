@@ -4,8 +4,8 @@ Low-level internal functions:
 - ``_parse_frontmatter``
 - ``_listar_skills_locales``
 - ``_evaluar_si_existe``
-- ``_explicar_skill``
-- ``_generar_skill``
+- ``_explain_skill``
+- ``_create_skill``
 - ``_copiar_referencias``
 
 All are imported by ``backend/routes/create.py``.
@@ -44,13 +44,13 @@ _SKILLS_DIR = get_skills_dir()
 
 
 def _parse_frontmatter(content: str) -> dict[str, Any]:
-    """Extrae el frontmatter YAML de un SKILL.md.
+    """Parse the YAML frontmatter of a SKILL.md file.
 
     Args:
-        content: Contenido completo del archivo.
+        content: Full file content.
 
     Returns:
-        Diccionario con los campos del frontmatter, o dict vacío.
+        A dict with the frontmatter fields, or an empty dict.
     """
     match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
     if not match:
@@ -70,7 +70,11 @@ def _parse_frontmatter(content: str) -> dict[str, Any]:
 
 
 def _listar_skills_locales() -> list[dict[str, Any]]:
-    """Escanea skills locales y devuelve nombre + descripción."""
+    """Scan local skills and return name + description.
+
+    Returns:
+        List of ``{"name", "description"}`` dicts.
+    """
     if not _SKILLS_DIR.is_dir():
         return []
     resultados: list[dict[str, Any]] = []
@@ -118,9 +122,9 @@ async def _evaluar_si_existe(
         return None
 
     try:
-        template = agent.prompt("evaluar_skills")
+        template = agent.prompt("evaluate_skills")
     except FileNotFoundError:
-        logger.warning("Prompt evaluar_skills.md no encontrado.")
+        logger.warning("Prompt evaluate_skills.md no encontrado.")
         return None
 
     if skills_locales:
@@ -174,7 +178,7 @@ async def _evaluar_si_existe(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def _explicar_skill(
+async def _explain_skill(
     tarea: str,
     skill_dir: Path,
     model: str | None = None,
@@ -202,9 +206,9 @@ async def _explicar_skill(
     contenido = md_path.read_text(encoding="utf-8")
 
     try:
-        template = agent.prompt("explicar_skill")
+        template = agent.prompt("explain_skill")
     except FileNotFoundError:
-        logger.warning("Prompt explicar_skill.md no encontrado.")
+        logger.warning("Prompt explain_skill.md no encontrado.")
         return None
 
     prompt = template.format(tarea=tarea, contenido=contenido)
@@ -238,34 +242,34 @@ async def _explicar_skill(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def _generar_skill(
+async def _create_skill(
     conversacion: str,
     nombre: str | None = None,
     model: str | None = None,
     provider: str | None = None,
 ) -> dict[str, Any]:
-    """Genera una skill con el LLM usando el prompt ``generar_skill``.
+    """Generate a skill with the LLM using the ``create_skill`` prompt.
 
     Args:
-        conversacion: Historial completo de la conversación con el usuario.
-        nombre: Nombre sugerido para la skill.
-        model: Modelo elegido por el usuario (opcional).
-        provider: Provider elegido por el usuario (opcional).
+        conversacion: Full conversation history with the user.
+        nombre: Suggested name for the skill.
+        model: Model chosen by the user (optional).
+        provider: Provider chosen by the user (optional).
 
     Returns:
         ``{"name": ..., "content": ...}``.
 
     Raises:
-        RuntimeError: Si el LLM falla o no hay modelo.
+        RuntimeError: If the LLM fails or no model is available.
     """
     eval_model, eval_provider = resolve_create_model_provider(model, provider)
     if not eval_model:
         raise RuntimeError("No hay modelo configurado. Seleccioná un modelo en Configuración.")
 
     try:
-        template = agent.prompt("generar_skill")
+        template = agent.prompt("create_skill")
     except FileNotFoundError:
-        raise RuntimeError("Prompt generar_skill.md no encontrado.")
+        raise RuntimeError("Prompt create_skill.md no encontrado.")
 
     prompt = template.format(
         nombre=nombre or "(inferir del contexto)",
@@ -307,21 +311,21 @@ def _copiar_referencias(
     refs: str | None = None,
     archivos_raw: dict[str, bytes] | None = None,
 ) -> None:
-    """Copia los archivos adjuntos del usuario a ``references/``.
+    """Copy the user's attached files into ``references/``.
 
-    Paso separado de la creación de la skill. Solo copia archivos
-    por código. El LLM ya referenció estos archivos en el SKILL.md
-    con rutas relativas (``references/``).
+    Separate step from skill creation. Only copies files by code; the LLM
+    already referenced these files in the SKILL.md with relative paths
+    (``references/``).
 
-    No se crean subdirectorios anidados. Solo archivos sueltos
-    dentro de ``references/``.
+    No nested subdirectories are created, only loose files inside
+    ``references/``.
 
     Args:
-        skill_dir: Directorio de la skill.
-        mensajes: Historial de mensajes (pueden contener ``files``).
-        refs: Texto de referencia del LLM (opcional, legacy).
-        archivos_raw: Dict ``{filename: bytes}`` con los bytes crudos
-            de los archivos subidos (prioritario sobre ``files[].content``).
+        skill_dir: The skill directory.
+        mensajes: Message history (may contain ``files``).
+        refs: LLM reference text (optional, legacy).
+        archivos_raw: Dict ``{filename: bytes}`` with the raw bytes of the
+            uploaded files (takes priority over ``files[].content``).
     """
     refs_dir = skill_dir / "references"
     refs_dir.mkdir(exist_ok=True)

@@ -38,6 +38,7 @@ Documentación de los endpoints HTTP expuestos por `backend/routes`.
 - **`events`**: event bus SSE (Telegram → frontend).
 - **`telegram`**: estado y toggle del bot de Telegram.
 - **`agent_items`**: listado y eliminación de skills, tools, agents, MCP y colecciones.
+- **`billing`**: métricas de uso, límites de gasto y estadísticas de facturación.
 
 ---
 
@@ -492,6 +493,44 @@ Elimina un servidor MCP de la configuración.
 Elimina una colección vectorial.
 
 **Respuesta:** `JSONResponse` `{status, message}`.
+
+---
+
+### 13. Billing (`backend/routes/billing.py`)
+
+Gestión de gasto y límites de presupuesto por proveedor y modelo.
+
+#### `GET /api/usage-metrics`
+
+Devuelve métricas de uso agregadas por proveedor-modelo.
+
+**Parámetros (Query):** `provider` (str, opcional) — filtra por proveedor.
+
+**Respuesta:** `JSONResponse` `{status, data: {by_provider[], totals}}` con `prompt_tokens`, `completion_tokens`, `total_tokens` y `cost` por proveedor.
+
+#### `GET /api/billing-config`
+
+Devuelve los límites de gasto configurados.
+
+**Parámetros (Query):** `provider` (str, opcional), `model` (str, opcional).
+
+**Respuesta:** `JSONResponse` `{status, data: {limits[], count}}`.
+
+#### `POST /api/billing-config`
+
+Configura un límite de gasto para un proveedor o proveedor-modelo.
+
+**Parámetros (Query):** `provider` (str, **requerido**), `model` (str, opcional), `limit_amount` (float, **requerido**, >= 0). Usar `0` para eliminar el límite.
+
+**Respuesta:** `JSONResponse` `{status, message, data}`.
+
+#### `GET /api/billing-stats`
+
+Devuelve estadísticas de facturación con totales por proveedor.
+
+**Parámetros (Query):** `provider` (str, opcional).
+
+**Respuesta:** `JSONResponse` `{status, data: {by_provider[], totals}}` con `current_spend` por proveedor.
 
 ---
 

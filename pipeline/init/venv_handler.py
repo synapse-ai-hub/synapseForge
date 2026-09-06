@@ -63,6 +63,49 @@ def install_requirements(venv_path: Path, target: Path) -> None:
         print("  Requirements installed.")
 
 
-def _venv_python(venv_path: Path) -> Path:
+def get_venv_python(venv_path: Path) -> Path:
     """Return the path to the venv's Python executable."""
+    if sys.platform == "win32":
+        return venv_path / "Scripts" / "python.exe"
+    return venv_path / "bin" / "python"
+
+
+def _venv_python(venv_path: Path) -> Path:
+    """Return the path to the venv's Python executable (Windows)."""
     return venv_path / "Scripts" / "python.exe"
+
+
+def run_ddl_setup(target: Path, venv_path: Path) -> None:
+    """Run ddl_setup to initialize/update the SQLite database tables."""
+    db_path = target / "backend" / "agent" / "agent_db" / "agent.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    python = get_venv_python(venv_path)
+    if not python.is_file():
+        python = Path(sys.executable)
+
+    code = (
+        "import sqlite3; "
+        f"db_path = r'{db_path}'; "
+        "conn = sqlite3.connect(db_path); "
+        "from backend.agent.ddl_setup import setup_database; "
+        "setup_database(conn); "
+        "conn.commit(); "
+        "conn.close(); "
+        "print('  Database schema initialized/updated successfully.')"
+    )
+
+    try:
+        result = subprocess.run(
+            [str(python), "-c", code],
+            cwd=str(target),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if result.stdout.strip():
+            print(f"  {result.stdout.strip()}")
+    except subprocess.CalledProcessError as exc:
+        print(f"  WARNING: ddl_setup failed:\n{exc.stderr.strip()}")
+    except Exception as exc:
+        print(f"  WARNING: ddl_setup execution error: {exc}")

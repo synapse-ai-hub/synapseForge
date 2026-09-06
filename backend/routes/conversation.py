@@ -1,10 +1,11 @@
-"""Router para exportar una conversación a Markdown.
+"""Router to export a conversation to Markdown.
 
 Endpoints:
-- ``POST /api/conversation/export`` — Recibe la lista de mensajes (en el mismo
-  formato que usa el frontend) y devuelve el Markdown generado, replicando la
-  lógica de ``frontend/src/utils/conversationExport.ts`` (razonamiento, tool
-  calls con argumentos y resultados, texto, archivos adjuntos y sub-agentes).
+- ``POST /api/conversation/export`` — Receives the list of messages (in the
+  same format the frontend uses) and returns the generated Markdown,
+  replicating the logic of ``frontend/src/utils/conversationExport.ts``
+  (reasoning, tool calls with arguments and results, text, attachments and
+  sub-agents).
 """
 
 from __future__ import annotations

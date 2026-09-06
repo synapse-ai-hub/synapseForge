@@ -15,6 +15,8 @@ import {
   Search,
   Menu,
   BarChart3,
+  TrendingUp,
+  DollarSign,
   LogOut,
   BookOpen,
   AlarmClock,
@@ -94,6 +96,8 @@ interface ChatInterfaceProps {
   onNewChat: () => void;
   onSessionEnd?: () => void;
   onShowMetrics: () => void;
+  onShowUsage?: () => void;
+  onShowBilling?: () => void;
   onSessionTitleUpdate?: (sessionId: string, title: string) => void;
   onToggleSidebar?: () => void;
   verboseMode: boolean;
@@ -206,7 +210,6 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
       .getContextWindow()
       .then((data) => {
         if (cancelledRef.current) return;
-        console.log("[DEBUG] getContextWindow response:", JSON.stringify(data));
         if (data.context_window_tokens != null) {
           setContextWindow(data.context_window_tokens);
           // Recompute percent against the new window using the last known tokensUsed.
@@ -217,15 +220,13 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
         }
         if (data.vram_gb != null) {
           setVramGb(data.vram_gb);
-          console.log("[DEBUG] setVramGb:", data.vram_gb);
         }
         if (data.ollama_default_context != null) {
           setOllamaDefaultContext(data.ollama_default_context);
-          console.log("[DEBUG] setOllamaDefaultContext:", data.ollama_default_context);
         }
       })
-      .catch((err) => {
-        if (!cancelledRef.current) console.log("[DEBUG] getContextWindow error:", err);
+      .catch(() => {
+        // Silent failure - context window info is optional
       });
   }, []);
 
@@ -1034,6 +1035,28 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           >
             <BookOpen size={16} />
             <span className="hidden sm:inline">Docs</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onShowUsage || (() => {})}
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
+            title="Uso"
+          >
+            <TrendingUp size={16} />
+            <span className="hidden sm:inline">Uso</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onShowBilling || (() => {})}
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10"
+            title="Facturación"
+          >
+            <DollarSign size={16} />
+            <span className="hidden sm:inline">Facturación</span>
           </Button>
 
           <Button

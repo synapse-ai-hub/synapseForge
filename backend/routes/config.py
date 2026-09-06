@@ -124,7 +124,6 @@ def detect_context_window_background() -> None:
 async def get_context_window() -> JSONResponse:
     """Return the current context-window turn limit (``-1`` = all)."""
     vram = _vram_gb
-    print(f"[DEBUG] get_context_window: max_turns={_context_window_turns}, context_window_tokens={_context_window_tokens}, vram_gb={vram}")
     return JSONResponse(
         status_code=200,
         content={
@@ -979,10 +978,8 @@ def load_persisted_config() -> None:
     try:
         global _vram_gb
         _vram_gb = get_vram_gb()
-        print(f"[DEBUG] VRAM detectada al iniciar: {_vram_gb} GB")
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:load_persisted_config(vram)")
-        print(f"[DEBUG] VRAM no detectada al iniciar: {exc}")
 
 
 # ---------------------------------------------------------------------------

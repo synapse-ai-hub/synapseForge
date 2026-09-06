@@ -24,12 +24,10 @@ if _project_root not in sys.path:
 from backend.agent.utils.contract import make_error_response, make_success_response, zero_usage
 from backend.agent.utils.error_logger import log_error
 from backend.agent.ddl_setup import setup_database
+from backend.utils.db import DB_PATH
+from backend.utils.spend_handler import calculate_cost
 
 logger = logging.getLogger(__name__)
-
-# Ruta absoluta al archivo SQLite (basada en el project root, no en CWD)
-# Así funciona igual desde cualquier directorio (uvicorn, debugger, tests).
-_DB_PATH = os.path.join(_project_root, "backend", "agent", "agent_db", "agent.db")
 
 
 class SessionManager:
@@ -47,7 +45,7 @@ class SessionManager:
 
     VALID_ROLES = frozenset({"system", "user", "assistant", "tool"})
 
-    def __init__(self, db_path: str = _DB_PATH) -> None:
+    def __init__(self, db_path: str = DB_PATH) -> None:
         """Initialise the session manager.
 
         Connections are now created per-operation (not singleton) to avoid
@@ -349,6 +347,7 @@ class SessionManager:
         tool_call_id: str | None = None,
         tool_name: str | None = None,
         model: str | None = None,
+        provider: str | None = None,
         turn_number: int | None = None,
         step: int = 0,
     ) -> dict:
@@ -373,6 +372,8 @@ class SessionManager:
             tool_name: Tool name (Ollama format, for ``role: "tool"``).
             model: LLM model identifier that produced the message
                 (assistant messages only; ``None`` otherwise).
+            provider: Provider name (e.g., "groq", "openrouter", "google", "local").
+                Used to calculate cost per message when combined with model and usage.
             turn_number: Turn number for grouping messages by
                 conversation turn.
 
@@ -385,6 +386,18 @@ class SessionManager:
                 usage=zero_usage(),
             )
 
+        # Calculate cost if provider, model, and usage are available
+        cost_input = 0.0
+        cost_output = 0.0
+        cost_total = 0.0
+        if provider and model and usage:
+            prompt_tokens = (usage or {}).get("prompt_tokens") or 0
+            completion_tokens = (usage or {}).get("completion_tokens") or 0
+            if prompt_tokens or completion_tokens:
+                cost_input, cost_output, cost_total = calculate_cost(
+                    provider.lower(), model, prompt_tokens, completion_tokens
+                )
+
         conn = self._get_connection()
         try:
             with self._lock:
@@ -394,8 +407,9 @@ class SessionManager:
                     "INSERT INTO messages "
                     "(session_id, role, content, reasoning, tool_calls, tool_results, "
                     "status, message, prompt_tokens, completion_tokens, total_tokens, total_time, "
-                    "tool_call_id, tool_name, model, turn_number, step, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "tool_call_id, tool_name, model, provider, cost_input, cost_output, cost_total, "
+                    "turn_number, step, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         role,
@@ -412,6 +426,10 @@ class SessionManager:
                         tool_call_id,
                         tool_name,
                         model,
+                        provider,
+                        cost_input,
+                        cost_output,
+                        cost_total,
                         turn_number,
                         step,
                         now,

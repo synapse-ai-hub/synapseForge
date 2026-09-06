@@ -22,15 +22,19 @@
 
 ## Descripción
 
-Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación React 19 + TypeScript + Vite que provee la interfaz de chat streaming (SSE), panel de configuración de modelo/proveedor/contexto, gestión de sesiones y visualización de tool calls en tiempo real.
+Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación React 19 + TypeScript + Vite que provee la interfaz de chat streaming (SSE), panel de configuración de modelo/proveedor/contexto, gestión de sesiones, creación de skills/tools/agentes, gestión de RAG y visualización de tool calls en tiempo real.
 
 ### ✨ Características Principales
 
 - **Chat streaming SSE**: Conversación en tiempo real con Server-Sent Events.
-- **Configuración dinámica**: Selección de proveedor (Ollama/Groq), modelo y ventana de contexto desde la UI.
+- **Configuración dinámica**: Selección de proveedor (Ollama, Groq, Google Gemini, OpenRouter), modelo y ventana de contexto desde la UI.
 - **Gestión de sesiones**: Sidebar con historial, títulos, preview y eliminación.
 - **Tool calls visibles**: Colapsables por tool con input/output formateado.
 - **Adjuntos**: Arrastrar y soltar archivos; extracción de texto automática.
+- **Creación asistida por LLM**: Páginas standalone para crear skills, tools y agentes.
+- **Gestión de RAG**: Página para crear colecciones, subir archivos y agregar URLs.
+- **Gauge de contexto**: Indicador de uso de la ventana de contexto en el header.
+- **Tareas programadas**: Panel de agenda para programar ejecuciones.
 - **Tema oscuro/claro**: Persistido en localStorage.
 
 ---
@@ -50,40 +54,59 @@ Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación Rea
 
 ```plaintext
 frontend/
-├─ public/                     # Assets estáticos (docs.html, colors.json, skill.html)
+├─ public/                     # Assets estáticos (docs.html, colors.json)
 ├─ src/
 │  ├─ assets/                  # Logo, imágenes
 │  │  ├─ logo_empresa.png      # Logo de la empresa
 │  │  └─ logo_cliente.png      # Logo del cliente
-│  ├─ components/              # Componentes React
-│  │  ├─ ChatInterface.tsx     # Chat principal (streaming SSE, adjuntos, autoscroll)
+│  ├─ chat/                    # Chat principal
+│  │  ├─ ChatInterface.tsx     # Chat (streaming SSE, adjuntos, autoscroll, gauge de contexto)
+│  │  └─ chatMain.tsx          # Entry de la página de chat
+│  ├─ skill/                   # Creación de skills
 │  │  ├─ SkillInterface.tsx    # Página de creación de skills (setup + chat + overlay)
-│  │  ├─ chatBlocks.tsx        # Componentes compartidos (MessageRow, MarkdownRenderer, ToolCallBlock, ReasoningBlock, FileChip, etc.)
+│  │  └─ skillMain.tsx         # Entry de la skill page (multi-page)
+│  ├─ tool/                    # Creación de tools
+│  │  ├─ ToolInterface.tsx     # Página de creación de tools
+│  │  └─ toolMain.tsx          # Entry de la tool page (multi-page)
+│  ├─ agent/                   # Creación de agentes
+│  │  ├─ AgentInterface.tsx    # Página de creación de agentes
+│  │  └─ agentMain.tsx         # Entry de la agent page (multi-page)
+│  ├─ rag/                     # Gestión de RAG
+│  │  ├─ RagInterface.tsx      # Página de gestión de colecciones RAG
+│  │  └─ ragMain.tsx           # Entry de la rag page (multi-page)
+│  ├─ components/              # Componentes React
 │  │  ├─ Sidebar.tsx           # Barra lateral con tabs (sessions, config, agent, create)
 │  │  ├─ sessionsTab.tsx       # Lista de sesiones de chat
 │  │  ├─ configTab.tsx         # Configuración (proveedor, modelo, contexto, verbose, archivos de contexto)
 │  │  ├─ agentInfoTab.tsx      # Panel de agentes (tools, skills, agents, mcp, rag)
 │  │  ├─ createTab.tsx         # Creación de skills/tools/agentes/RAG
+│  │  ├─ chatBlocks.tsx        # Componentes compartidos (MessageRow, MarkdownRenderer, ToolCallBlock, ReasoningBlock, FileChip, etc.)
+│  │  ├─ ContextGauge.tsx      # Gauge de ventana de contexto
+│  │  ├─ CreateModelSelector.tsx # Selector de modelo para creación
 │  │  ├─ HistoryModal.tsx      # Historial de cotizaciones
 │  │  ├─ MetricsModal.tsx      # Dashboard de métricas
+│  │  ├─ SchedulerModal.tsx    # Tareas programadas (agenda)
+│  │  ├─ SetupScreen.tsx       # Pantalla inicial de configuración de providers
 │  │  ├─ MessageBubble.tsx     # Burbuja de mensaje (legacy)
 │  │  ├─ Logo.tsx              # Logo
-│  │  └─ ui/                   # shadcn/ui: avatar, button, dialog, input, separator, textarea, utils
+│  │  └─ ui/                   # shadcn/ui: avatar, button, dialog, input, separator, textarea, collapsible, utils
 │  ├─ services/                # Capa de comunicación con API
 │  │  ├─ chatService.ts        # Streaming SSE a /api/chat
-│  │  ├─ configService.ts      # Providers, models, MCP, verbose
+│  │  ├─ configService.ts      # Providers, models, MCP, verbose, contexto
 │  │  ├─ sessionService.ts     # Sesiones CRUD
 │  │  ├─ contextFilesService.ts# Archivos de contexto CRUD
 │  │  ├─ metricsService.ts     # Métricas
+│  │  ├─ schedulerService.ts   # Tareas programadas
+│  │  ├─ telegramService.ts    # Estado y toggle del bot de Telegram
 │  │  └─ quoteHistoryService.ts# Historial de cotizaciones
+│  ├─ utils/                   # Utilidades
+│  │  ├─ mermaid.ts            # Renderizado de diagramas mermaid
+│  │  └─ conversationExport.ts # Exportación de conversaciones a Markdown
 │  ├─ App.tsx                  # Componente raíz + estado global
 │  ├─ main.tsx                 # Entry: carga colors.json → setea CSS vars → render App
-│  ├─ skillMain.tsx            # Entry de la skill page (multi-page)
 │  ├─ index.css                # Estilos globales + @theme (colores)
-│  ├─ skillColors.css          # Overrides de colores para la skill page
 │  └─ vite-env.d.ts            # Tipos de Vite
 ├─ index.html
-├─ skill.html                  # Entry HTML de la skill page (multi-page)
 ├─ package.json
 ├─ tsconfig.json
 ├─ tsconfig.app.json
@@ -145,29 +168,38 @@ Los servicios usan `VITE_MODE` para elegir entre `VITE_URL_DEV` y `VITE_URL_PROD
 ## Flujo principal
 
 1. **Carga inicial** → `main.tsx` hace `fetch("/colors.json")` y setea las CSS vars → renderiza `App`.
-2. **Proveedores** → `configService` llama `GET /config/providers` → muestra proveedores disponibles.
-3. **Selección modelo** → `GET /config/models?provider=X` → lista modelos; `POST /config/models/select` → persiste en backend (SQLite `config_kv`).
-4. **Chat** → `ChatInterface` envía `POST /api/chat` (SSE) → `chatService` parsea eventos → `MessageRow`/`chatBlocks` renderizan bloques (texto, razonamiento, tools, sub-agentes).
-5. **Sesiones** → `sessionService` `GET /api/sessions` → `sessionsTab` en sidebar.
-6. **Contexto** → `POST /config/context-window` → ajusta `max_turns`.
-7. **Archivos de contexto** → `contextFilesService` `GET/POST/DELETE /api/context-files` → `configTab` gestiona subida/eliminación → se inyectan en el system prompt.
+2. **Setup** → si no está completado, `SetupScreen` pide las API keys de los providers.
+3. **Proveedores** → `configService` llama `GET /config/providers` → muestra proveedores disponibles.
+4. **Selección modelo** → `GET /config/models?provider=X` → lista modelos; `POST /config/models/select` → persiste en backend (SQLite `config_kv`).
+5. **Chat** → `ChatInterface` envía `POST /api/chat` (SSE) → `chatService` parsea eventos → `MessageRow`/`chatBlocks` renderizan bloques (texto, razonamiento, tools, sub-agentes).
+6. **Sesiones** → `sessionService` `GET /api/sessions` → `sessionsTab` en sidebar.
+7. **Contexto** → `POST /config/context-window` → ajusta `max_turns`; el gauge se actualiza con los eventos `token_counter`.
+8. **Archivos de contexto** → `contextFilesService` `GET/POST/DELETE /api/context-files` → `configTab` gestiona subida/eliminación → se inyectan en el system prompt.
+9. **Tareas programadas** → `SchedulerModal` usa `schedulerService` para gestionar la agenda.
+10. **Telegram** → `telegramService` controla el estado y toggle del bot.
 
 ---
 
 ## Componentes clave
 
-### `ChatInterface.tsx`
-Chat principal. Mantiene el estado de mensajes, streaming SSE a `/api/chat`, autoscroll, adjuntos de archivos, detener generación, heartbeat y shutdown. Renderiza cada mensaje con `MessageRow`.
+### `chat/ChatInterface.tsx`
+Chat principal. Mantiene el estado de mensajes, streaming SSE a `/api/chat`, autoscroll, adjuntos de archivos, detener generación, heartbeat y shutdown. Renderiza cada mensaje con `MessageRow` y muestra el gauge de contexto en el header.
 
-### `chatBlocks.tsx`
-Componentes compartidos entre `ChatInterface` y `SkillInterface`:
+### `components/chatBlocks.tsx`
+Componentes compartidos entre las interfaces de chat y creación:
 - `MessageRow` — Fila de mensaje (asistente con avatar + bloques intercalados, usuario con burbuja).
 - `MarkdownRenderer` — Renderiza markdown a HTML con sanitización DOMPurify.
 - `ToolCallBlock` — Tarjeta de tool call con estados y sub-pasos de sub-agentes.
 - `ReasoningBlock`, `FileChip`, `FileWarningBanner`, `TypingIndicator`.
 
-### `SkillInterface.tsx`
-Página de creación de skills (multi-page `skill.html`). Flujo en dos fases: setup (nombre + descripción) y chat de entrevista con streaming SSE a `/api/create/skill`. Al finalizar muestra un overlay de resultado.
+### `skill/SkillInterface.tsx`
+Página de creación de skills (multi-page). Flujo en dos fases: setup (nombre + descripción) y chat de entrevista con streaming SSE a `/api/create/skill`. Al finalizar muestra un overlay de resultado.
+
+### `tool/ToolInterface.tsx` y `agent/AgentInterface.tsx`
+Páginas de creación de tools y agentes, con el mismo patrón de entrevista iterativa vía streaming SSE.
+
+### `rag/RagInterface.tsx`
+Página de gestión de colecciones RAG: crear colecciones, subir archivos y agregar URLs.
 
 ### `Sidebar.tsx`
 Barra lateral con tabs: Conversaciones (`sessionsTab`), Configuración (`configTab`), Agente (`agentInfoTab`) y Crear (`createTab`).
@@ -181,8 +213,14 @@ Panel de agentes con 5 sub-paneles: Tools, Skills, Agentes, MCP y RAG.
 ### `MetricsModal.tsx`
 Dashboard de métricas con tabs: Overview, Sessions, Tools, Errors.
 
+### `SchedulerModal.tsx`
+Panel de tareas programadas (agenda): agregar, editar horario y eliminar tareas.
+
+### `SetupScreen.tsx`
+Pantalla inicial de configuración de providers (API keys) que aparece al primer arranque.
+
 ### Servicios (`services/`)
-Capa fina sobre `fetch`. `chatService` (SSE), `configService` (providers/models/MCP/verbose), `sessionService` (sesiones), `contextFilesService` (archivos de contexto), `metricsService` (métricas), `quoteHistoryService` (historial de cotizaciones).
+Capa fina sobre `fetch`. `chatService` (SSE), `configService` (providers/models/MCP/verbose/contexto), `sessionService` (sesiones), `contextFilesService` (archivos de contexto), `metricsService` (métricas), `schedulerService` (tareas programadas), `telegramService` (bot de Telegram), `quoteHistoryService` (historial de cotizaciones).
 
 ---
 

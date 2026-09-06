@@ -52,7 +52,7 @@ docs/
 template/
 
 # Configuración
-config/
+/config/
 ideas.md
 
 # DB

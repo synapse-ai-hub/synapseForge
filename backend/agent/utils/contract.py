@@ -1,20 +1,20 @@
-"""Contrato único de respuesta para todas las tools, endpoints y el Agent.
+"""Unified response contract for all tools, endpoints and the Agent.
 
-Define la estructura JSON unificada que todo componente del framework debe retornar
-para garantizar consistencia en toda la API.
+Defines the unified JSON structure that every framework component must return
+to guarantee consistency across the whole API.
 """
 
 from typing import Any, NotRequired, Optional, TypedDict
 
 
 class UsageReport(TypedDict):
-    """Reporte de uso de tokens y tiempo de ejecución.
+    """Token usage and execution time report.
 
     Attributes:
-        prompt_tokens: Cantidad de tokens de entrada (prompt).
-        completion_tokens: Cantidad de tokens de salida (completion).
-        total_tokens: Suma de prompt_tokens + completion_tokens.
-        total_time: Tiempo total de ejecución en segundos.
+        prompt_tokens: Number of input (prompt) tokens.
+        completion_tokens: Number of output (completion) tokens.
+        total_tokens: Sum of prompt_tokens + completion_tokens.
+        total_time: Total execution time in seconds.
     """
 
     prompt_tokens: int
@@ -24,14 +24,14 @@ class UsageReport(TypedDict):
 
 
 class ContractResponse(TypedDict):
-    """Estructura de respuesta única para toda la API.
+    """Unified response structure for the whole API.
 
     Attributes:
-        status: Indica si la operación fue exitosa. ``"success"`` o ``"error"``.
-        message: Descripción legible del resultado.
-        data: Cualquier tipo de dato asociado a la respuesta. ``None`` en caso de error.
-        tool_calls: Lista de tool calls solicitadas por el LLM (opcional).
-        usage: Reporte de uso de tokens y tiempo de ejecución.
+        status: Whether the operation succeeded. ``"success"`` or ``"error"``.
+        message: Human-readable description of the result.
+        data: Any data associated with the response. ``None`` on error.
+        tool_calls: List of tool calls requested by the LLM (optional).
+        usage: Token usage and execution time report.
     """
 
     status: str  # "success" | "error"
@@ -42,21 +42,21 @@ class ContractResponse(TypedDict):
 
 
 def validate_response(response: dict) -> dict:
-    """Valida que un diccionario cumpla con el contrato único de respuesta.
+    """Validate that a dict conforms to the unified response contract.
 
-    Verifica la presencia y tipos correctos de las claves obligatorias
-    (``status``, ``message``, ``data``). Si la clave ``usage`` está presente,
-    también valida su estructura interna.
+    Checks the presence and correct types of the required keys
+    (``status``, ``message``, ``data``). If the ``usage`` key is present,
+    its internal structure is also validated.
 
     Args:
-        response: Diccionario a validar.
+        response: The dict to validate.
 
     Returns:
-        El mismo diccionario si la validación es exitosa.
+        The same dict if validation succeeds.
 
     Raises:
-        ValueError: Si faltan claves obligatorias o sus tipos son incorrectos.
-        TypeError: Si el argumento ``response`` no es un diccionario.
+        ValueError: If required keys are missing or have incorrect types.
+        TypeError: If ``response`` is not a dict.
     """
     
     if not isinstance(response, dict):
@@ -120,16 +120,16 @@ def make_success_response(
     message: str, data: Any = None, usage: Optional[UsageReport] = None,
     tool_calls: Any = None,
 ) -> dict:
-    """Crea una respuesta de éxito con el contrato único.
+    """Create a success response with the unified contract.
 
     Args:
-        message: Descripción legible del resultado exitoso.
-        data: Datos asociados a la respuesta (opcional, ``None`` por defecto).
-        usage: Reporte de uso de tokens y tiempo (opcional).
-        tool_calls: Lista de tool calls solicitadas por el LLM (opcional).
+        message: Human-readable description of the successful result.
+        data: Data associated with the response (optional, ``None`` by default).
+        usage: Token usage and time report (optional).
+        tool_calls: List of tool calls requested by the LLM (optional).
 
     Returns:
-        Diccionario con la estructura ``ContractResponse`` en estado ``"success"``.
+        A dict with the ``ContractResponse`` structure in ``"success"`` state.
     """
     response: dict = {
         "status": "success",
@@ -142,14 +142,14 @@ def make_success_response(
 
 
 def make_error_response(message: str, usage: Optional[UsageReport] = None) -> dict:
-    """Crea una respuesta de error con el contrato único.
+    """Create an error response with the unified contract.
 
     Args:
-        message: Descripción legible del error ocurrido.
-        usage: Reporte de uso de tokens y tiempo (opcional).
+        message: Human-readable description of the error.
+        usage: Token usage and time report (optional).
 
     Returns:
-        Diccionario con la estructura ``ContractResponse`` en estado ``"error"``.
+        A dict with the ``ContractResponse`` structure in ``"error"`` state.
     """
     response: dict = {
         "status": "error",
@@ -162,10 +162,10 @@ def make_error_response(message: str, usage: Optional[UsageReport] = None) -> di
 
 
 def zero_usage() -> dict:
-    """Retorna un reporte de uso (usage report) con todos los valores en cero.
+    """Return a usage report with all values set to zero.
 
     Returns:
-        Diccionario con la estructura ``UsageReport`` inicializada en cero.
+        A dict with the ``UsageReport`` structure initialized to zero.
     """
     return {
         "prompt_tokens": 0,

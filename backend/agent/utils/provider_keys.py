@@ -35,28 +35,15 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from backend.agent.utils.error_logger import log_error
+from backend.utils.db import db_transaction, get_connection
 
 logger = logging.getLogger(__name__)
 
-_VALID_PROVIDERS = frozenset({"GROQ", "GOOGLE", "OPENROUTER"})
+_VALID_PROVIDERS = frozenset({"GROQ", "GOOGLE", "GEMINI"})
 """Providers whose API keys can be managed through this module."""
 
 _fernet_cache: Any = None
 """Cached ``Fernet`` instance so the secret is resolved once per process."""
-
-
-def _db_path() -> str:
-    """Return the agent SQLite database path.
-
-    Reuses the canonical path defined in :mod:`backend.agent.session` so
-    both modules always point at the same database file.
-
-    Returns:
-        Absolute path to ``agent.db``.
-    """
-    from backend.agent.session import _DB_PATH
-
-    return _DB_PATH
 
 
 def _load_fernet() -> Any:
@@ -84,7 +71,6 @@ def _load_fernet() -> Any:
     if secret:
         digest = hashlib.sha256(secret.encode("utf-8")).digest()
         _fernet_cache = Fernet(base64.urlsafe_b64encode(digest))
-        print("[DEBUG] provider_keys._load_fernet: using APP_SECRET_KEY env var")
         return _fernet_cache
 
     # No APP_SECRET_KEY: use (or create) a locally persisted random key.
@@ -92,7 +78,6 @@ def _load_fernet() -> Any:
         from backend.agent.utils.config_dir import get_config_dir
 
         secret_file = get_config_dir() / ".secret_key"
-        print(f"[DEBUG] provider_keys._load_fernet: no APP_SECRET_KEY, secret_file={secret_file} exists={secret_file.exists()}")
         if secret_file.exists():
             raw = secret_file.read_text(encoding="utf-8").strip()
             if raw:
@@ -111,17 +96,11 @@ def _load_fernet() -> Any:
 def _connect() -> sqlite3.Connection | None:
     """Open a short-lived connection to the agent DB and ensure the schema.
 
-    Follows the same per-operation connection pattern as
-    :class:`backend.agent.session.SessionManager`.
-
     Returns:
         A new ``sqlite3.Connection``, or ``None`` on failure.
     """
     try:
-        conn = sqlite3.connect(_db_path(), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn = get_connection()
         from backend.agent.ddl_setup import setup_database
 
         setup_database(conn)
@@ -136,7 +115,7 @@ def save_key(provider: str, api_key: str) -> dict:
     """Encrypt and persist an API key for the given provider.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: One of ``GROQ``, ``GOOGLE``, ``GEMINI``.
         api_key: The plain-text API key (never stored in clear).
 
     Returns:
@@ -202,16 +181,13 @@ def get_key(provider: str) -> str | None:
     """
     provider_u = (provider or "").upper()
     if provider_u not in _VALID_PROVIDERS:
-        print(f"[DEBUG] provider_keys.get_key({provider_u}): invalid provider")
         return None
     fernet = _load_fernet()
     if fernet is None:
-        print(f"[DEBUG] provider_keys.get_key({provider_u}): fernet unavailable")
         return None
     try:
         conn = _connect()
         if conn is None:
-            print(f"[DEBUG] provider_keys.get_key({provider_u}): DB connection failed")
             return None
         try:
             row = conn.execute(
@@ -221,13 +197,10 @@ def get_key(provider: str) -> str | None:
         finally:
             conn.close()
         if row is None:
-            print(f"[DEBUG] provider_keys.get_key({provider_u}): no row in DB")
             return None
         key = fernet.decrypt(row["api_key_encrypted"].encode("ascii")).decode("utf-8")
-        print(f"[DEBUG] provider_keys.get_key({provider_u}): decrypted OK (len={len(key)})")
         return key
     except Exception as e:
-        print(f"[DEBUG] provider_keys.get_key({provider_u}): decrypt FAILED -> {e}")
         log_error(str(e), source="provider_keys.py:get_key")
         return None
 
@@ -236,7 +209,7 @@ def delete_key(provider: str) -> dict:
     """Remove the stored API key for a provider.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: One of ``GROQ``, ``GOOGLE``, ``GEMINI``.
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
@@ -311,7 +284,7 @@ def validate_key(provider: str, api_key: str) -> dict:
     this check succeeds.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: One of ``GROQ``, ``GOOGLE``, ``GEMINI``.
         api_key: The plain-text API key to verify.
 
     Returns:
@@ -324,19 +297,22 @@ def validate_key(provider: str, api_key: str) -> dict:
         return {"status": "error", "message": "La API key no puede estar vacía."}
     key = api_key.strip()
     try:
-        if provider_u == "OPENROUTER":
-            # The model catalog is public, so validation uses the /key
-            # endpoint which requires a valid Bearer token (401 otherwise).
-            import requests
-
-            resp = requests.get(
-                "https://openrouter.ai/api/v1/key",
-                headers={"Authorization": f"Bearer {key}"},
-                timeout=30,
-            )
-            if resp.status_code == 401:
-                return {"status": "error", "message": "API key de OpenRouter inválida."}
-            resp.raise_for_status()
+        if provider_u == "GEMINI":
+            # Validate by listing models via Google GenAI SDK (Gemini Embedding 2)
+            try:
+                from google import genai
+                client = genai.Client(api_key=key)
+                models = list(client.models.list())
+                if not models:
+                    return {
+                        "status": "error",
+                        "message": "API key de Gemini inválida o sin modelos disponibles.",
+                    }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"API key de Gemini inválida: {e}",
+                }
         elif provider_u == "GOOGLE":
             # Validate by listing models via Google GenAI API
             try:

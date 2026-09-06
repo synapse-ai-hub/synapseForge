@@ -152,8 +152,8 @@ async def list_collections():
 async def get_embedding_compatibility():
     """Classify collections by embedding-model compatibility.
 
-    Collections created with an older local embedding model hold vectors
-    incompatible with the current OpenRouter embedding function and must be
+    Collections created with an older embedding model hold vectors
+    incompatible with the current Gemini Embedding 2 function and must be
     reindexed (``POST /api/rag/collections/{name}/reindex``).
 
     Returns:

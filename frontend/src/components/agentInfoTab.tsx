@@ -172,6 +172,10 @@ function ToolsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   return (
     <div className="space-y-1">
+      <p className="text-[11px] text-app-text-secondary leading-snug mb-2">
+        Las herramientas son capacidades que el agente puede invocar para realizar acciones concretas
+        (leer archivos, buscar en web, ejecutar comandos). Se activan según los permisos del agente.
+      </p>
       {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {tools.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay herramientas disponibles.</p>
@@ -232,6 +236,10 @@ function SkillsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   return (
     <div className="space-y-1">
+      <p className="text-[11px] text-app-text-secondary leading-snug mb-2">
+        Las skills son módulos de conocimiento o comportamiento que el agente puede cargar
+        (por ejemplo: documentación, protocols, patrones de análisis). Se cargan desde archivos SKILL.md.
+      </p>
       {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {skills.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay skills instaladas.</p>
@@ -291,6 +299,10 @@ function AgentsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   return (
     <div className="space-y-1">
+      <p className="text-[11px] text-app-text-secondary leading-snug mb-2">
+        Los agentes son asistentes especializados que pueden ser delegados por el agente principal
+        para tareas específicas. Cada agente tiene su propio system prompt, herramientas y parámetros.
+      </p>
       {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {agents.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay agentes configurados.</p>
@@ -328,6 +340,11 @@ function McpPanel({ servers, loading, onRefresh }: { servers: McpServerStatus[];
 
   return (
     <div className="space-y-1">
+      <p className="text-[11px] text-app-text-secondary leading-snug mb-2">
+        Los servidores MCP (Model Context Protocol) proveen herramientas externas al agente.
+        Cada servidor puede exponer múltiples herramientas. Desactivar servidores que no se usan
+        ahorra tokens, ya que las descripciones de sus herramientas se inyectan en el contexto.
+      </p>
       {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {servers.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay servidores MCP configurados.</p>
@@ -398,6 +415,10 @@ function RagPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
 
   return (
     <div className="space-y-1">
+      <p className="text-[11px] text-app-text-secondary leading-snug mb-2">
+        RAG (Retrieval-Augmented Generation) permite al agente buscar información en colecciones
+        de documentos propias. Las colecciones se indexan con embeddings y se consultan por similitud.
+      </p>
       {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {collections.length === 0 ? (
         <p className="text-sm text-app-text-secondary">No hay colecciones RAG.</p>

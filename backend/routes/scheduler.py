@@ -125,20 +125,16 @@ async def craft_scheduled_prompt(data: dict[str, Any]) -> JSONResponse:
             make_error_response(message="No hay modelo seleccionado. Elegí uno en Configuración.")
         )
 
-    system = (
-        "You are a prompt engineer for an AI agent. The user will give you a "
-        "rough description of what they want the agent to do on a schedule. "
-        "Rewrite it as a clear, concise, actionable prompt in the same language "
-        "as the input. Do NOT add explanations, greetings, or markdown — return "
-        "ONLY the refined prompt text. Keep it under 200 characters."
-    )
+    system = agent.prompt("craft_prompt")
     try:
         response = await agent.llm_process(
             model=agent.default_model,
             prompt=raw,
             system_content=system,
-            max_tokens=256,
+            max_tokens=8000,
             temperature=0.3,
+            top_p=0.7,
+            seed=2603,
         )
         refined = str(response.data or "").strip()
         if not refined:

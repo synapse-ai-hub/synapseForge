@@ -32,6 +32,7 @@ from backend.agent.utils.contract import (
     zero_usage,
 )
 from backend.agent.utils import scheduler_helpers as scheduler_db
+from backend.agent.utils.agent_helpers import get_tools_list, get_skills_list, get_agents_list
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
@@ -168,3 +169,21 @@ async def craft_scheduled_prompt(data: dict[str, Any]) -> JSONResponse:
         return validate_response(
             make_error_response(message="No se pudo mejorar el prompt. Intentá de nuevo.")
         )
+
+
+@router.get("/scheduler/permissions/catalog")
+async def get_permissions_catalog() -> JSONResponse:
+    """Return the available tools, skills and sub-agents for permission selection.
+
+    The frontend uses this to populate the permission checkboxes in the
+    scheduler task form.
+    """
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "success",
+            "tools": get_tools_list(),
+            "skills": get_skills_list(),
+            "agents": get_agents_list(),
+        },
+    )

@@ -488,30 +488,30 @@ class AgentLoop:
             
             # --- 3. Resolve tools ---
             if agent_name is None:
-                # Router: piso garantizado de tools (siempre presentes, el
-                # yaml no puede negarlas: lectura/delegación pura, cero riesgo
-                # destructivo). config.yaml AGREGA tools extra encima; nunca
-                # quita las garantizadas. Solo `task` es restrictible por el
-                # yaml (sub-agentes permitidos).
-                tool_permissions = {
-                    "task": "allow",
-                    "help": "allow",
-                    "search_memory": "allow",
-                    "read": "allow",
-                    "websearch": "allow",
-                    "webfetch": "allow",
-                }
+                # Router: if config.yaml defines permissions, use them as
+                # the complete set (no floor). If config.yaml has no
+                # permissions, fall back to the guaranteed floor tools.
                 router_perms = _load_router_permissions()
                 if router_perms is not None:
+                    # config.yaml defines permissions — use them exclusively.
+                    tool_permissions = {}
                     for name, action in (router_perms.get("tool") or {}).items():
-                        if name == "task":
-                            continue  # task se resuelve aparte (restrictible)
                         tool_permissions[name] = action
                     task_perms = router_perms.get("task")
                     if isinstance(task_perms, dict) and task_perms:
                         tool_permissions["task"] = task_perms
-                    else:
+                    elif "task" not in tool_permissions:
                         tool_permissions["task"] = "allow"
+                else:
+                    # No config.yaml — use the guaranteed floor.
+                    tool_permissions = {
+                        "task": "allow",
+                        "help": "allow",
+                        "search_memory": "allow",
+                        "read": "allow",
+                        "websearch": "allow",
+                        "webfetch": "allow",
+                    }
                 try:
                     tools = list(agent.tools.tools_registry(tool_permissions))
                 except AttributeError as e:

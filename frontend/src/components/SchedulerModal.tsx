@@ -15,8 +15,20 @@ import {
   Check,
   X,
   Sparkles,
+  ChevronDown,
+  ChevronRight,
+  Shield,
+  Sliders,
+  Repeat,
 } from "lucide-react";
-import schedulerService, { SchedulerTask } from "../services/schedulerService";
+import schedulerService, {
+  SchedulerTask,
+  ScheduleSlot,
+  TaskParameters,
+  PermissionAction,
+  CatalogItem,
+  PermissionsCatalog,
+} from "../services/schedulerService";
 
 interface SchedulerModalProps {
   open: boolean;
@@ -43,15 +55,37 @@ function formatSchedule(time: string, days: number[]): string {
   return `${labels} · ${time}`;
 }
 
+/** Toggle a day in a list. */
+function toggleDayInList(list: number[], day: number): number[] {
+  return list.includes(day) ? list.filter((d) => d !== day) : [...list, day];
+}
+
 export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
   const [tasks, setTasks] = useState<SchedulerTask[]>([]);
   const [timezone] = useState<string>(getSystemTimezone);
 
+  /* ---- permissions catalog ---- */
+  const [catalog, setCatalog] = useState<PermissionsCatalog>({
+    tools: [],
+    skills: [],
+    agents: [],
+  });
+
   /* ---- add-task form ---- */
+  const [newName, setNewName] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
   const [newTime, setNewTime] = useState("09:00");
   const [newDays, setNewDays] = useState<number[]>(ALL_DAYS);
+  const [newToolPerms, setNewToolPerms] = useState<Record<string, PermissionAction>>({});
+  const [newSkillPerms, setNewSkillPerms] = useState<Record<string, PermissionAction>>({});
+  const [newParams, setNewParams] = useState<TaskParameters>({});
+  const [newRepetitions, setNewRepetitions] = useState<ScheduleSlot[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
+
+  /* ---- collapsibles state ---- */
+  const [showPermissions, setShowPermissions] = useState(false);
+  const [showParameters, setShowParameters] = useState(false);
+  const [showRepetitions, setShowRepetitions] = useState(false);
 
   /* ---- inline schedule editing ---- */
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -76,7 +110,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
     }
   }, []);
 
-  /* Load persisted tasks each time the modal opens */
+  /* Load persisted tasks and catalog each time the modal opens */
   useEffect(() => {
     if (open) {
       setSavedMsg(null);
@@ -85,6 +119,8 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
       setCraftError(null);
       setEditingId(null);
       reloadTasks();
+      // Load catalog in background (non-blocking).
+      schedulerService.getPermissionsCatalog().then(setCatalog).catch(() => {});
     }
   }, [open, reloadTasks]);
 
@@ -118,7 +154,16 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
   /* ---- add task ---- */
   const handleAdd = useCallback(async () => {
     setFormError(null);
+    const name = newName.trim();
     const prompt = newPrompt.trim();
+    if (!name) {
+      setFormError("El nombre de la tarea es obligatorio.");
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9_-]*$/.test(name)) {
+      setFormError("El nombre solo puede contener minúsculas, números, guiones y guiones bajos.");
+      return;
+    }
     if (!prompt) {
       setFormError("La tarea es obligatoria.");
       return;
@@ -132,15 +177,34 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
       return;
     }
     try {
-      await schedulerService.createTask(prompt, newTime, [...newDays].sort((a, b) => a - b));
+      const hasToolPerms = Object.keys(newToolPerms).length > 0;
+      const hasSkillPerms = Object.keys(newSkillPerms).length > 0;
+      await schedulerService.createTask({
+        name,
+        prompt,
+        time: newTime,
+        days: [...newDays].sort((a, b) => a - b),
+        tool_permissions: hasToolPerms ? newToolPerms : null,
+        skill_permissions: hasSkillPerms ? newSkillPerms : null,
+        parameters: Object.keys(newParams).length > 0 ? newParams : null,
+        repetitions: newRepetitions.length > 0 ? newRepetitions : null,
+      });
+      setNewName("");
       setNewPrompt("");
       setNewTime("09:00");
       setNewDays(ALL_DAYS);
+      setNewToolPerms({});
+      setNewSkillPerms({});
+      setNewParams({});
+      setNewRepetitions([]);
+      setShowPermissions(false);
+      setShowParameters(false);
+      setShowRepetitions(false);
       await reloadTasks();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "No se pudo crear la tarea.");
     }
-  }, [newPrompt, newTime, newDays, reloadTasks]);
+  }, [newName, newPrompt, newTime, newDays, newToolPerms, newSkillPerms, newParams, newRepetitions, reloadTasks]);
 
   /* ---- craft prompt via LLM ---- */
   const handleCraftPrompt = useCallback(async () => {
@@ -211,29 +275,54 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
     }
   }, [editTime, editDays, editingId, reloadTasks]);
 
-  const toggleDay = useCallback(
-    (list: number[], day: number, setter: (days: number[]) => void) => {
-      setter(
-        list.includes(day)
-          ? list.filter((d) => d !== day)
-          : [...list, day],
+  /* ---- permission checkbox toggle ---- */
+  const togglePermission = useCallback(
+    (
+      perms: Record<string, PermissionAction>,
+      setter: (p: Record<string, PermissionAction>) => void,
+      name: string,
+    ) => {
+      const next = { ...perms };
+      if (next[name] === "allow") {
+        delete next[name];
+      } else {
+        next[name] = "allow";
+      }
+      setter(next);
+    },
+    [],
+  );
+
+  /* ---- repetition slot helpers ---- */
+  const addRepetition = useCallback(() => {
+    setNewRepetitions((prev) => [...prev, { time: "09:00", days: [...ALL_DAYS] }]);
+  }, []);
+
+  const updateRepetition = useCallback(
+    (index: number, patch: Partial<ScheduleSlot>) => {
+      setNewRepetitions((prev) =>
+        prev.map((s, i) => (i === index ? { ...s, ...patch } : s)),
       );
     },
     [],
   );
 
+  const removeRepetition = useCallback((index: number) => {
+    setNewRepetitions((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   if (!open) return null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-4xl w-[640px] h-[600px] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-4xl w-[680px] h-[680px] flex flex-col p-0 gap-0">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle className="flex items-center gap-2">
             <AlarmClock size={20} />
             Tareas programadas
           </DialogTitle>
           <DialogDescription>
-            Configurá tareas y horarios para el agente. Zona horaria:{" "}
+            Configurá tareas, permisos y horarios para el agente. Zona horaria:{" "}
             <span className="font-medium text-app-text">{timezone}</span>{" "}
             (tomada del sistema).
           </DialogDescription>
@@ -269,7 +358,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                     /* ---- inline schedule editor ---- */
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-app-text">
-                        {task.prompt}
+                        <span className="text-app-primary">{task.name}</span>: {task.prompt}
                       </p>
                       <div className="flex items-center gap-3 flex-wrap">
                         <label className="flex items-center gap-2 text-sm text-app-text-secondary">
@@ -287,7 +376,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                             <button
                               key={day}
                               type="button"
-                              onClick={() => toggleDay(editDays, day, setEditDays)}
+                              onClick={() => setEditDays(toggleDayInList(editDays, day))}
                               title="Día de la semana"
                               className={`w-7 h-7 rounded-full text-xs font-medium border transition-colors ${
                                 editDays.includes(day)
@@ -330,10 +419,25 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                       <Clock size={15} className="shrink-0 text-app-primary" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-app-text truncate">
-                          {task.prompt}
+                          <span className="text-app-primary">{task.name}</span>: {task.prompt}
                         </p>
                         <p className="text-xs text-app-text-secondary">
                           {formatSchedule(task.time, task.days)}
+                          {task.repetitions && task.repetitions.length > 0 && (
+                            <span className="ml-2 text-app-text-secondary">
+                              +{task.repetitions.length} horario{task.repetitions.length > 1 ? "s" : ""}
+                            </span>
+                          )}
+                          {task.tool_permissions && (
+                            <span className="ml-2 text-app-text-secondary">
+                              <Shield size={10} className="inline" /> tools
+                            </span>
+                          )}
+                          {task.skill_permissions && (
+                            <span className="ml-2 text-app-text-secondary">
+                              <Shield size={10} className="inline" /> skills
+                            </span>
+                          )}
                         </p>
                       </div>
                       <button
@@ -360,11 +464,22 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
           )}
 
           {/* Add task */}
-          <section className="space-y-2 pt-2 border-t border-gray-200">
+          <section className="space-y-3 pt-2 border-t border-gray-200">
             <h3 className="text-sm font-medium text-app-text flex items-center gap-2">
               <Plus size={14} className="text-app-primary" />
               Nueva tarea
             </h3>
+
+            {/* Name */}
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Nombre de la tarea (ej.: resumen-diario)"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+            />
+
+            {/* Prompt */}
             <textarea
               value={newPrompt}
               onChange={(e) => setNewPrompt(e.target.value)}
@@ -387,6 +502,8 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                 <span className="text-xs text-red-600">{craftError}</span>
               )}
             </div>
+
+            {/* Primary schedule */}
             <div className="flex items-center gap-3 flex-wrap">
               <label className="flex items-center gap-2 text-sm text-app-text-secondary">
                 <Clock size={14} className="text-app-primary" />
@@ -403,7 +520,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                   <button
                     key={day}
                     type="button"
-                    onClick={() => toggleDay(newDays, day, setNewDays)}
+                    onClick={() => setNewDays(toggleDayInList(newDays, day))}
                     title="Día de la semana"
                     className={`w-7 h-7 rounded-full text-xs font-medium border transition-colors ${
                       newDays.includes(day)
@@ -416,6 +533,241 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                 ))}
               </div>
             </div>
+
+            {/* Collapsible: Permissions */}
+            <button
+              type="button"
+              onClick={() => setShowPermissions(!showPermissions)}
+              className="flex items-center gap-2 text-xs font-medium text-app-text-secondary hover:text-app-primary transition-colors"
+            >
+              {showPermissions ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <Shield size={13} />
+              Permisos
+              {(Object.keys(newToolPerms).length > 0 || Object.keys(newSkillPerms).length > 0) && (
+                <span className="bg-app-primary/10 text-app-primary text-[10px] px-1.5 py-0.5 rounded-full">
+                  {Object.keys(newToolPerms).length + Object.keys(newSkillPerms).length}
+                </span>
+              )}
+            </button>
+            {showPermissions && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3">
+                {catalog.tools.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-app-text mb-1.5">Tools</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {catalog.tools.map((tool: CatalogItem) => (
+                        <label
+                          key={tool.name}
+                          className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border cursor-pointer transition-colors ${
+                            newToolPerms[tool.name] === "allow"
+                              ? "bg-app-primary/10 border-app-primary text-app-primary"
+                              : "bg-white border-gray-300 text-gray-600 hover:border-app-primary"
+                          }`}
+                          title={tool.description}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={newToolPerms[tool.name] === "allow"}
+                            onChange={() => togglePermission(newToolPerms, setNewToolPerms, tool.name)}
+                            className="sr-only"
+                          />
+                          {tool.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {catalog.skills.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-app-text mb-1.5">Skills</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {catalog.skills.map((skill: CatalogItem) => (
+                        <label
+                          key={skill.name}
+                          className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border cursor-pointer transition-colors ${
+                            newSkillPerms[skill.name] === "allow"
+                              ? "bg-app-primary/10 border-app-primary text-app-primary"
+                              : "bg-white border-gray-300 text-gray-600 hover:border-app-primary"
+                          }`}
+                          title={skill.description}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={newSkillPerms[skill.name] === "allow"}
+                            onChange={() => togglePermission(newSkillPerms, setNewSkillPerms, skill.name)}
+                            className="sr-only"
+                          />
+                          {skill.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {catalog.tools.length === 0 && catalog.skills.length === 0 && (
+                  <p className="text-xs text-app-text-secondary">No hay tools ni skills disponibles.</p>
+                )}
+              </div>
+            )}
+
+            {/* Collapsible: Parameters */}
+            <button
+              type="button"
+              onClick={() => setShowParameters(!showParameters)}
+              className="flex items-center gap-2 text-xs font-medium text-app-text-secondary hover:text-app-primary transition-colors"
+            >
+              {showParameters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <Sliders size={13} />
+              Parámetros del modelo
+              {Object.keys(newParams).length > 0 && (
+                <span className="bg-app-primary/10 text-app-primary text-[10px] px-1.5 py-0.5 rounded-full">
+                  {Object.keys(newParams).length}
+                </span>
+              )}
+            </button>
+            {showParameters && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] text-app-text-secondary">Temperature</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={newParams.temperature ?? ""}
+                      onChange={(e) =>
+                        setNewParams((p) => ({
+                          ...p,
+                          temperature: e.target.value ? Number(e.target.value) : undefined,
+                        }))
+                      }
+                      placeholder="default"
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] text-app-text-secondary">Top P</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={newParams.top_p ?? ""}
+                      onChange={(e) =>
+                        setNewParams((p) => ({
+                          ...p,
+                          top_p: e.target.value ? Number(e.target.value) : undefined,
+                        }))
+                      }
+                      placeholder="default"
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] text-app-text-secondary">Max Tokens</span>
+                    <input
+                      type="number"
+                      min="256"
+                      max="128000"
+                      step="256"
+                      value={newParams.max_tokens ?? ""}
+                      onChange={(e) =>
+                        setNewParams((p) => ({
+                          ...p,
+                          max_tokens: e.target.value ? Number(e.target.value) : undefined,
+                        }))
+                      }
+                      placeholder="default"
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] text-app-text-secondary">Seed</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={newParams.seed ?? ""}
+                      onChange={(e) =>
+                        setNewParams((p) => ({
+                          ...p,
+                          seed: e.target.value ? Number(e.target.value) : undefined,
+                        }))
+                      }
+                      placeholder="default"
+                      className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Collapsible: Additional repetitions */}
+            <button
+              type="button"
+              onClick={() => setShowRepetitions(!showRepetitions)}
+              className="flex items-center gap-2 text-xs font-medium text-app-text-secondary hover:text-app-primary transition-colors"
+            >
+              {showRepetitions ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <Repeat size={13} />
+              Horarios adicionales
+              {newRepetitions.length > 0 && (
+                <span className="bg-app-primary/10 text-app-primary text-[10px] px-1.5 py-0.5 rounded-full">
+                  {newRepetitions.length}
+                </span>
+              )}
+            </button>
+            {showRepetitions && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                {newRepetitions.map((slot, idx) => (
+                  <div key={idx} className="flex items-center gap-2 flex-wrap">
+                    <label className="flex items-center gap-1.5 text-xs text-app-text-secondary">
+                      <Clock size={12} className="text-app-primary" />
+                      <input
+                        type="time"
+                        value={slot.time}
+                        onChange={(e) => updateRepetition(idx, { time: e.target.value })}
+                        className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      />
+                    </label>
+                    <div className="flex items-center gap-0.5">
+                      {WEEKDAY_LABELS.map((label, day) => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() =>
+                            updateRepetition(idx, { days: toggleDayInList(slot.days, day) })
+                          }
+                          className={`w-6 h-6 rounded-full text-[10px] font-medium border transition-colors ${
+                            slot.days.includes(day)
+                              ? "bg-app-primary text-white border-app-primary"
+                              : "bg-white text-gray-500 border-gray-300 hover:border-app-primary"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeRepetition(idx)}
+                      className="text-red-500 hover:text-red-700"
+                      title="Eliminar horario"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addRepetition}
+                  className="flex items-center gap-1.5 text-xs font-medium text-app-primary hover:text-app-primary/80 transition-colors"
+                >
+                  <Plus size={12} />
+                  Agregar horario
+                </button>
+              </div>
+            )}
+
             {formError && (
               <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
                 {formError}

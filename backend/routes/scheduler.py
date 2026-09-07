@@ -52,12 +52,19 @@ async def get_scheduled_tasks() -> JSONResponse:
 async def create_scheduled_task(data: dict[str, Any]) -> JSONResponse:
     """Create a new scheduled task.
 
-    Body: ``{"prompt": str, "time": "HH:MM", "days": [0-6, ...]}``.
+    Body: ``{"name": str, "prompt": str, "time": "HH:MM", "days": [0-6, ...],
+    "tool_permissions": {}, "skill_permissions": {}, "parameters": {},
+    "repetitions": []}``.
     """
     result = scheduler_db.add_task(
+        name=data.get("name"),
         prompt=data.get("prompt"),
-        time_str=data.get("time"),
-        days=data.get("days") or [],
+        time_str=data.get("time") or "09:00",
+        days=data.get("days") or [0, 1, 2, 3, 4, 5, 6],
+        tool_permissions=data.get("tool_permissions"),
+        skill_permissions=data.get("skill_permissions"),
+        parameters=data.get("parameters"),
+        repetitions=data.get("repetitions"),
     )
     if result["status"] == "error":
         log_error(result["message"], source="backend/routes/scheduler.py:create")
@@ -70,15 +77,22 @@ async def create_scheduled_task(data: dict[str, Any]) -> JSONResponse:
 async def update_scheduled_task(task_id: str, data: dict[str, Any]) -> JSONResponse:
     """Update a scheduled task.
 
-    Body (all optional): ``{"prompt": str, "time": "HH:MM", "days": [...],
-    "enabled": bool}``. Updating the schedule resets the daily dedup guard.
+    Body (all optional): ``{"name": str, "prompt": str, "time": "HH:MM",
+    "days": [...], "enabled": bool, "tool_permissions": {},
+    "skill_permissions": {}, "parameters": {}, "repetitions": []}``.
+    Updating the schedule resets the daily dedup guard.
     """
     result = scheduler_db.update_task(
         task_id,
+        name=data.get("name"),
         prompt=data.get("prompt"),
         time_str=data.get("time"),
         days=data.get("days"),
         enabled=data.get("enabled"),
+        tool_permissions=data.get("tool_permissions"),
+        skill_permissions=data.get("skill_permissions"),
+        parameters=data.get("parameters"),
+        repetitions=data.get("repetitions"),
     )
     if result["status"] == "error":
         log_error(result["message"], source="backend/routes/scheduler.py:update")

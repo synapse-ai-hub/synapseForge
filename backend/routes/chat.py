@@ -1,4 +1,4 @@
-"""Chat SSE streaming endpoint for the <descripcion>Nombre del proyecto</descripcion>."""
+"""Chat SSE streaming endpoint for the <nombre>nombre_proyecto</nombre>."""
 
 from __future__ import annotations
 

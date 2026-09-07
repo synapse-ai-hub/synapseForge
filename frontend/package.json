@@ -1,5 +1,5 @@
 {
-  "name": "<descripcion>Nombre del proyecto</descripcion>",
+  "name": "<nombre>nombre_proyecto</nombre>",
   "version": "1.0.0",
   "private": true,
   "type": "module",

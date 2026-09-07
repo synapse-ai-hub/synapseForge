@@ -1,1 +1,1 @@
-"""Backend package for the <descripcion>Nombre del proyecto</descripcion> API."""
+"""Backend package for the <nombre>nombre_proyecto</nombre> API."""

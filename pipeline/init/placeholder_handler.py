@@ -3,7 +3,7 @@
 Scans all text files under the target directory and replaces occurrences
 of ``<tag>value</tag>`` with the actual value from the user config.
 
-Supports nested tags such as ``<descripcion>...</descripcion>``,
+Supports nested tags such as ``<nombre>nombre_proyecto</nombre>``,
 ``<cliente>...</cliente>``, ``<color_primario>...</color_primario>``, etc.
 """
 
@@ -22,7 +22,7 @@ TAG_MAP: Dict[str, str] = {
     "repo": "repo",
     "cliente": "cliente",
     "logo_cliente": "logo_cliente",
-    "descripcion": "descripcion",
+    "nombre": "nombre",
     "tarea": "tarea",
     # Colors — 4 configurables + gradient toggle
     "color_primario": "colors.primary",

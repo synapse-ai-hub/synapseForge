@@ -31,6 +31,46 @@ COLOR_TAB_FIELDS = [
     ("gradient_secondary", "Color final del degradé de los botones y del avatar del asistente (el inicio es el color principal)"),
 ]
 
+# ──────────────────────────────────────────────────────────────
+# Tooltips for project tab fields (hover info, no layout impact)
+# ──────────────────────────────────────────────────────────────
+TOOLTIPS: dict[str, str] = {
+    "empresa": "Nombre de la empresa que desarrolla el proyecto.",
+    "owner": "Tu usuario de GitHub.",
+    "legal": "Razón social o nombre legal de la empresa.",
+    "repo": "Nombre del repositorio en GitHub.",
+    "cliente": "Nombre del cliente para quien se hace el proyecto.",
+    "nombre": "Nombre del agente.",
+    "tarea": "Rubro o tipo de trabajo (ej: desarrollo web, data pipeline).",
+}
+
+
+def _create_tooltip(widget: tk.Widget, text: str) -> None:
+    """Attach a hover tooltip to *widget* without affecting layout."""
+    _tip = {"window": None}
+
+    def _show(event):
+        if _tip["window"]:
+            return
+        tw = tk.Toplevel(widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{event.x_root + 15}+{event.y_root + 5}")
+        lbl = tk.Label(
+            tw, text=text, justify="left",
+            background="#ffffe0", relief="solid", borderwidth=1,
+            font=("", 9), padx=6, pady=4, wraplength=350,
+        )
+        lbl.pack()
+        _tip["window"] = tw
+
+    def _hide(_event):
+        if _tip["window"]:
+            _tip["window"].destroy()
+            _tip["window"] = None
+
+    widget.bind("<Enter>", _show)
+    widget.bind("<Leave>", _hide)
+
 
 # ──────────────────────────────────────────────────────────────
 # Fijar el AppUserModelID ANTES de crear cualquier ventana
@@ -155,7 +195,7 @@ class InitApp:
             ("legal", "Nombre legal / razón social", True),
             ("repo", "Nombre del repo", True),
             ("cliente", "Nombre del cliente", True),
-            ("descripcion", "Descripción del proyecto", True),
+            ("nombre", "Nombre", True),
             ("tarea", "Nombre de la tarea / rubro", True),
         ]
 
@@ -167,6 +207,9 @@ class InitApp:
             ent = ttk.Entry(tab, width=55)
             ent.grid(row=i, column=1, pady=3)
             self._entries[key] = ent
+            # Attach hover tooltip if available
+            if key in TOOLTIPS:
+                _create_tooltip(ent, TOOLTIPS[key])
 
     # ------------------------------------------------------------------
     # Tab 2: Logos (file pickers)
@@ -311,7 +354,7 @@ class InitApp:
         """Read all fields and return config dict, or None if validation fails."""
 
         # ── Required text fields ──────────────────────────────────────
-        required = ["empresa", "owner", "legal", "repo", "cliente", "descripcion", "tarea"]
+        required = ["empresa", "owner", "legal", "repo", "cliente", "nombre", "tarea"]
         config: Dict[str, Any] = {}
         for key in required:
             val = self._entries[key].get().strip()

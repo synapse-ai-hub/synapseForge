@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +58,92 @@ function formatSchedule(time: string, days: number[]): string {
 /** Toggle a day in a list. */
 function toggleDayInList(list: number[], day: number): number[] {
   return list.includes(day) ? list.filter((d) => d !== day) : [...list, day];
+}
+
+interface DayPickerProps {
+  days: number[];
+  onChange: (days: number[]) => void;
+  size?: "md" | "sm";
+}
+
+/** Weekday selector rendered as a row of round toggle buttons. */
+function DayPicker({ days, onChange, size = "md" }: DayPickerProps) {
+  const sizeClass = size === "sm" ? "w-6 h-6 text-[10px]" : "w-7 h-7 text-xs";
+  return (
+    <div className="flex items-center gap-1">
+      {WEEKDAY_LABELS.map((label, day) => (
+        <button
+          key={day}
+          type="button"
+          onClick={() => onChange(toggleDayInList(days, day))}
+          title="Día de la semana"
+          className={`${sizeClass} rounded-full font-medium border transition-colors ${
+            days.includes(day)
+              ? "bg-app-primary text-white border-app-primary"
+              : "bg-white text-gray-500 border-gray-300 hover:border-app-primary"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface PermissionCheckboxProps {
+  name: string;
+  description: string;
+  checked: boolean;
+  onChange: () => void;
+}
+
+/** Single permission toggle rendered as a pill checkbox. */
+function PermissionCheckbox({ name, description, checked, onChange }: PermissionCheckboxProps) {
+  return (
+    <label
+      className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border cursor-pointer transition-colors ${
+        checked
+          ? "bg-app-primary/10 border-app-primary text-app-primary"
+          : "bg-white border-gray-300 text-gray-600 hover:border-app-primary"
+      }`}
+      title={description}
+    >
+      <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
+      {name}
+    </label>
+  );
+}
+
+interface CollapsibleSectionProps {
+  open: boolean;
+  onToggle: () => void;
+  icon: ReactNode;
+  label: string;
+  count?: number;
+  children: ReactNode;
+}
+
+/** Collapsible header with a chevron and an optional count badge. */
+function CollapsibleSection({ open, onToggle, icon, label, count, children }: CollapsibleSectionProps) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center gap-2 text-xs font-medium text-app-text-secondary hover:text-app-primary transition-colors"
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {icon}
+        {label}
+        {count !== undefined && count > 0 && (
+          <span className="bg-app-primary/10 text-app-primary text-[10px] px-1.5 py-0.5 rounded-full">
+            {count}
+          </span>
+        )}
+      </button>
+      {open && children}
+    </>
+  );
 }
 
 export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
@@ -372,21 +458,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                           />
                         </label>
                         <div className="flex items-center gap-1">
-                          {WEEKDAY_LABELS.map((label, day) => (
-                            <button
-                              key={day}
-                              type="button"
-                              onClick={() => setEditDays(toggleDayInList(editDays, day))}
-                              title="Día de la semana"
-                              className={`w-7 h-7 rounded-full text-xs font-medium border transition-colors ${
-                                editDays.includes(day)
-                                  ? "bg-app-primary text-white border-app-primary"
-                                  : "bg-white text-gray-500 border-gray-300 hover:border-app-primary"
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
+                          <DayPicker days={editDays} onChange={setEditDays} />
                         </div>
                       </div>
                       {editError && (
@@ -516,63 +588,31 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                 />
               </label>
               <div className="flex items-center gap-1">
-                {WEEKDAY_LABELS.map((label, day) => (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => setNewDays(toggleDayInList(newDays, day))}
-                    title="Día de la semana"
-                    className={`w-7 h-7 rounded-full text-xs font-medium border transition-colors ${
-                      newDays.includes(day)
-                        ? "bg-app-primary text-white border-app-primary"
-                        : "bg-white text-gray-500 border-gray-300 hover:border-app-primary"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+                <DayPicker days={newDays} onChange={setNewDays} />
               </div>
             </div>
 
             {/* Collapsible: Permissions */}
-            <button
-              type="button"
-              onClick={() => setShowPermissions(!showPermissions)}
-              className="flex items-center gap-2 text-xs font-medium text-app-text-secondary hover:text-app-primary transition-colors"
+            <CollapsibleSection
+              open={showPermissions}
+              onToggle={() => setShowPermissions(!showPermissions)}
+              icon={<Shield size={13} />}
+              label="Permisos"
+              count={Object.keys(newToolPerms).length + Object.keys(newSkillPerms).length}
             >
-              {showPermissions ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              <Shield size={13} />
-              Permisos
-              {(Object.keys(newToolPerms).length > 0 || Object.keys(newSkillPerms).length > 0) && (
-                <span className="bg-app-primary/10 text-app-primary text-[10px] px-1.5 py-0.5 rounded-full">
-                  {Object.keys(newToolPerms).length + Object.keys(newSkillPerms).length}
-                </span>
-              )}
-            </button>
-            {showPermissions && (
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3">
                 {catalog.tools.length > 0 && (
                   <div>
                     <p className="text-xs font-medium text-app-text mb-1.5">Tools</p>
                     <div className="flex flex-wrap gap-1.5">
                       {catalog.tools.map((tool: CatalogItem) => (
-                        <label
+                        <PermissionCheckbox
                           key={tool.name}
-                          className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border cursor-pointer transition-colors ${
-                            newToolPerms[tool.name] === "allow"
-                              ? "bg-app-primary/10 border-app-primary text-app-primary"
-                              : "bg-white border-gray-300 text-gray-600 hover:border-app-primary"
-                          }`}
-                          title={tool.description}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={newToolPerms[tool.name] === "allow"}
-                            onChange={() => togglePermission(newToolPerms, setNewToolPerms, tool.name)}
-                            className="sr-only"
-                          />
-                          {tool.name}
-                        </label>
+                          name={tool.name}
+                          description={tool.description}
+                          checked={newToolPerms[tool.name] === "allow"}
+                          onChange={() => togglePermission(newToolPerms, setNewToolPerms, tool.name)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -582,23 +622,13 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                     <p className="text-xs font-medium text-app-text mb-1.5">Skills</p>
                     <div className="flex flex-wrap gap-1.5">
                       {catalog.skills.map((skill: CatalogItem) => (
-                        <label
+                        <PermissionCheckbox
                           key={skill.name}
-                          className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg border cursor-pointer transition-colors ${
-                            newSkillPerms[skill.name] === "allow"
-                              ? "bg-app-primary/10 border-app-primary text-app-primary"
-                              : "bg-white border-gray-300 text-gray-600 hover:border-app-primary"
-                          }`}
-                          title={skill.description}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={newSkillPerms[skill.name] === "allow"}
-                            onChange={() => togglePermission(newSkillPerms, setNewSkillPerms, skill.name)}
-                            className="sr-only"
-                          />
-                          {skill.name}
-                        </label>
+                          name={skill.name}
+                          description={skill.description}
+                          checked={newSkillPerms[skill.name] === "allow"}
+                          onChange={() => togglePermission(newSkillPerms, setNewSkillPerms, skill.name)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -607,24 +637,16 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                   <p className="text-xs text-app-text-secondary">No hay tools ni skills disponibles.</p>
                 )}
               </div>
-            )}
+            </CollapsibleSection>
 
             {/* Collapsible: Parameters */}
-            <button
-              type="button"
-              onClick={() => setShowParameters(!showParameters)}
-              className="flex items-center gap-2 text-xs font-medium text-app-text-secondary hover:text-app-primary transition-colors"
+            <CollapsibleSection
+              open={showParameters}
+              onToggle={() => setShowParameters(!showParameters)}
+              icon={<Sliders size={13} />}
+              label="Parámetros del modelo"
+              count={Object.keys(newParams).length}
             >
-              {showParameters ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              <Sliders size={13} />
-              Parámetros del modelo
-              {Object.keys(newParams).length > 0 && (
-                <span className="bg-app-primary/10 text-app-primary text-[10px] px-1.5 py-0.5 rounded-full">
-                  {Object.keys(newParams).length}
-                </span>
-              )}
-            </button>
-            {showParameters && (
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                 <div className="grid grid-cols-2 gap-2">
                   <label className="flex flex-col gap-1">
@@ -699,24 +721,16 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                   </label>
                 </div>
               </div>
-            )}
+            </CollapsibleSection>
 
             {/* Collapsible: Additional repetitions */}
-            <button
-              type="button"
-              onClick={() => setShowRepetitions(!showRepetitions)}
-              className="flex items-center gap-2 text-xs font-medium text-app-text-secondary hover:text-app-primary transition-colors"
+            <CollapsibleSection
+              open={showRepetitions}
+              onToggle={() => setShowRepetitions(!showRepetitions)}
+              icon={<Repeat size={13} />}
+              label="Horarios adicionales"
+              count={newRepetitions.length}
             >
-              {showRepetitions ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              <Repeat size={13} />
-              Horarios adicionales
-              {newRepetitions.length > 0 && (
-                <span className="bg-app-primary/10 text-app-primary text-[10px] px-1.5 py-0.5 rounded-full">
-                  {newRepetitions.length}
-                </span>
-              )}
-            </button>
-            {showRepetitions && (
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
                 {newRepetitions.map((slot, idx) => (
                   <div key={idx} className="flex items-center gap-2 flex-wrap">
@@ -730,22 +744,11 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                       />
                     </label>
                     <div className="flex items-center gap-0.5">
-                      {WEEKDAY_LABELS.map((label, day) => (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() =>
-                            updateRepetition(idx, { days: toggleDayInList(slot.days, day) })
-                          }
-                          className={`w-6 h-6 rounded-full text-[10px] font-medium border transition-colors ${
-                            slot.days.includes(day)
-                              ? "bg-app-primary text-white border-app-primary"
-                              : "bg-white text-gray-500 border-gray-300 hover:border-app-primary"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                      <DayPicker
+                        days={slot.days}
+                        onChange={(d) => updateRepetition(idx, { days: d })}
+                        size="sm"
+                      />
                     </div>
                     <button
                       type="button"
@@ -766,7 +769,7 @@ export function SchedulerModal({ open, onClose }: SchedulerModalProps) {
                   Agregar horario
                 </button>
               </div>
-            )}
+            </CollapsibleSection>
 
             {formError && (
               <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">

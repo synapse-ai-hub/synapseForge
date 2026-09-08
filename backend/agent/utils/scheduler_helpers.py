@@ -119,6 +119,31 @@ def _row_to_task(row: sqlite3.Row) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _validate_task_fields(name: str, prompt: str, time_str: str, days: list[int]) -> str | None:
+    """Validate the common task fields, returning an error message or ``None``.
+
+    Args:
+        name: Task name (already stripped).
+        prompt: Task description (already stripped).
+        time_str: Local time in ``HH:MM``.
+        days: Selected weekdays (0=Sunday .. 6=Saturday).
+
+    Returns:
+        An error message string if any field is invalid, otherwise ``None``.
+    """
+    if not name:
+        return "El nombre de la tarea es obligatorio."
+    if not _NAME_RE.match(name):
+        return "El nombre solo puede contener minúsculas, números, guiones y guiones bajos."
+    if not prompt:
+        return "La descripción de la tarea es obligatoria."
+    if not _is_valid_time(time_str):
+        return _TIME_RE_ERROR
+    if not days or any(not isinstance(d, int) or d < 0 or d > 6 for d in days):
+        return "Seleccioná al menos un día válido (0-6)."
+    return None
+
+
 def list_tasks() -> list[dict]:
     """Return all scheduled tasks sorted by time.
 
@@ -178,16 +203,9 @@ def add_task(
     """
     name = (name or "").strip()
     prompt = (prompt or "").strip()
-    if not name:
-        return {"status": "error", "message": "El nombre de la tarea es obligatorio."}
-    if not _NAME_RE.match(name):
-        return {"status": "error", "message": "El nombre solo puede contener minúsculas, números, guiones y guiones bajos."}
-    if not prompt:
-        return {"status": "error", "message": "La descripción de la tarea es obligatoria."}
-    if not _is_valid_time(time_str):
-        return {"status": "error", "message": _TIME_RE_ERROR}
-    if not days or any(not isinstance(d, int) or d < 0 or d > 6 for d in days):
-        return {"status": "error", "message": "Seleccioná al menos un día válido (0-6)."}
+    error = _validate_task_fields(name, prompt, time_str, days)
+    if error:
+        return {"status": "error", "message": error}
 
     now = datetime.now().isoformat()
     task_id = uuid.uuid4().hex
@@ -258,20 +276,12 @@ def update_task(
         return {"status": "error", "message": "La tarea no existe."}
 
     new_name = name.strip() if isinstance(name, str) else current["name"]
-    if not new_name:
-        return {"status": "error", "message": "El nombre de la tarea es obligatorio."}
-    if not _NAME_RE.match(new_name):
-        return {"status": "error", "message": "El nombre solo puede contener minúsculas, números, guiones y guiones bajos."}
-
     new_prompt = prompt.strip() if isinstance(prompt, str) else current["prompt"]
-    if not new_prompt:
-        return {"status": "error", "message": "La descripción de la tarea es obligatoria."}
     new_time = time_str if time_str else current["time"]
-    if not _is_valid_time(new_time):
-        return {"status": "error", "message": _TIME_RE_ERROR}
     new_days = sorted(set(days)) if days else current["days"]
-    if not new_days or any(not isinstance(d, int) or d < 0 or d > 6 for d in new_days):
-        return {"status": "error", "message": "Seleccioná al menos un día válido (0-6)."}
+    error = _validate_task_fields(new_name, new_prompt, new_time, new_days)
+    if error:
+        return {"status": "error", "message": error}
     new_enabled = current["enabled"] if enabled is None else bool(enabled)
     # For permissions/params: a dict (even empty) means "clear", None means "keep".
     new_tool_perms = tool_permissions if isinstance(tool_permissions, dict) or tool_permissions is None else current.get("tool_permissions")
@@ -474,12 +484,7 @@ def mark_slot_fired(task_id: str, slot_key: str, date_str: str) -> None:
             row = conn.execute(
                 "SELECT slot_runs FROM scheduled_tasks WHERE id = ?", (task_id,)
             ).fetchone()
-            slot_runs = {}
-            if row and row["slot_runs"]:
-                try:
-                    slot_runs = json.loads(row["slot_runs"])
-                except (json.JSONDecodeError, TypeError):
-                    slot_runs = {}
+            slot_runs = _parse_json_field(row["slot_runs"] if row else None, {})
             slot_runs[slot_key] = date_str
         with db_transaction() as conn:
             conn.execute(
@@ -552,19 +557,6 @@ def record_run(
     except Exception as exc:
         log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:record_run")
         logger.warning("Failed to record task run: %s", exc)
-
-
-def mark_fired(task_id: str, date_str: str) -> None:
-    """Mark a task as already fired on the given date (dedup guard)."""
-    try:
-        with db_transaction() as conn:
-            conn.execute(
-                "UPDATE scheduled_tasks SET last_run_date = ? WHERE id = ?",
-                (date_str, task_id),
-            )
-    except Exception as exc:
-        log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:mark_fired")
-        logger.warning("Failed to mark task fired: %s", exc)
 
 
 def _is_valid_time(time_str: str) -> bool:

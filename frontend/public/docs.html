@@ -566,12 +566,14 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>Agenda (tareas programadas)</h3>
           <p>En el header, el botón <strong>Agenda</strong> abre el panel de tareas programadas, donde podés indicarle al agente qué hacer y cuándo, sin estar presente:</p>
           <ul>
-            <li><strong>Agregar una tarea</strong>: descripción de lo que tiene que hacer el agente, hora (<code>HH:MM</code>) y días de la semana.</li>
+            <li><strong>Agregar una tarea</strong>: nombre, descripción de lo que tiene que hacer el agente, hora (<code>HH:MM</code>) y días de la semana.</li>
+            <li><strong>Equipar la tarea</strong>: seleccionar las tools y skills que tendrá disponibles, y ajustar los parámetros del modelo.</li>
+            <li><strong>Refinar el prompt</strong>: el wizard del LLM puede refinar la descripción de la tarea.</li>
             <li><strong>Editar el horario</strong> de una tarea existente (hora y días).</li>
             <li><strong>Eliminar</strong> tareas.</li>
-            <li><strong>Guardar</strong>: valida todas las tareas antes de confirmar (descripción presente, horario válido, al menos un día).</li>
+            <li><strong>Guardar</strong>: valida todas las tareas antes de confirmar (nombre y descripción presentes, horario válido, al menos un día).</li>
           </ul>
-          <p>La zona horaria se toma directamente del sistema. Las tareas se ejecutan con el modelo y proveedor seleccionados, como si las hubieras pedido desde el chat.</p>
+          <p>La zona horaria se toma directamente del sistema. Al activar una tarea se crea un sub-agente dedicado con los permisos seleccionados, y se ejecuta con el modelo y proveedor seleccionados, como si la hubieras pedido desde el chat.</p>
           <h3>Notificaciones</h3>
           <p>Junto al botón de Agenda hay una <strong>campanita</strong> que acumula una notificación por cada ejecución de tarea programada: indica si terminó con éxito o falló, con fecha y hora. Cada ejecución también se notifica por Telegram (ver la sección Telegram).</p>
           <h3>Historial</h3>

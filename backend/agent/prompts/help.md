@@ -261,12 +261,14 @@ El agente puede ejecutar tareas en horarios definidos por el usuario. La zona ho
 
 El header tiene un botón **Agenda** que abre el panel de tareas programadas, donde se puede:
 
-1. **Agregar una tarea**: descripción de lo que debe hacer el agente, hora (`HH:MM`) y días de la semana.
-2. **Editar el horario** de una tarea existente (hora y días).
-3. **Eliminar** tareas.
-4. **Guardar**: valida todas las tareas antes de confirmar (descripción presente, horario válido, al menos un día).
+1. **Agregar una tarea**: nombre, descripción de lo que debe hacer el agente, hora (`HH:MM`) y días de la semana.
+2. **Equipar la tarea**: seleccionar las tools y skills que tendrá disponibles, y ajustar los parámetros del modelo.
+3. **Refinar el prompt**: el wizard del LLM puede refinar la descripción de la tarea.
+4. **Editar el horario** de una tarea existente (hora y días).
+5. **Eliminar** tareas.
+6. **Guardar**: valida todas las tareas antes de confirmar (nombre y descripción presentes, horario válido, al menos un día).
 
-Las tareas se persisten en la base de datos SQLite interna.
+Las tareas se persisten en la base de datos SQLite interna. Al activar una tarea se crea un sub-agente dedicado con los permisos seleccionados (tools, skills y parámetros), sin prompt de sistema: la descripción refinada se usa como instrucción del usuario en la ejecución.
 
 ### Ejecución y notificaciones
 

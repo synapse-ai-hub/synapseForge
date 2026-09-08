@@ -28,6 +28,8 @@ import sys
 import uuid
 from datetime import datetime
 
+import yaml
+
 # ---------------------------------------------------------------------------
 # Ensure the project root is in sys.path for absolute imports
 # ---------------------------------------------------------------------------
@@ -207,6 +209,14 @@ def add_task(
     if error:
         return {"status": "error", "message": error}
 
+    # Every task gets a dedicated sub-agent named after the task; reject it
+    # if that name is already taken by a user-created agent.
+    if _agent_name_conflict(name):
+        return {
+            "status": "error",
+            "message": f"El nombre '{name}' coincide con un agente existente. Elegí otro nombre.",
+        }
+
     now = datetime.now().isoformat()
     task_id = uuid.uuid4().hex
     try:
@@ -231,10 +241,26 @@ def add_task(
                     now,
                 ),
             )
+        task = get_task(task_id)
+        # Create the sub-agent (permissions only, no system prompt) on
+        # activation. If it cannot be created (name collision or write
+        # failure), roll back so we don't leave a task that can never run.
+        try:
+            agent_name = _ensure_scheduler_agent(task)
+        except Exception as exc:
+            log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:add_task(agent)")
+            agent_name = None
+        if agent_name is None:
+            with db_transaction() as conn:
+                conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
+            return {
+                "status": "error",
+                "message": "No se pudo crear el sub-agente de la tarea (nombre en conflicto o error de escritura).",
+            }
         return {
             "status": "success",
             "message": "Tarea programada creada.",
-            "task": get_task(task_id),
+            "task": task,
         }
     except Exception as exc:
         log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:add_task")
@@ -284,10 +310,39 @@ def update_task(
         return {"status": "error", "message": error}
     new_enabled = current["enabled"] if enabled is None else bool(enabled)
     # For permissions/params: a dict (even empty) means "clear", None means "keep".
-    new_tool_perms = tool_permissions if isinstance(tool_permissions, dict) or tool_permissions is None else current.get("tool_permissions")
-    new_skill_perms = skill_permissions if isinstance(skill_permissions, dict) or skill_permissions is None else current.get("skill_permissions")
-    new_params = parameters if isinstance(parameters, dict) or parameters is None else current.get("parameters")
-    new_reps = repetitions if isinstance(repetitions, list) or repetitions is None else current.get("repetitions")
+    new_tool_perms = tool_permissions if isinstance(tool_permissions, dict) else current.get("tool_permissions")
+    new_skill_perms = skill_permissions if isinstance(skill_permissions, dict) else current.get("skill_permissions")
+    new_params = parameters if isinstance(parameters, dict) else current.get("parameters")
+    new_reps = repetitions if isinstance(repetitions, list) else current.get("repetitions")
+
+    # Every task gets a dedicated sub-agent named after the task. Reject if
+    # the (new) name collides with a user-created agent (on rename, or when
+    # the task is created/updated with a name already taken).
+    if _agent_name_conflict(new_name):
+        return {
+            "status": "error",
+            "message": f"El nombre '{new_name}' coincide con un agente existente. Elegí otro nombre.",
+        }
+
+    # Sync the sub-agent BEFORE persisting so a failed write never leaves the
+    # DB pointing at a name without its .md, and a rename never deletes the old
+    # .md before the new one exists. Runs regardless of the enabled flag so the
+    # "every task has a sub-agent" invariant holds even while disabled.
+    sync_task = dict(current)
+    sync_task["name"] = new_name
+    sync_task["tool_permissions"] = new_tool_perms
+    sync_task["skill_permissions"] = new_skill_perms
+    sync_task["parameters"] = new_params
+    try:
+        agent_name = _ensure_scheduler_agent(sync_task)
+    except Exception as exc:
+        log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:update_task(agent)")
+        agent_name = None
+    if agent_name is None:
+        return {
+            "status": "error",
+            "message": "No se pudo crear el sub-agente de la tarea (nombre en conflicto o error de escritura).",
+        }
 
     try:
         with db_transaction() as conn:
@@ -310,10 +365,15 @@ def update_task(
                     task_id,
                 ),
             )
+        # A renamed task removes its old scheduler agent (the new one already
+        # exists from the pre-persist sync above).
+        if new_name != current["name"]:
+            _cleanup_scheduler_agent(current["name"])
+        task = get_task(task_id)
         return {
             "status": "success",
             "message": "Tarea actualizada.",
-            "task": get_task(task_id),
+            "task": task,
         }
     except Exception as exc:
         log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:update_task")
@@ -365,80 +425,119 @@ def _get_agents_dir() -> str:
     return str(agents_dir)
 
 
-def _ensure_scheduler_agent(task: dict) -> str | None:
-    """Create the sub-agent ``.md`` for a scheduled task with permissions.
+def _agent_md_path(name: str) -> str:
+    """Return the full path to an agent's markdown file.
 
-    If the task has no tool/skill permissions configured, returns ``None``
-    (fallback to router).
+    Args:
+        name: The agent name (filename without ``.md``).
+
+    Returns:
+        The absolute path to ``<agents_dir>/<name>.md``.
+    """
+    return os.path.join(_get_agents_dir(), f"{name}.md")
+
+
+def _has_scheduler_flag(md_path: str) -> bool:
+    """Return ``True`` if an agent ``.md`` was created by the scheduler.
+
+    Checks the ``scheduler_task: true`` marker in the frontmatter so
+    user-created agents with the same name are never overwritten/deleted.
+
+    Args:
+        md_path: Full path to the agent markdown file.
+
+    Returns:
+        ``True`` when the file carries the scheduler marker.
+    """
+    try:
+        with open(md_path, encoding="utf-8") as f:
+            content = f.read()
+    except (OSError, UnicodeDecodeError):
+        return False
+    from backend.agent.permissions import _parse_frontmatter
+
+    return bool(_parse_frontmatter(content).get("scheduler_task"))
+
+
+def _agent_name_conflict(name: str) -> bool:
+    """Return ``True`` if a user-created agent already uses ``name``.
+
+    A scheduler task whose name collides with a user-created agent must not
+    overwrite it nor run with its (possibly broader) permissions/system
+    prompt, so the collision is treated as a hard error.
+
+    Args:
+        name: The task/agent name (filename without ``.md``).
+
+    Returns:
+        ``True`` if ``<agents_dir>/<name>.md`` exists without the
+        ``scheduler_task`` marker.
+    """
+    target = _agent_md_path(name)
+    return os.path.isfile(target) and not _has_scheduler_flag(target)
+
+
+def _ensure_scheduler_agent(task: dict) -> str | None:
+    """Create/refresh the sub-agent ``.md`` for a scheduled task.
+
+    Every scheduled task gets its own sub-agent named after the task. The
+    agent carries only the task's permissions (frontmatter, empty when the
+    task has none) and an **empty body** (no system prompt): the refined
+    prompt is sent as the user message at execution time and the permissions
+    are filtered by the normal agent loop.
+
+    If the name collides with a user-created agent or the file cannot be
+    written, returns ``None`` (the caller must treat this as an error).
 
     Args:
         task: Task dict from :func:`get_task`.
 
     Returns:
-        The agent name to pass to ``AgentLoop.run()``, or ``None``.
+        The agent name to pass to ``AgentLoop.run()``, or ``None`` on failure.
     """
     tool_perms = task.get("tool_permissions")
     skill_perms = task.get("skill_permissions")
-    # If neither is set, run as router (no custom sub-agent).
-    if tool_perms is None and skill_perms is None:
-        return None
 
     task_name = task["name"]
     params = task.get("parameters") or {}
-    prompt = task.get("prompt", "")
 
-    # Build frontmatter YAML.
-    lines = ["---"]
-    lines.append(f"name: {task_name}")
-    lines.append(f'description: "Sub-agente programado: {task_name}"')
-    lines.append("permission:")
-
+    # Build the frontmatter dict and dump it with yaml.safe_dump so strings
+    # with quotes/backslashes and nested dicts are escaped correctly. Tools go
+    # FLAT under `permission` (e.g. `read: allow`) and skills go under the
+    # nested `skill` block — the format `filter_tools` expects.
+    frontmatter: dict = {
+        "name": task_name,
+        "description": f"Sub-agente programado: {task_name}",
+        "scheduler_task": True,
+        "permission": {},
+    }
     if tool_perms:
-        lines.append("  tool:")
-        for k, v in tool_perms.items():
-            lines.append(f"    {k}: {v}")
-    else:
-        lines.append("  tool: {}")
-
+        frontmatter["permission"].update(tool_perms)
     if skill_perms:
-        lines.append("  skill:")
-        for k, v in skill_perms.items():
-            lines.append(f"    {k}: {v}")
-    else:
-        lines.append("  skill: {}")
-
-    # Parameters section.
+        frontmatter["permission"]["skill"] = skill_perms
     if params:
-        lines.append("parameters:")
-        for k, v in params.items():
-            if v is None:
-                lines.append(f"  {k}: null")
-            elif isinstance(v, str):
-                lines.append(f"  {k}: \"{v}\"")
-            else:
-                lines.append(f"  {k}: {v}")
+        frontmatter["parameters"] = params
 
-    lines.append("---")
-    lines.append("")
-    lines.append(prompt)
+    content = (
+        "---\n"
+        + yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False)
+        + "---\n"
+    )
 
-    content = "\n".join(lines) + "\n"
-
-    # Avoid overwriting a user-created agent with the same name.
-    agents_dir = _get_agents_dir()
-    target = os.path.join(agents_dir, f"{task_name}.md")
-    if os.path.isfile(target):
-        logger.warning(
-            "Agent '%s' already exists; skipping scheduler agent creation.",
-            task_name,
+    # Never overwrite a user-created agent with the same name.
+    if _agent_name_conflict(task_name):
+        log_error(
+            f"Agent '{task_name}' already exists (user-created); cannot create scheduler agent.",
+            source="backend/agent/utils/scheduler_helpers.py:_ensure_scheduler_agent",
         )
-        # Still return the name — the existing agent will be used.
-        return task_name
+        logger.warning("Agent '%s' already exists (user-created); scheduler agent not created.", task_name)
+        return None
 
+    target = _agent_md_path(task_name)
     try:
         with open(target, "w", encoding="utf-8") as f:
             f.write(content)
-        logger.info("Scheduler agent created: %s", target)
+        logger.info("Scheduler agent synced: %s", target)
     except OSError as exc:
         log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:_ensure_scheduler_agent")
         logger.warning("Failed to create scheduler agent %s: %s", task_name, exc)
@@ -450,13 +549,15 @@ def _ensure_scheduler_agent(task: dict) -> str | None:
 def _cleanup_scheduler_agent(task_name: str) -> None:
     """Remove the sub-agent ``.md`` created by the scheduler for a task.
 
+    Only removes files carrying the ``scheduler_task`` marker so
+    user-created agents with the same name are never deleted.
+
     Args:
         task_name: The task/agent name (filename without ``.md``).
     """
-    agents_dir = _get_agents_dir()
-    target = os.path.join(agents_dir, f"{task_name}.md")
+    target = _agent_md_path(task_name)
     try:
-        if os.path.isfile(target):
+        if os.path.isfile(target) and _has_scheduler_flag(target):
             os.remove(target)
             logger.info("Scheduler agent removed: %s", target)
     except OSError as exc:
@@ -571,8 +672,8 @@ def _is_valid_time(time_str: str) -> bool:
 async def execute_task(task: dict) -> None:
     """Run a scheduled task through the normal agent loop and notify.
 
-    Creates a dedicated session, streams the agent loop (discarding SSE
-    chunks but detecting failures), records the run and notifies the web UI
+    Creates a dedicated session, streams the agent loop (consuming SSE chunks
+    but detecting failures), records the run and notifies the web UI
     (event bus) and every allowed Telegram chat.
 
     Args:
@@ -586,9 +687,6 @@ async def execute_task(task: dict) -> None:
     started_at = datetime.now().isoformat()
     session_id = uuid.uuid4().hex
 
-    # Ensure sub-agent .md exists if the task has permissions.
-    agent_name = _ensure_scheduler_agent(task)
-
     # Create the session first so messages have a parent row.
     try:
         session_manager.create_session(session_id, metadata={"source": "scheduler"})
@@ -598,23 +696,46 @@ async def execute_task(task: dict) -> None:
 
     status = "success"
     detail = ""
+    last_chunk = ""
     try:
         from backend.agent.loop import AgentLoop
 
-        agent_loop = AgentLoop(agent=agent, session_manager=session_manager)
-        run_kwargs: dict = {"session_id": session_id, "user_message": prompt}
-        if agent_name:
-            run_kwargs["agent_name"] = agent_name
-        async for event in agent_loop.run(**run_kwargs):
-            # The loop yields dicts; terminal failures arrive as "error"
-            # events (real exceptions raise and are caught below).
-            etype = event.get("type") if isinstance(event, dict) else None
-            if etype == "error":
-                status = "error"
-                detail = str(event.get("content", ""))
-            elif etype == "aborted" and status == "success":
-                status = "error"
-                detail = "Ejecución cancelada."
+        # The sub-agent .md must already exist (created on add_task, refreshed
+        # on update_task). Never rewrite it here — just verify it's available.
+        agent_name = task["name"]
+        target = _agent_md_path(agent_name)
+        if not os.path.isfile(target):
+            status = "error"
+            detail = "No se pudo realizar la tarea: el agente correspondiente no está disponible."
+            log_error(detail, source="backend/agent/utils/scheduler_helpers.py:execute_task(agent)")
+        else:
+            agent_loop = AgentLoop(agent=agent, session_manager=session_manager)
+            # Pass the task's own permissions directly (source of truth) so the
+            # loop filters tools/skills/parameters exactly like a normal
+            # delegation, without re-reading the .md.
+            run_kwargs: dict = {
+                "session_id": session_id,
+                "user_message": prompt,
+                "agent_name": agent_name,
+                "tool_permissions": task.get("tool_permissions") or {},
+                "skill_permissions": task.get("skill_permissions") or {},
+                "parameters": task.get("parameters") or {},
+            }
+            async for _event in agent_loop.run(**run_kwargs):
+                # run() yields raw SSE strings; consume the stream so the loop
+                # advances. Terminal failures are detected afterwards via the
+                # persisted assistant message status (see
+                # get_last_assistant_message), since run() swallows internal
+                # errors and emits a generic chunk + [DONE]. We also track the
+                # last chunk to catch the max_iterations marker, which ends the
+                # stream without persisting a final assistant message.
+                if isinstance(_event, str) and _event.startswith("data: "):
+                    try:
+                        payload = json.loads(_event[len("data: "):].strip())
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    if payload.get("type") == "chunk":
+                        last_chunk = payload.get("content", "")
     except Exception as exc:
         status = "error"
         detail = str(exc)
@@ -623,20 +744,31 @@ async def execute_task(task: dict) -> None:
 
     finished_at = datetime.now().isoformat()
 
-    # Read the final assistant answer from the DB (single source of truth),
-    # reusing the same helper the chat route uses for the Telegram reply.
+    # Read the final assistant answer from the DB (single source of truth).
     final_text = ""
     if status == "success":
         try:
-            from backend.routes.chat import _get_last_assistant_text
-
-            final_text = _get_last_assistant_text(session_id, turn_number=1)
+            msg = session_manager.get_last_assistant_message(session_id, turn_number=1)
+            final_text = (msg.get("content") or "").strip() if msg else ""
+            # The loop only persists the assistant message with status="success"
+            # on the happy path; fatal/retry-exhausted errors save it without
+            # that status. Detect those so a failed run is not reported as success.
+            last_status = msg.get("status") if msg else None
+            if last_status != "success":
+                status = "error"
+                detail = "El agente no completó la tarea (error del proveedor)."
         except Exception as exc:
             log_error(str(exc), source="backend/agent/utils/scheduler_helpers.py:execute_task(final_text)")
             logger.warning("Could not read scheduler final text: %s", exc)
         if not final_text:
             status = "error"
             detail = "El agente no produjo respuesta."
+        # max_iterations ends the stream without persisting a final assistant
+        # message (the last one on DB is an intermediate tool-call message with
+        # status="success"), so detect its marker chunk explicitly.
+        if isinstance(last_chunk, str) and "límite de iteraciones" in last_chunk:
+            status = "error"
+            detail = "El agente alcanzó el límite de iteraciones."
 
     if status == "success":
         detail = final_text[:300]

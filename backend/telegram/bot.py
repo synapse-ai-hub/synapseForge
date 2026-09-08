@@ -1658,7 +1658,12 @@ class TelegramBot:
                     chat_id, "No entendí los días. Ejemplos: 'todos', 'L X V', '0 2 4'."
                 )
                 return
-            result = scheduler_db.add_task(data.get("prompt", ""), data.get("time", ""), days)
+            result = scheduler_db.add_task(
+                name=scheduler_db._slugify(data.get("prompt", "")),
+                prompt=data.get("prompt", ""),
+                time_str=data.get("time", ""),
+                days=days,
+            )
             self._awaiting.pop(chat_id, None)
             self._mode_data.pop(chat_id, None)
             await self.send_message(chat_id, result["message"])
@@ -1751,7 +1756,7 @@ class TelegramBot:
                     chat_id, "No entendí los días. Ejemplos: 'todos', 'L X V', '0 2 4'."
                 )
                 return
-            result = scheduler_db.update_task(data["task_id"], time_str=data["time"], days=days)
+            result = scheduler_db.update_task(data["task_id"], time_str=data["time"], days=days)  # noqa: E501 — name/prompt/permissions unchanged via Telegram
             self._awaiting.pop(chat_id, None)
             self._mode_data.pop(chat_id, None)
             await self.send_message(chat_id, result["message"])

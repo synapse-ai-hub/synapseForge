@@ -84,13 +84,9 @@ def _get_last_assistant_text(session_id: str, turn_number: int) -> str:
         The last assistant message content of that turn, or ``""`` if none.
     """
     try:
-        messages = session_manager.load_messages(session_id, max_turns=0)
-
-        for msg in reversed(messages):
-            if msg.get("role") == "assistant" and msg.get("turn_number") == turn_number:
-                content = (msg.get("content") or "").strip()
-
-                return content
+        msg = session_manager.get_last_assistant_message(session_id, turn_number)
+        if msg:
+            return (msg.get("content") or "").strip()
     except Exception as exc:
         log_error(str(exc), source="backend/routes/chat.py:_get_last_assistant_text")
         logger.warning("Failed to load last assistant message: %s", exc)

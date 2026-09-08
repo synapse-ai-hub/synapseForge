@@ -175,7 +175,7 @@ Control remoto del agente. Mandá mensajes, cambiá modelos, creá skills/tools,
 
 ### Tareas programadas
 
-Definí tareas (prompt + hora + días) desde la UI o Telegram. El backend las ejecuta con el modelo seleccionado y notifica vía la UI y Telegram.
+Definí tareas (nombre + prompt + hora + días) desde la UI o Telegram. Cada tarea se puede equipar con tools, skills y parámetros del modelo, y su prompt se puede refinar con el wizard del LLM. Al activar una tarea, el backend crea un sub-agente dedicado con esos permisos y lo ejecuta en el horario definido, notificando vía la UI y Telegram.
 
 ---
 

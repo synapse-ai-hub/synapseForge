@@ -6,6 +6,14 @@ import {
 } from "./chat/ChatInterface";
 import { HistoryModal } from "./components/HistoryModal";
 import { MetricsModal } from "./components/MetricsModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
+import { UsageTab } from "./components/UsageTab";
+import { BillingTab } from "./components/BillingTab";
 import { SchedulerModal } from "./components/SchedulerModal";
 import { SetupScreen } from "./components/SetupScreen";
 import { Sidebar } from "./components/Sidebar";
@@ -122,7 +130,8 @@ function App() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showMetrics, setShowMetrics] = useState(false);
-  const [metricsTab, setMetricsTab] = useState<"usage" | "billing" | null>(null);
+  const [showUsage, setShowUsage] = useState(false);
+  const [showBilling, setShowBilling] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
   const [verboseMode, setVerboseMode] = useState<boolean>(
     () => localStorage.getItem("verboseMode") === "true"
@@ -416,7 +425,7 @@ const handleTelegramToggle = useCallback((val: boolean) => {
           onNewChat={handleNewChat}
           onSessionEnd={handleSessionEnd}
           onShowMetrics={() => setShowMetrics(true)}
-          onShowUsage={() => { setMetricsTab("usage"); setShowMetrics(true); }}
+          onShowUsage={() => setShowUsage(true)}
           onShowBilling={() => setShowBilling(true)}
           onSessionTitleUpdate={handleSessionTitleUpdate}
           verboseMode={verboseMode}
@@ -434,11 +443,31 @@ const handleTelegramToggle = useCallback((val: boolean) => {
       />
 
       <MetricsModal
-        key={metricsTab || "default"}
         open={showMetrics}
-        onClose={() => { setShowMetrics(false); setMetricsTab(null); }}
-        initialTab={metricsTab || undefined}
+        onClose={() => setShowMetrics(false)}
       />
+
+      <Dialog open={showUsage} onOpenChange={(o) => { if (!o) setShowUsage(false); }}>
+        <DialogContent className="flex h-[620px] max-w-4xl w-[720px] flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle>Uso</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+            <UsageTab />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBilling} onOpenChange={(o) => { if (!o) setShowBilling(false); }}>
+        <DialogContent className="flex h-[620px] max-w-4xl w-[720px] flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle>Facturación</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+            <BillingTab />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <SchedulerModal
         open={showScheduler}

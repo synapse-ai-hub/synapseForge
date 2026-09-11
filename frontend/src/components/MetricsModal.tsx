@@ -23,13 +23,16 @@ import metricsService, {
   type ModelMetrics,
   type ErrorMetrics,
 } from "../services/metricsService";
+import { UsageTab } from "./UsageTab";
+import { BillingTab } from "./BillingTab";
 
 interface MetricsModalProps {
   open: boolean;
   onClose: () => void;
+  initialTab?: "overview" | "sessions" | "tools" | "models" | "errors" | "usage" | "billing";
 }
 
-type TabId = "overview" | "sessions" | "tools" | "models" | "errors";
+type TabId = "overview" | "sessions" | "tools" | "models" | "errors" | "usage" | "billing";
 
 interface MetricsData {
   overview: MetricsOverview | null;
@@ -170,8 +173,8 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function MetricsModal({ open, onClose }: MetricsModalProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+export function MetricsModal({ open, onClose, initialTab }: MetricsModalProps) {
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab || "overview");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<MetricsData>(EMPTY_METRICS);
@@ -229,6 +232,8 @@ export function MetricsModal({ open, onClose }: MetricsModalProps) {
     { id: "tools", label: "Herramientas" },
     { id: "models", label: "Modelos" },
     { id: "errors", label: "Errores" },
+    { id: "usage", label: "Uso" },
+    { id: "billing", label: "Facturación" },
   ];
 
   return (
@@ -263,7 +268,11 @@ export function MetricsModal({ open, onClose }: MetricsModalProps) {
 
         {/* Content — fixed height with scroll */}
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          {loading ? (
+          {activeTab === "usage" ? (
+            <UsageTab />
+          ) : activeTab === "billing" ? (
+            <BillingTab />
+          ) : loading ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-app-text-secondary">
               <RefreshCw size={24} className="animate-spin text-app-primary" />
               Cargando métricas...

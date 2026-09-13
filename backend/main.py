@@ -257,12 +257,12 @@ async def lifespan(app: FastAPI):
         from backend.agent.utils import provider_keys
         from backend.agent.utils.vector_db import get_vector_db
 
-        if provider_keys.get_key("OPENROUTER"):
+        if provider_keys.get_key("GOOGLE"):
             await asyncio.to_thread(get_vector_db)
             logger.info("RAG vector DB initialized at startup.")
         else:
             logger.warning(
-                "Sin API key de OpenRouter — la fuente de conocimiento "
+                "Sin API key de Google — la fuente de conocimiento "
                 "(RAG) queda deshabilitada hasta configurarla."
             )
     except Exception as exc:

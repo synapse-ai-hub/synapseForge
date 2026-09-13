@@ -10,7 +10,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 from typing import Any, Dict, Generator
 import asyncio
-from groq import AsyncGroq
 try:
     # Optional dependency: the LOCAL (Ollama) provider needs the ``ollama``
     # package, but the app must start without it installed.
@@ -45,7 +44,7 @@ from backend.agent.utils.contract import (
 
 from backend.agent.tools import Tools
 
-from backend.agent.utils.model_catalog import translate_reasoning, get_reasoning_streaming_config
+from backend.agent.utils.model_catalog import translate_reasoning, get_reasoning_streaming_config, get_provider_api_type
 from backend.utils.spend_handler import calculate_cost, record_spend
 
 # Marcadores de comentarios usados en este proyecto:
@@ -57,6 +56,50 @@ from backend.utils.spend_handler import calculate_cost, record_spend
 # DEBUG  : código o mensajes usados solo para depuración temporal.
 # OK     : bloque probado y estable en las condiciones actuales.
 # PROD   : código / config específica de producción; tocar con extremo cuidado.
+
+_LEGACY_API_TYPES: dict[str, str] = {
+    "GROQ": "openai-compatible",
+    "OPENROUTER": "openai-compatible",
+    "OPENAI": "openai-compatible",
+    "DEEPSEEK": "openai-compatible",
+    "XAI": "openai-compatible",
+    "TOGETHER": "openai-compatible",
+    "FIREWORKS": "openai-compatible",
+    "CEREBRAS": "openai-compatible",
+    "MISTRAL": "openai-compatible",
+    "PERPLEXITY": "openai-compatible",
+    "META": "openai-compatible",
+    "MOONSHOTAI": "openai-compatible",
+    "ZHIPUAI": "openai-compatible",
+    "ALIBABA": "openai-compatible",
+    "GOOGLE": "google",
+    "LOCAL": "ollama",
+}
+"""Fallback name-based API types.
+
+Used only when the local catalog has no rows for the provider (e.g.
+sync never ran). Keeps the pre-refactor behavior for the known
+providers instead of rejecting them.
+"""
+
+
+def _resolve_api_type(effective_provider: str | None) -> tuple[str, str]:
+    """Resolve provider name and API type for LLM dispatch.
+
+    Args:
+        effective_provider: Provider name or ``None``.
+
+    Returns:
+        Tuple ``(provider_u, api_type)`` where ``provider_u`` is the
+        upper-cased name (``""`` when missing) and ``api_type`` is
+        ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
+        ``"unknown"``.
+    """
+    provider_u = (effective_provider or "").upper()
+    api_type = get_provider_api_type(effective_provider or "")
+    if api_type == "unknown":
+        api_type = _LEGACY_API_TYPES.get(provider_u, "unknown")
+    return provider_u, api_type
 
 
 load_dotenv()  
@@ -100,7 +143,7 @@ def _signature_from_str(value: Any) -> Any:
 
 class Agent():
     '''
-    Core class for interacting with LLMs (Groq API or local Ollama) with
+    Core class for interacting with LLMs (cloud APIs or local Ollama) with
     integrated logging and file management.
 
     This class centralizes interaction with LLM providers and provides helper
@@ -114,22 +157,16 @@ class Agent():
     cloud clients.
 
     ## Attributes:
-        - __api_key (str): API key used to authenticate with the Groq client
-          (encrypted DB storage only).
         - __google_api_key (str): API key for the Google GenAI client.
-        - __openrouter_api_key (str): API key for the OpenRouter client.
-        - provider (str | None): ``GROQ``, ``LOCAL``, ``GOOGLE`` or
-          ``OPENROUTER``; set at runtime by the model selection endpoint.
+        - provider (str | None): ``LOCAL`` or any curated cloud provider
+          name; set at runtime by the model selection endpoint.
         - _resolved_model (str | None): Currently resolved model identifier.
         - _context_window (int | None): Context window (tokens) of the
           resolved model.
-        - groq_client (AsyncGroq | None): Instantiated Groq client (only if
-          a Groq API key is available).
+        - _openai_clients (dict): OpenAI-compatible clients, one per
+          curated provider with a stored key.
         - google_client (genai.Client | None): Instantiated Google GenAI
           client (only if a Google API key is available).
-        - openrouter_client (AsyncOpenAI | None): Instantiated OpenRouter
-          client (OpenAI-compatible base URL; only if an OpenRouter API key
-          is available).
         - ollama_client (AsyncClient | None): Instantiated Ollama client
           (only if the local service is reachable).
         - usage (tuple | None): Last request usage metrics in the form
@@ -137,10 +174,9 @@ class Agent():
           completion_time, total_time).
 
     ## Notes:
-        - For provider ``GROQ``: requires a Groq API key stored in the DB.
+        - For any curated OpenAI-compatible provider:
+          requires its API key stored in the DB.
         - For provider ``GOOGLE``: requires a Google API key stored in the DB.
-        - For provider ``OPENROUTER``: requires an OpenRouter API key
-          stored in the DB.
         - For provider ``LOCAL``: requires ``ollama`` installed
           (``pip install ollama``) and the service running.
         - Methods that call the API catch exceptions and print errors rather
@@ -160,8 +196,9 @@ class Agent():
         '''
         Initialize the Agent.
 
-        Always tries to instantiate both LLM clients (Groq and Ollama)
-        regardless of availability.  If a client cannot be created (e.g.
+        Always tries to instantiate the LLM clients (every curated
+        OpenAI-compatible provider with a stored key, plus Ollama and
+        Google) regardless of availability.  If a client cannot be created (e.g.
         missing API key or Ollama not running), the corresponding attribute
         is set to ``None``.
 
@@ -176,21 +213,31 @@ class Agent():
         super().__init__()
 
         # Resolve API keys: encrypted DB storage only (no env fallback).
-        self.__api_key = provider_keys.resolve_api_key('GROQ')
         self.__google_api_key = provider_keys.resolve_api_key('GOOGLE')
-        self.__openrouter_api_key = provider_keys.resolve_api_key('OPENROUTER')
         self.provider: str | None = None
         self._resolved_model: str | None = None
         self._context_window: int | None = None
 
-        # Always try to create both clients.  The frontend dropdown will
-        # only show providers whose client initialised successfully.
+        # OpenAI-compatible clients, one per curated provider with a stored
+        # key (see ``provider_keys.PROVIDER_REGISTRY``). Each one uses
+        # ``AsyncOpenAI`` with its own ``base_url``.
+        self._openai_clients: dict[str, Any] = {}
         try:
-            self.groq_client = AsyncGroq(api_key=self.__api_key)
+            for _pid, _info in provider_keys.PROVIDER_REGISTRY.items():
+                if str(_info.get("api_type") or "") != "openai-compatible":
+                    continue
+                _pkey = provider_keys.resolve_api_key(_pid.upper())
+                _base = str(_info.get("base_url") or "").rstrip("/")
+                if _pkey and _base:
+                    self._openai_clients[_pid.upper()] = AsyncOpenAI(
+                        base_url=_base, api_key=_pkey
+                    )
         except Exception as e:
-            log_error(str(e), source="agent.py:__init__(groq)")
-            self.groq_client = None
+            log_error(str(e), source="agent.py:__init__(openai_clients)")
+            self._openai_clients = {}
 
+        # Always try to create the remaining clients.  The frontend dropdown
+        # will only show providers whose client initialised successfully.
         try:
             # ``ollama`` is an optional dependency: if the package is not
             # installed the LOCAL provider is simply unavailable.
@@ -208,19 +255,6 @@ class Agent():
         except Exception as e:
             log_error(str(e), source="agent.py:__init__(google)")
             self.google_client = None
-
-        try:
-            self.openrouter_client = (
-                AsyncOpenAI(
-                    base_url='https://openrouter.ai/api/v1',
-                    api_key=self.__openrouter_api_key,
-                )
-                if self.__openrouter_api_key
-                else None
-            )
-        except Exception as e:
-            log_error(str(e), source="agent.py:__init__(openrouter)")
-            self.openrouter_client = None
 
         self.usage = None
 
@@ -245,37 +279,55 @@ class Agent():
         the app.
 
         Args:
-            provider: ``GROQ``, ``GOOGLE`` or ``OPENROUTER``.
+            provider: Curated provider name (see
+                ``provider_keys.PROVIDER_REGISTRY``) or ``LOCAL``.
 
         Returns:
             Contract response ``{"status": "success"|"error", "message": ...}``.
         """
         provider_u = (provider or "").upper()
         try:
-            if provider_u == 'GROQ':
-                key = provider_keys.resolve_api_key('GROQ')
-                self.__api_key = key
-                self.groq_client = AsyncGroq(api_key=key) if key else None
-            elif provider_u == 'GOOGLE':
+            if provider_u == 'GOOGLE':
                 key = provider_keys.resolve_api_key('GOOGLE')
                 self.__google_api_key = key
                 self.google_client = genai.Client(api_key=key) if key else None
-            elif provider_u == 'OPENROUTER':
-                key = provider_keys.resolve_api_key('OPENROUTER')
-                self.__openrouter_api_key = key
-                self.openrouter_client = (
-                    AsyncOpenAI(
-                        base_url='https://openrouter.ai/api/v1', api_key=key
-                    )
-                    if key
+            elif provider_u.lower() in provider_keys.PROVIDER_REGISTRY:
+                info = provider_keys.PROVIDER_REGISTRY[provider_u.lower()]
+                if str(info.get("api_type") or "") != "openai-compatible":
+                    return {"status": "error", "message": f"Provider inválido: '{provider}'."}
+                key = provider_keys.resolve_api_key(provider_u)
+                base_url = str(info.get("base_url") or "").rstrip("/")
+                client = (
+                    AsyncOpenAI(base_url=base_url, api_key=key)
+                    if key and base_url
                     else None
                 )
+                self._openai_clients[provider_u] = client
             else:
                 return {"status": "error", "message": f"Provider inválido: '{provider}'."}
             return {"status": "success", "message": f"Cliente de {provider_u} actualizado."}
         except Exception as e:
             log_error(str(e), source="agent.py:rebuild_provider_client")
             return {"status": "error", "message": f"Error reconstruyendo el cliente: {e}"}
+
+    def get_openai_client(self, provider: str) -> Any | None:
+        """Return the OpenAI-compatible client for a provider, if available.
+
+        Resolves to its ``AsyncOpenAI`` entry in ``_openai_clients``. Returns ``None`` when
+        the provider has no stored key (or is not OpenAI-compatible).
+
+        Args:
+            provider: Provider name (case-insensitive).
+
+        Returns:
+            The client instance, or ``None`` if unavailable.
+        """
+        try:
+            provider_u = (provider or "").upper()
+            return self._openai_clients.get(provider_u)
+        except Exception as e:
+            log_error(str(e), source="agent.py:get_openai_client")
+            return None
 
     @property
     def default_model(self) -> str:
@@ -297,7 +349,7 @@ class Agent():
         """Normalize raw tool_calls to uniform ``{"id", "name", "args"}``.
 
         Args:
-            tool_calls: Raw tool_calls from the API (Groq or Ollama format).
+            tool_calls: Raw tool_calls from the API (OpenAI-compatible or Ollama format).
 
         Returns:
             Normalized list, or ``None`` if empty.
@@ -336,7 +388,7 @@ class Agent():
             except AttributeError as e:
                 log_error(str(e), source="agent.py:_normalize_tool_calls(id)")
                 entry["id"] = ""
-            # Groq always provides an id; Ollama may omit it. Generate one so
+            # OpenAI-compatible APIs always provide an id; Ollama may omit it. Generate one so
             # the assistant message and the tool result stay linked.
             if not entry["id"]:
                 entry["id"] = f"call_{uuid.uuid4().hex}"
@@ -360,23 +412,24 @@ class Agent():
         return normalized if normalized else None
 
     def _to_provider_tool_calls(
-        self, tool_calls: list[dict[str, Any]], is_groq: bool
+        self, tool_calls: list[dict[str, Any]], is_openai_compatible: bool
     ) -> list[dict[str, Any]]:
         """Convert normalized tool_calls to the SDK format each provider expects.
 
         Normalized tool_calls have the shape
-        ``{"id", "name", "args"}``. Both Groq (OpenAI-compatible)
+        ``{"id", "name", "args"}``. Both OpenAI-compatible providers
         and Ollama expect the wrapped shape
         ``{"id", "type": "function", "function": {"name", "arguments"}}``,
         but they differ in how ``arguments`` is encoded:
 
-        - **Groq**: ``function.arguments`` must be a **JSON string**.
+        - **OpenAI-compatible**: ``function.arguments`` must be a **JSON string**.
         - **Ollama**: ``function.arguments`` must be a **dict**.
 
         Args:
             tool_calls: Normalized list (``{"id", "name", "args"}``) or a
                 list that is already in SDK format (has a ``function`` key).
-            is_groq: ``True`` for Groq, ``False`` for Ollama.
+            is_openai_compatible: ``True`` for OpenAI-compatible providers,
+                ``False`` for Ollama.
 
         Returns:
             List of tool_calls in the provider's expected format.
@@ -388,13 +441,13 @@ class Agent():
             if "function" in tc:
                 func = dict(tc["function"])
                 args = func.get("arguments")
-                if is_groq and isinstance(args, dict):
+                if is_openai_compatible and isinstance(args, dict):
                     func["arguments"] = json.dumps(args, ensure_ascii=False)
-                elif not is_groq and isinstance(args, str):
+                elif not is_openai_compatible and isinstance(args, str):
                     try:
                         func["arguments"] = json.loads(args)
                     except (json.JSONDecodeError, TypeError) as e:
-                        log_error(str(e), source="agent.py:_to_provider_tool_calls(groq_args)")
+                        log_error(str(e), source="agent.py:_to_provider_tool_calls(func_args)")
                 out.append(
                     {
                         "id": tc.get("id") or f"call_{uuid.uuid4().hex}",
@@ -406,7 +459,7 @@ class Agent():
             # Normalized format: {"id", "name", "args"}
             tc_id = tc.get("id") or f"call_{uuid.uuid4().hex}"
             args = tc.get("args", {})
-            if is_groq:
+            if is_openai_compatible:
                 try:
                     func_args = json.dumps(args, ensure_ascii=False)
                 except (TypeError, ValueError) as e:
@@ -581,14 +634,14 @@ class Agent():
 
         return contents, system_instruction
 
-    def _record_spend(self, provider: str, model: str, usage: dict | None) -> None:
+    def _record_spend(self, provider: str | None, model: str, usage: dict | None) -> None:
         """Record token usage and cost for a completed LLM call.
 
         Cloud providers only (LOCAL/Ollama has no cost). Failures are logged
         and swallowed so they never break the calling flow.
 
         Args:
-            provider: The provider name (e.g. ``"GROQ"``, ``"OPENROUTER"``).
+            provider: The provider name (e.g. ``"OPENAI"``, ``"GOOGLE"``).
             model: The model identifier.
             usage: The usage report dict (``prompt_tokens``, ``completion_tokens``).
         """
@@ -615,12 +668,13 @@ class Agent():
                           top_p: float | None = None,
                           max_tokens: int | None = None,
                           cleaned_output: bool = True,
-                          tools: list | None = None,
-                          json_format: bool = False,
-                          reasoning: bool = True,
-                          budget_tokens: int | None = None,
-                          provider: str | None = None,
-                          **kwargs) -> ContractResponse:
+                           tools: list | None = None,
+                           json_format: bool = False,
+                           response_format: str | None = None,
+                           reasoning: bool = True,
+                           budget_tokens: int | None = None,
+                           provider: str | None = None,
+                           **kwargs) -> ContractResponse:
         """Send a chat completion and return content + tool_calls.
 
         Accepts either the classic ``prompt`` + ``system_content`` (backwards
@@ -637,17 +691,23 @@ class Agent():
             max_tokens: Max output tokens (``None`` = provider default).
             cleaned_output: Apply ``self.clean()`` to text content.
             tools: Tool definitions for function calling.
-            json_format: Force JSON output. For Groq: adds ``response_format={"type": "json_object"}``.
+            json_format: Force JSON output. For OpenAI-compatible providers: adds ``response_format={"type": "json_object"}``.
                          For Ollama: adds ``format="json"`` to the request.
+            response_format: Structured-output mode (``"text"``/``"json"``/``None``).
+                         ``"json"`` behaves like ``json_format=True`` on every
+                         provider (OpenAI-compatible ``response_format``,
+                         Ollama ``format="json"``, Gemini
+                         ``response_mime_type="application/json"``).
+                         ``"text"``/``None`` means plain text (default).
             reasoning: Whether to allow the model to reason (thinking). When
                         ``False``, reasoning is disabled on providers that support
-                        it (Ollama ``think=False``, Groq ``reasoning_effort="none"``)
+                        it (e.g. Ollama ``think=False``)
                         with a fallback so models that don't support the flag are
                         not broken.
             budget_tokens: Token budget for reasoning (OpenRouter/Gemini).
                         ``None`` means the provider default.
-            provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
-                       ``"GOOGLE"``, or ``"LOCAL"``).
+            provider: Optional provider override (any curated provider id,
+                        e.g. ``"OPENAI"``, ``"GOOGLE"``, or ``"LOCAL"``).
                        When ``None``, falls back to ``self.provider`` so existing
                        callers keep their current behavior. Pass an explicit value
                        from the agent loop when a sub-agent overrides the provider
@@ -661,13 +721,14 @@ class Agent():
             - ``usage`` — token / time report.
         """
         effective_provider = provider if provider is not None else self.provider
+        provider_u, api_type = _resolve_api_type(effective_provider)
         try:
             # --- Build messages ---
             if messages is not None:
-                # GROQ/OPENROUTER/LOCAL need SDK-wrapped tool_calls; GOOGLE
+                # OpenAI-compatible/LOCAL need SDK-wrapped tool_calls; GOOGLE
                 # keeps the normalized form (its converter reads it directly
                 # and must preserve extra keys like ``thought_signature``).
-                needs_sdk_tc = effective_provider.upper() in ('GROQ', 'LOCAL', 'OPENROUTER')
+                needs_sdk_tc = api_type in ('openai-compatible', 'ollama')
                 msgs = []
                 for m in messages:
                     m_copy = dict(m)
@@ -675,7 +736,7 @@ class Agent():
                     if tcs and isinstance(tcs, list) and needs_sdk_tc:
                         m_copy["tool_calls"] = self._to_provider_tool_calls(
                             tcs,
-                            effective_provider.upper() in ('GROQ', 'OPENROUTER'),
+                            api_type == 'openai-compatible',
                         )
                     msgs.append(m_copy)
             else:
@@ -692,15 +753,18 @@ class Agent():
             if max_tokens is not None:
                 api_kwargs['max_tokens'] = max_tokens
 
-            if effective_provider.upper() in ('GROQ', 'OPENROUTER'):
-                # ── Groq / OpenRouter (OpenAI-compatible) ──
-                is_groq = effective_provider.upper() == 'GROQ'
-                client = self.groq_client if is_groq else self.openrouter_client
+            if api_type == 'openai-compatible':
+                # ── OpenAI-compatible providers (registry) ──
+                client = self._openai_clients.get(provider_u)
+                if client is None:
+                    return validate_response(make_error_response(
+                        message=f"Cliente no disponible para el provider '{effective_provider}': falta la API key."
+                    ))
                 oa_kwargs = dict(api_kwargs)
                 if tools:
                     oa_kwargs["tools"] = tools
                     oa_kwargs["tool_choice"] = "auto"
-                if json_format:
+                if json_format or response_format == "json":
                     oa_kwargs["response_format"] = {"type": "json_object"}
 
                 reasoning_kwargs = translate_reasoning(
@@ -720,9 +784,11 @@ class Agent():
                         **kwargs,
                     )
                 except Exception as _ex:
-                    if is_groq and "reasoning" in str(_ex).lower():
+                    if "reasoning" in str(_ex).lower():
                         extra = oa_kwargs.get("extra_body", {})
+                        extra.pop("reasoning", None)
                         extra.pop("reasoning_effort", None)
+                        extra.pop("reasoning_format", None)
                         response = await client.chat.completions.create(
                             model=model,
                             messages=msgs,
@@ -740,7 +806,7 @@ class Agent():
                 total_tokens = response.usage.total_tokens
                 total_time = round(getattr(response.usage, 'total_time', 0) or 0, 2)
 
-            elif effective_provider.upper() == 'LOCAL':
+            elif api_type == 'ollama':
                 # ── Ollama (local) ──
                 options = {}
                 if temperature is not None:
@@ -763,7 +829,7 @@ class Agent():
                     model=model,
                     messages=msgs,
                     tools=tools if tools else None,
-                    format="json" if json_format else None,
+                    format="json" if (json_format or response_format == "json") else None,
                     options=options,
                     keep_alive=-1,
                 )
@@ -800,7 +866,7 @@ class Agent():
                 prompt_tokens = response.prompt_eval_count or 0
                 total_tokens = (response.eval_count or 0) + (response.prompt_eval_count or 0)
                 total_time = round((response.total_duration or 0) / 1_000_000_000, 2)
-            elif effective_provider.upper() == 'GOOGLE':
+            elif api_type == 'google':
                 # ── Google Gemini ──
                 contents, system_instruction = self._to_gemini_contents(msgs)
                 config_kwargs: dict[str, Any] = {}
@@ -809,12 +875,14 @@ class Agent():
                 if top_p is not None:
                     config_kwargs['top_p'] = top_p
                 if max_tokens is not None:
-                    config_kwargs['max_output_tokens'] = max_tokens
+                    config_kwargs['max_tokens'] = max_tokens
                 if system_instruction:
                     config_kwargs['system_instruction'] = system_instruction
                 gemini_tools = self._to_gemini_tools(tools)
                 if gemini_tools:
                     config_kwargs['tools'] = gemini_tools
+                if response_format == "json":
+                    config_kwargs['response_mime_type'] = 'application/json'
 
                 # Use translator for reasoning (Google)
                 reasoning_kwargs = translate_reasoning(
@@ -934,18 +1002,17 @@ class Agent():
             cleaned_output: Apply ``self.clean()`` to text chunks.
             tools: Tool definitions for function calling.
             stream_cancel_event: Optional event to cancel mid-stream.
-provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
-                       ``"GOOGLE"``, or ``"LOCAL"``).
-                       When ``None``, falls back to ``self.provider`` so existing
-                       callers keep their current behavior. Pass an explicit value
-                       from the agent loop when a sub-agent overrides the provider
-                       in its frontmatter.
+provider: Optional provider override (any curated provider id,
+                        e.g. ``"OPENAI"``, ``"GOOGLE"``, or ``"LOCAL"``).
+                        When ``None``, falls back to ``self.provider`` so existing
+                        callers keep their current behavior. Pass an explicit value
+                        from the agent loop when a sub-agent overrides the provider
+                        in its frontmatter.
             reasoning: Whether to allow the model to reason (thinking). When
                         ``False``, reasoning is disabled on providers that support
-                        it (Ollama skips the ``think=True`` attempt, Groq
-                        ``reasoning_effort="none"``) with a fallback so models
-                        that don't support the flag are not broken. Mirrors the
-                        handling in :meth:`llm_process`.
+                        it (e.g. Ollama skips the ``think=True`` attempt) with a
+                        fallback so models that don't support the flag are not
+                        broken. Mirrors the handling in :meth:`llm_process`.
             budget_tokens: Token budget for reasoning (OpenRouter/Gemini).
                         ``None`` means the provider default.
             **kwargs: Forwarded to the provider client.
@@ -954,11 +1021,16 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             Streaming event dicts.
         """
         effective_provider = provider if provider is not None else self.provider
+        provider_u, api_type = _resolve_api_type(effective_provider)
+        # Structured-output mode arrives via **kwargs (loop passes the raw
+        # "text"/"json"/None value). Pop it here so the raw string never
+        # reaches a provider SDK, and translate it per api_type below.
+        stream_format = kwargs.pop("response_format", None)
         if messages is not None:
-            # GROQ/OPENROUTER/LOCAL need SDK-wrapped tool_calls; GOOGLE
+            # OpenAI-compatible/LOCAL need SDK-wrapped tool_calls; GOOGLE
             # keeps the normalized form (its converter reads it directly
             # and must preserve extra keys like ``thought_signature``).
-            needs_sdk_tc = effective_provider.upper() in ('GROQ', 'LOCAL', 'OPENROUTER')
+            needs_sdk_tc = api_type in ('openai-compatible', 'ollama')
             msgs = []
             for m in messages:
                 m_copy = dict(m)
@@ -966,7 +1038,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                 if tcs and isinstance(tcs, list) and needs_sdk_tc:
                     m_copy["tool_calls"] = self._to_provider_tool_calls(
                         tcs,
-                        effective_provider.upper() in ('GROQ', 'OPENROUTER'),
+                        api_type == 'openai-compatible',
                     )
                 msgs.append(m_copy)
         else:
@@ -975,9 +1047,11 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                 msgs.append({'role': 'system', 'content': system_content})
             msgs.append({'role': 'user', 'content': prompt or ''})
 
-        if effective_provider.upper() in ('GROQ', 'OPENROUTER'):
-            is_groq = effective_provider.upper() == 'GROQ'
-            client = self.groq_client if is_groq else self.openrouter_client
+        if api_type == 'openai-compatible':
+            client = self._openai_clients.get(provider_u)
+            if client is None:
+                yield {'type': 'error', 'content': f"Cliente no disponible para el provider '{effective_provider}': falta la API key."}
+                return
             oa_kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": msgs,
@@ -990,6 +1064,8 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             if tools:
                 oa_kwargs["tools"] = tools
                 oa_kwargs["tool_choice"] = "auto"
+            if stream_format == "json":
+                oa_kwargs["response_format"] = {"type": "json_object"}
 
             reasoning_kwargs = translate_reasoning(
                 provider=effective_provider,
@@ -1000,16 +1076,16 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             if reasoning_kwargs:
                 oa_kwargs.setdefault("extra_body", {}).update(reasoning_kwargs)
 
-            if is_groq:
-                stream_cfg = get_reasoning_streaming_config(effective_provider)
+            stream_cfg = get_reasoning_streaming_config(effective_provider)
+            if stream_cfg:
                 oa_kwargs.setdefault("extra_body", {}).update(stream_cfg)
-            else:
-                oa_kwargs["stream_options"] = {"include_usage": True}
+            oa_kwargs["stream_options"] = {"include_usage": True}
             try:
                 stream = await client.chat.completions.create(**oa_kwargs)
             except Exception as _ex:
-                if is_groq and "reasoning" in str(_ex).lower():
+                if "reasoning" in str(_ex).lower():
                     extra = oa_kwargs.get("extra_body", {})
+                    extra.pop("reasoning", None)
                     extra.pop("reasoning_effort", None)
                     extra.pop("reasoning_format", None)
                     stream = await client.chat.completions.create(**oa_kwargs)
@@ -1021,23 +1097,15 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             has_dedicated_thinking = False  # si vimos delta.reasoning, no parseamos  thinking
             usage_data: dict[str, Any] | None = None
 
-            # print(f"[DEBUG-STREAM] Starting stream iteration, groq_kwargs keys: {list(groq_kwargs.keys())}")
+            # print(f"[DEBUG-STREAM] Starting stream iteration, oa_kwargs keys: {list(oa_kwargs.keys())}")
             async for chunk in stream:
-                # print(f"[DEBUG-CHUNK] chunk type={type(chunk).__name__}, choices={len(chunk.choices) if hasattr(chunk, 'choices') and chunk.choices else 0}, usage={getattr(chunk, 'usage', None)}, x_groq={getattr(chunk, 'x_groq', None)}")
+                # print(f"[DEBUG-CHUNK] chunk type={type(chunk).__name__}, choices={len(chunk.choices) if hasattr(chunk, 'choices') and chunk.choices else 0}, usage={getattr(chunk, 'usage', None)}")
                 if stream_cancel_event and stream_cancel_event.is_set():
                     yield {'type': 'aborted'}
                     return
-                # Capturar usage del chunk final (x_groq.usage)
+                # Capturar usage del chunk final (standard OpenAI field).
                 if getattr(chunk, 'usage', None):
                     _u = chunk.usage
-                    usage_data = {
-                        'prompt_tokens': _u.prompt_tokens,
-                        'completion_tokens': _u.completion_tokens,
-                        'total_tokens': _u.total_tokens,
-                        'total_time': round(getattr(_u, 'total_time', 0) or 0, 2),
-                    }
-                elif getattr(chunk, 'x_groq', None) and getattr(chunk.x_groq, 'usage', None):
-                    _u = chunk.x_groq.usage
                     usage_data = {
                         'prompt_tokens': _u.prompt_tokens,
                         'completion_tokens': _u.completion_tokens,
@@ -1047,7 +1115,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                 if chunk.choices:
                     delta = chunk.choices[0].delta
 
-                    # Accumulate streaming tool_calls (Groq sends them incrementally)
+                    # Accumulate streaming tool_calls (OpenAI-compatible providers send them incrementally)
                     if delta.tool_calls:
                         for tc in delta.tool_calls:
                             idx = tc.index
@@ -1061,7 +1129,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                                 if tc.function.arguments:
                                     accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
 
-                    # Groq / OpenAI-compatible reasoning (parsed mode)
+                    # OpenAI-compatible reasoning (parsed mode)
                     # print(f"[DEBUG-REASONING] delta.reasoning={getattr(delta, 'reasoning', 'MISSING')!r}, delta.content={getattr(delta, 'content', 'MISSING')!r}")
                     if delta and hasattr(delta, 'reasoning') and delta.reasoning:
                         has_dedicated_thinking = True
@@ -1100,7 +1168,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                     try:
                         args = json.loads(tc["arguments"]) if tc["arguments"] else {}
                     except json.JSONDecodeError as ex:
-                        log_error(str(ex), source="agent.py:llm_streaming(groq_args)")
+                        log_error(str(ex), source="agent.py:llm_streaming(provider_args)")
                         args = {}
                     normalized.append({
                         "id": tc["id"],
@@ -1108,7 +1176,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                         "args": args,
                     })
                 yield {'type': 'tool_calls_detected', 'content': normalized}
-        elif effective_provider.upper() == 'LOCAL':
+        elif api_type == 'ollama':
             options = {}
             if temperature is not None:
                 options['temperature'] = temperature
@@ -1127,6 +1195,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             # "on"/"off", "low"/"medium"/"high"/"max", "default"
             chat_kwargs = dict(model=model, messages=msgs, stream=True,
                                tools=tools if tools else None,
+                               format="json" if stream_format == "json" else None,
                                options=options, keep_alive=-1)
 
             def _try_stream(use_think=False):
@@ -1281,7 +1350,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                     })
                 yield {'type': 'tool_calls_detected', 'content': normalized}
 
-        elif effective_provider.upper() == 'GOOGLE':
+        elif api_type == 'google':
             # ── Google Gemini ──
             contents, system_instruction = self._to_gemini_contents(msgs)
             config_kwargs: dict[str, Any] = {}
@@ -1296,6 +1365,8 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             gemini_tools = self._to_gemini_tools(tools)
             if gemini_tools:
                 config_kwargs['tools'] = gemini_tools
+            if stream_format == "json":
+                config_kwargs['response_mime_type'] = 'application/json'
 
             # Use translator for reasoning (Google)
             reasoning_kwargs = translate_reasoning(
@@ -1368,7 +1439,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
     def _process_think_tags(self, text: str, in_think: bool) -> tuple[str, str, bool]:
         """Parse ``<think>...</think>`` tags from a streaming chunk.
 
-        Some providers (Groq raw mode, older Ollama models) embed reasoning
+        Some providers (raw mode on some OpenAI-compatible providers, older Ollama models) embed reasoning
         inside ``<think>`` tags in the content field instead of a dedicated
         structured field.  This state-machine parser handles tags that span
         multiple chunks.

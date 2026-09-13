@@ -31,12 +31,11 @@ _project_root = os.path.dirname(os.path.dirname(os.path.dirname(_current_dir)))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+from backend.agent.utils import provider_keys
 from backend.instances import agent
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "qwen/qwen3.6-27b"
-_DEFAULT_PROVIDER = "Groq"
 _DEFAULT_MAX_ITERATIONS = 25
 _DEFAULT_TEMPERATURE = 0.3
 _DEFAULT_TOP_P = 0.8
@@ -52,35 +51,66 @@ _INTERVIEW_TOOLS_PERMS: dict[str, str] = {
     "grep": "allow",
     "websearch": "allow",
     "webfetch": "allow",
+    "query_model_capabilities": "allow",
 }
 """Native tools enabled during creation interviews (read/explore + web)."""
 
 
-def _resolve_create_model_provider() -> tuple[str, str]:
+def _resolve_create_model_provider() -> tuple[str | None, str]:
     """Resolve the (model, provider) used by the creation flows.
 
-    When the Groq client is available the flows keep using Groq with
-    ``qwen/qwen3.6-27b``. If Groq could not be instantiated at startup
-    (missing/invalid API key), fall back to the provider and model saved
-    in the DB (``agent.provider`` / ``agent._resolved_model``).
+    The agent's current selection is preferred when that provider
+    has a live client; otherwise the first OpenAI-compatible provider
+    with a live client is used together with its first catalogued
+    model. Falls back to the agent's saved selection.
 
     Returns:
-        Tuple of ``(model, provider)``.
+        Tuple of ``(model, provider)``. ``model`` may be ``None``
+        when no provider is configured at all.
     """
-    if agent.groq_client is not None:
-        return _DEFAULT_MODEL, _DEFAULT_PROVIDER
-    return (
-        getattr(agent, "_resolved_model", None) or _DEFAULT_MODEL,
-        getattr(agent, "provider", None) or "LOCAL",
-    )
+    current_model = getattr(agent, "_resolved_model", None)
+    current_provider = (getattr(agent, "provider", None) or "").strip().upper()
+    if current_model and current_provider and _cloud_client_available(current_provider):
+        return current_model, current_provider
+    try:
+        get_client = getattr(agent, "get_openai_client", None)
+        if callable(get_client):
+            for _pid, _info in provider_keys.PROVIDER_REGISTRY.items():
+                if str(_info.get("api_type") or "") != "openai-compatible":
+                    continue
+                prov_u = _pid.upper()
+                if get_client(prov_u) is None:
+                    continue
+                try:
+                    from backend.agent.utils import model_catalog
+                    cached = model_catalog.get_models(_pid)
+                except Exception:
+                    cached = []
+                if cached:
+                    return cached[0], prov_u
+    except Exception:
+        pass
+    return current_model, current_provider or "LOCAL"
 
 
-_CLOUD_CLIENT_ATTRS: dict[str, str] = {
-    "GROQ": "groq_client",
-    "GOOGLE": "google_client",
-    "OPENROUTER": "openrouter_client",
-}
-"""Cloud providers mapped to their Agent client attribute name."""
+def _cloud_client_available(prov_u: str) -> bool:
+    """Check whether a cloud provider has an instantiated client.
+
+    Args:
+        prov_u: Upper-cased provider name.
+
+    Returns:
+        ``True`` when the provider can serve a creation task right now.
+    """
+    try:
+        if prov_u == "GOOGLE":
+            return getattr(agent, "google_client", None) is not None
+        get_client = getattr(agent, "get_openai_client", None)
+        if callable(get_client):
+            return get_client(prov_u) is not None
+        return False
+    except Exception:
+        return False
 
 
 def resolve_create_model_provider(
@@ -95,20 +125,15 @@ def resolve_create_model_provider(
 
     Args:
         model: Model identifier chosen by the user.
-        provider: Provider name chosen by the user (``GROQ``, ``GOOGLE`` or
-            ``OPENROUTER``).
+        provider: Curated cloud provider name chosen by the user (any
+            OpenAI-compatible provider or ``GOOGLE``).
 
     Returns:
         Tuple of ``(model, provider)``.
     """
     prov_u = (provider or "").strip().upper()
     model_clean = (model or "").strip()
-    client_attr = _CLOUD_CLIENT_ATTRS.get(prov_u)
-    if (
-        model_clean
-        and client_attr is not None
-        and getattr(agent, client_attr, None) is not None
-    ):
+    if model_clean and _cloud_client_available(prov_u):
         return model_clean, prov_u
     return _resolve_create_model_provider()
 
@@ -282,7 +307,7 @@ async def stream_tool_calling_loop(
         friendly_error: User-friendly error message yielded on failure.
         model: Model identifier sent to the provider. If ``None``,
             resolved via ``_resolve_create_model_provider``.
-        provider: Provider name (``"Groq"`` or ``"LOCAL"``). If ``None``,
+        provider: Provider name (any curated provider id or ``"LOCAL"``). If ``None``,
             resolved via ``_resolve_create_model_provider``.
         max_iter: Maximum number of loop iterations.
         temperature: Sampling temperature.

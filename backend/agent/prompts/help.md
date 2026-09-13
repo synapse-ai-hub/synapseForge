@@ -18,7 +18,7 @@ Los sub-agentes son agentes especializados que se definen externamente al códig
      - Para tools planas: `read: allow`
      - Para `task` (delegación a sub-agentes): `task: { nombre_agente: allow }`
    - **`skill`**: Define qué skills puede cargar. Misma sintaxis que `permission`.
-   - **`parameters`**: Configuración del modelo para este agente: `temperature`, `top_p`, `model`, `seed`.
+   - **`parameters`**: Configuración del modelo para este agente: `temperature`, `top_p`, `model`, `provider`, `max_tokens`, `seed`, `reasoning`, `response_format`. `model`, `provider`, `max_tokens` y `seed` son opcionales y normalmente se omiten (el agente usa los valores globales), salvo que necesite un modelo específico para su tarea. `reasoning` y `response_format` solo se incluyen si el modelo los soporta.
 
 4. Debajo del frontmatter va el cuerpo del prompt del agente: su rol, instrucciones específicas, reglas de comportamiento.
 
@@ -126,21 +126,20 @@ Al primer arranque aparece una pantalla inicial de configuración (se puede salt
 
 El modelo y proveedor se configuran desde el panel de Configuración en la interfaz:
 
-1. **Proveedor**: seleccionar entre los disponibles (Groq, Google Gemini, OpenRouter para nube; Ollama para local, si está instalado).
+1. **Proveedor**: seleccionar entre los disponibles (providers cloud curados — OpenAI-compatibles y Google Gemini; Ollama para local, si está instalado).
 2. **Modelo**: elegir entre los modelos disponibles para ese proveedor.
 3. Los cambios persisten en la base de datos SQLite y se aplican al siguiente mensaje.
 
 El modelo se elige explícitamente: seleccioná proveedor + modelo y pulsá **Aplicar**.
 
 Soportados:
-- **Groq**: modelos de API (Llama, Qwen, etc.).
+- **Providers OpenAI-compatibles**: Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba (Qwen).
 - **Google Gemini**: modelos de la API de Google (Gemini).
-- **OpenRouter**: acceso unificado a múltiples proveedores de modelos.
 - **Ollama**: modelos locales (opcional — solo aparece si Ollama está corriendo).
 
 ### API keys de los providers
 
-Las API keys de los providers cloud (Groq, Google, OpenRouter) se configuran en el panel de Configuración, sección **Providers**. Cada key es opcional: si no se carga una key para un provider, ese provider no aparece como disponible. Las keys se guardan cifradas en la base de datos SQLite interna y nunca se muestran nuevamente en la interfaz después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el provider queda disponible de inmediato.
+Las API keys de los providers cloud (cualquier provider curado) se configuran en el panel de Configuración, sección **Providers**. Cada key es opcional: si no se carga una key para un provider, ese provider no aparece como disponible. Las keys se guardan cifradas en la base de datos SQLite interna y nunca se muestran nuevamente en la interfaz después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el provider queda disponible de inmediato.
 
 ---
 

@@ -39,8 +39,147 @@ from backend.utils.db import db_transaction, get_connection
 
 logger = logging.getLogger(__name__)
 
-_VALID_PROVIDERS = frozenset({"GROQ", "GOOGLE", "OPENROUTER"})
-"""Providers whose API keys can be managed through this module."""
+PROVIDER_REGISTRY: dict[str, dict[str, str | None]] = {
+    # OpenAI-compatible providers (base_url = OpenAI-compatible API root;
+    # key validation = ``GET {base_url}/models`` with the key as Bearer).
+    # Base URLs taken from models.dev provider pages (``api`` field).
+    "groq": {
+        "label": "Groq",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.groq.com/openai/v1",
+        "key_url": "https://console.groq.com/keys",
+    },
+    "openrouter": {
+        "label": "OpenRouter",
+        "api_type": "openai-compatible",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_url": "https://openrouter.ai/settings/keys",
+    },
+    "openai": {
+        "label": "OpenAI",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.openai.com/v1",
+        "key_url": "https://platform.openai.com/api-keys",
+    },
+    "deepseek": {
+        "label": "DeepSeek",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.deepseek.com/v1",
+        "key_url": "https://platform.deepseek.com/api_keys",
+    },
+    "xai": {
+        "label": "xAI",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.x.ai/v1",
+        "key_url": "https://console.x.ai/",
+    },
+    "together": {
+        "label": "Together AI",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.together.xyz/v1",
+        "key_url": "https://api.together.ai/settings/api-keys",
+    },
+    "fireworks": {
+        "label": "Fireworks AI",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.fireworks.ai/inference/v1",
+        "key_url": "https://fireworks.ai/",
+    },
+    "cerebras": {
+        "label": "Cerebras",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.cerebras.ai/v1",
+        "key_url": "https://cloud.cerebras.ai/",
+    },
+    "mistral": {
+        "label": "Mistral AI",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.mistral.ai/v1",
+        "key_url": "https://console.mistral.ai/api-keys",
+    },
+    "perplexity": {
+        "label": "Perplexity",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.perplexity.ai",
+        "key_url": "https://www.perplexity.ai/settings/api",
+    },
+    "meta": {
+        "label": "Meta",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.meta.ai/v1",
+        "key_url": "https://dev.meta.ai/",
+    },
+    "moonshotai": {
+        "label": "Moonshot AI",
+        "api_type": "openai-compatible",
+        "base_url": "https://api.moonshot.ai/v1",
+        "key_url": "https://platform.moonshot.ai/console/api-keys",
+    },
+    "zhipuai": {
+        "label": "Zhipu AI",
+        "api_type": "openai-compatible",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "key_url": "https://open.bigmodel.cn/usercenter/apikeys",
+    },
+    "alibaba": {
+        "label": "Alibaba (Qwen)",
+        "api_type": "openai-compatible",
+        "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "key_url": "https://bailian.console.alibabacloud.com/",
+    },
+    # Google uses its own SDK (no OpenAI-compatible base URL).
+    "google": {
+        "label": "Google Gemini",
+        "api_type": "google",
+        "base_url": None,
+        "key_url": "https://aistudio.google.com/apikey",
+    },
+}
+"""Curated providers whose API keys can be managed through this module.
+
+``api_type`` is ``"openai-compatible"`` (validated and called through the
+OpenAI-compatible ``{base_url}/models`` + chat-completions endpoints) or
+``"google"`` (validated and called through the Gemini SDK).
+"""
+
+
+def list_supported() -> list[dict[str, str | None]]:
+    """Return the curated provider list for UI dropdowns.
+
+    Returns:
+        List of ``{"provider", "label", "api_type", "key_url"}`` dicts
+        (``provider`` upper-cased, no key material).
+    """
+    try:
+        return [
+            {
+                "provider": pid.upper(),
+                "label": str(info.get("label") or pid),
+                "api_type": str(info.get("api_type") or ""),
+                "key_url": info.get("key_url"),
+            }
+            for pid, info in PROVIDER_REGISTRY.items()
+        ]
+    except Exception as e:
+        log_error(str(e), source="provider_keys.py:list_supported")
+        return []
+
+
+def is_supported(provider: str) -> bool:
+    """Check whether a provider id is in the curated registry.
+
+    Args:
+        provider: Provider id (case-insensitive, e.g. ``"openrouter"``).
+
+    Returns:
+        True if the provider can be managed through this module.
+    """
+    try:
+        return (provider or "").strip().lower() in PROVIDER_REGISTRY
+    except Exception as e:
+        log_error(str(e), source="provider_keys.py:is_supported")
+        return False
+
 
 _fernet_cache: Any = None
 """Cached ``Fernet`` instance so the secret is resolved once per process."""
@@ -115,14 +254,15 @@ def save_key(provider: str, api_key: str) -> dict:
     """Encrypt and persist an API key for the given provider.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: Curated provider name (case-insensitive, see
+        ``PROVIDER_REGISTRY``).
         api_key: The plain-text API key (never stored in clear).
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
     provider_u = (provider or "").upper()
-    if provider_u not in _VALID_PROVIDERS:
+    if provider_u.lower() not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     if not api_key or not api_key.strip():
         return {"status": "error", "message": "La API key no puede estar vacía."}
@@ -180,7 +320,7 @@ def get_key(provider: str) -> str | None:
         The plain-text API key, or ``None`` if not stored / undecryptable.
     """
     provider_u = (provider or "").upper()
-    if provider_u not in _VALID_PROVIDERS:
+    if provider_u.lower() not in PROVIDER_REGISTRY:
         return None
     fernet = _load_fernet()
     if fernet is None:
@@ -209,13 +349,14 @@ def delete_key(provider: str) -> dict:
     """Remove the stored API key for a provider.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: Curated provider name (case-insensitive, see
+            ``PROVIDER_REGISTRY``).
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
     provider_u = (provider or "").upper()
-    if provider_u not in _VALID_PROVIDERS:
+    if provider_u.lower() not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     try:
         conn = _connect()
@@ -257,7 +398,8 @@ def list_configured() -> list[dict[str, Any]]:
         per supported provider.
     """
     result: list[dict[str, Any]] = []
-    for provider in sorted(_VALID_PROVIDERS):
+    for pid in sorted(PROVIDER_REGISTRY):
+        provider = pid.upper()
         result.append({"provider": provider, "configured": get_key(provider) is not None})
     return result
 
@@ -284,14 +426,15 @@ def validate_key(provider: str, api_key: str) -> dict:
     this check succeeds.
 
     Args:
-        provider: One of ``GROQ``, ``GOOGLE``, ``OPENROUTER``.
+        provider: Curated provider name (case-insensitive, see
+            ``PROVIDER_REGISTRY``).
         api_key: The plain-text API key to verify.
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
     provider_u = (provider or "").upper()
-    if provider_u not in _VALID_PROVIDERS:
+    if provider_u.lower() not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     if not api_key or not api_key.strip():
         return {"status": "error", "message": "La API key no puede estar vacía."}
@@ -313,44 +456,30 @@ def validate_key(provider: str, api_key: str) -> dict:
                     "status": "error",
                     "message": f"API key de Google inválida: {e}",
                 }
-        elif provider_u == "GROQ":
-            # Validate by listing models via Groq API
+        elif PROVIDER_REGISTRY[provider_u.lower()].get("api_type") == "openai-compatible":
+            # Validate by listing models via the provider's
+            # OpenAI-compatible API (``GET {base_url}/models``).
             import requests
 
+            base_url = str(PROVIDER_REGISTRY[provider_u.lower()].get("base_url") or "").rstrip("/")
+            label = str(PROVIDER_REGISTRY[provider_u.lower()].get("label") or provider_u)
             resp = requests.get(
-                "https://api.groq.com/openai/v1/models",
+                f"{base_url}/models",
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                 timeout=30,
             )
             if resp.status_code == 401:
-                return {"status": "error", "message": "API key de Groq inválida."}
+                return {"status": "error", "message": f"API key de {label} inválida."}
             resp.raise_for_status()
             data = resp.json()
             models = data.get("data", [])
             if not models:
                 return {
                     "status": "error",
-                    "message": "API key de Groq inválida o sin modelos disponibles.",
+                    "message": f"API key de {label} inválida o sin modelos disponibles.",
                 }
-        elif provider_u == "OPENROUTER":
-            # Validate by listing models via OpenRouter API (OpenAI-compatible)
-            import requests
-
-            resp = requests.get(
-                "https://openrouter.ai/api/v1/models",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                timeout=30,
-            )
-            if resp.status_code == 401:
-                return {"status": "error", "message": "API key de OpenRouter inválida."}
-            resp.raise_for_status()
-            data = resp.json()
-            models = data.get("data", [])
-            if not models:
-                return {
-                    "status": "error",
-                    "message": "API key de OpenRouter inválida o sin modelos disponibles.",
-                }
+        else:
+            return {"status": "error", "message": f"Provider inválido: '{provider}'."}
         return {"status": "success", "message": f"API key de {provider_u} válida."}
     except Exception as e:
         log_error(str(e), source="provider_keys.py:validate_key")

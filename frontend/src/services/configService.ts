@@ -66,6 +66,7 @@ export interface AdvancedParams {
   top_p: number | null;
   reasoning: string | null;
   budget_tokens: number | null;
+  response_format: string | null;
 }
 
 export interface ParametersResponse {
@@ -74,15 +75,19 @@ export interface ParametersResponse {
   top_p: number | null;
   reasoning: string | null;
   budget_tokens: number | null;
+  response_format: string | null;
   model: string | null;
   provider: string;
   /** Whether the current model declaratively supports reasoning (null = unknown). */
   reasoning_supported: boolean | null;
+  /** Whether the current model declaratively supports structured output (null = unknown). */
+  response_format_supported: boolean | null;
 }
 
 export interface ModelCapabilitiesResponse {
   status: string;
   reasoning_supported: boolean | null;
+  response_format_supported?: boolean | null;
   reasoning_options: Array<{ value: string; label: string }>;
   reasoning_param: string | null;
   reasoning_type: string | null;
@@ -140,6 +145,7 @@ export const configService = {
         top_p: params ? params.top_p : null,
         reasoning: params ? params.reasoning : null,
         budget_tokens: params ? params.budget_tokens : null,
+        response_format: params ? params.response_format : null,
       }),
     });
     const result = await response.json().catch(() => null);
@@ -219,7 +225,7 @@ export const configService = {
     }
   },
 
-  /** List providers that are currently available (Groq, Ollama, …). */
+  /** List providers that are currently available (curated cloud providers, Ollama, …). */
   async getProviders(): Promise<ProvidersResponse> {
     const response = await fetch(`${API_BASE_URL}/api/config/providers`, {
       method: "GET",

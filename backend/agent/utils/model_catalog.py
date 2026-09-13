@@ -1,7 +1,6 @@
 """Model catalog — fetches and caches model data from models.dev.
 
-Replaces the hardcoded provider-specific model discovery logic with a
-single source of truth from ``https://models.dev/api.json``.  The catalog
+Single source of truth from ``https://models.dev/api.json``. The catalog
 is persisted in the agent's SQLite database (``agent.db``) so queries are
 fast (indexed B-tree) and the data survives process restarts.
 
@@ -80,7 +79,7 @@ def should_sync(provider: str) -> bool:
     provider (key: ``catalog_sync_{provider}``).
 
     Args:
-        provider: Provider name (e.g. ``"groq"``).
+        provider: Provider name (e.g. ``"openrouter"``).
 
     Returns:
         ``True`` if the catalog is stale or missing.
@@ -152,7 +151,7 @@ def _extract_provider_models(catalog: dict, provider: str) -> list[dict]:
 
     Args:
         catalog: The full models.dev catalog.
-        provider: Provider ID (e.g. ``"groq"``).
+        provider: Provider ID (e.g. ``"openrouter"``).
 
     Returns:
         List of model dicts ready for DB insertion.
@@ -217,7 +216,7 @@ def sync_catalog(provider: str) -> dict:
     Rate-limited to once every 24 hours per provider.
 
     Args:
-        provider: Provider ID (e.g. ``"groq"``, ``"google"``, ``"openrouter"``).
+        provider: Provider ID (e.g. ``"openrouter"``, ``"google"``).
 
     Returns:
         ``{"status": "success", "models": count}`` or
@@ -311,7 +310,7 @@ def get_models(provider: str) -> list[str]:
     """Return the list of model IDs for a provider from the catalog.
 
     Args:
-        provider: Provider name (e.g. ``"groq"``).
+        provider: Provider name (e.g. ``"openrouter"``).
 
     Returns:
         Sorted list of model ID strings. Empty if not found.
@@ -387,6 +386,8 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
     - ``reasoning_options``: list of ``{"value": ..., "label": ...}``
     - ``reasoning_type``: ``"effort_levels"`` | ``"budget_tokens"`` |
       ``"toggle"`` | ``"boolean"``
+    - ``response_format_supported``: bool | None (from models.dev
+      ``structured_output`` flag)
 
     Args:
         provider: Provider name.
@@ -399,6 +400,7 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
         "reasoning_supported": None,
         "reasoning_options": [],
         "reasoning_type": None,
+        "response_format_supported": None,
         "context_window": None,
         "input_limit": None,
         "output_limit": None,
@@ -411,6 +413,10 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
     model = get_model(provider, model_id)
     if model is None:
         return result
+
+    # Structured output support comes straight from models.dev.
+    if model.get("structured_output") is not None:
+        result["response_format_supported"] = bool(model.get("structured_output"))
 
     # Add model info
     result["context_window"] = model.get("context_window")
@@ -540,23 +546,74 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
     return result
 
 
-def _load_reasoning_config() -> dict[str, Any]:
-    """Load reasoning parameter definitions from JSON.
+def _resolve_gateway(provider: str) -> tuple[str, bool]:
+    """Resolve the gateway type for reasoning translation.
 
-    Reads fresh on every call so runtime changes (provider/model switches)
-    are picked up immediately without a restart.
+    Uses the synced catalog first; falls back to ``PROVIDER_REGISTRY``
+    so providers without synced models (e.g. missing from models.dev)
+    still resolve to their registered API type.
+
+    Args:
+        provider: Provider name.
 
     Returns:
-        The parsed JSON dict, or ``{}`` on failure.
+        Tuple ``(api_type, is_openrouter)`` where ``api_type`` is
+        ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
+        ``"unknown"``, and ``is_openrouter`` flags the OpenRouter
+        gateway (which uses the ``reasoning`` object shape).
     """
-    json_path = os.path.join(_project_root, "config", "reasoning_params.json")
     try:
-        with open(json_path, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        log_error(str(e), source="model_catalog.py:_load_reasoning_config")
-        logger.warning("Could not load reasoning config: %s", e)
-        return {}
+        api_type = get_provider_api_type(provider)
+        if api_type == "unknown":
+            try:
+                from backend.agent.utils.provider_keys import PROVIDER_REGISTRY
+            except ImportError:
+                PROVIDER_REGISTRY = {}
+            info = PROVIDER_REGISTRY.get((provider or "").strip().lower(), {})
+            api_type = str(info.get("api_type") or "unknown")
+        return api_type, (provider or "").strip().lower() == "openrouter"
+    except Exception as e:
+        log_error(str(e), source="model_catalog.py:_resolve_gateway")
+        return "unknown", False
+
+
+def _catalog_reasoning_shapes(model: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Summarize a catalog row's ``reasoning_options`` for translation.
+
+    Args:
+        model: Catalog row as returned by :func:`get_model`.
+
+    Returns:
+        Dict with ``effort_values`` (list of accepted level strings)
+        and ``has_budget`` (bool). An empty options list yields empty
+        shapes (model offers no caller control). ``None`` is returned
+        only when the model is unknown (no row) or its options are
+        missing, malformed, or not a list (gateway defaults apply).
+    """
+    try:
+        if model is None:
+            return None
+        raw = model.get("reasoning_options")
+        if not raw:
+            return None
+        opts = json.loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(opts, list):
+            return None
+        effort_values: list[str] = []
+        has_budget = False
+        for opt in opts:
+            if not isinstance(opt, dict):
+                continue
+            if opt.get("type") == "effort":
+                for entry in opt.get("values") or []:
+                    if isinstance(entry, str):
+                        effort_values.append(entry.strip().lower())
+            elif opt.get("type") == "budget_tokens":
+                has_budget = True
+        return {"effort_values": effort_values, "has_budget": has_budget}
+    except Exception as e:
+        log_error(str(e), source="model_catalog.py:_catalog_reasoning_shapes")
+        return None
 
 
 def translate_reasoning(
@@ -567,92 +624,130 @@ def translate_reasoning(
 ) -> dict[str, Any]:
     """Translate a user-facing reasoning value into provider-specific kwargs.
 
-    Reads the parameter structure from ``backend/config/reasoning_params.json``
-    on every call so runtime changes are picked up immediately.  The JSON
-    defines *what* parameters each provider API accepts; the code constructs
-    the correct kwargs based on type and mode.
+    The wire shape is decided by the gateway (API type): plain
+    OpenAI-compatible gateways take ``reasoning_effort``, the OpenRouter
+    gateway takes the ``reasoning`` object, and Google direct takes
+    ``thinking_config``. When the model has a synced catalog row, its
+    ``reasoning_options`` decide which values are sent; models without
+    usable catalog data use the gateway default shape. A budget sent to
+    Google always uses ``thinking_budget`` (Google maps it to a level
+    internally on level-only models); a budget sent to OpenRouter uses
+    ``max_tokens`` (ignored when the model does not support it) and an
+    effort level sent to OpenRouter uses ``effort`` (converted
+    automatically for budget-based models).
 
     Args:
-        provider: Provider name (``"openrouter"``, ``"groq"``, ``"google"``).
+        provider: Provider name (``"groq"``, ``"openrouter"``, ...).
         reasoning_value: User-selected value from DB/UI (``"default"``,
             ``"off"``, ``"low"``, ``"medium"``, ``"high"``, ``"max"``,
             ``"xhigh"``, ``"minimal"``, ``True``, ``False``, or ``None``).
-        model_id: Optional model ID for catalog lookup (reserved).
-        budget_tokens: Optional token budget (overrides effort-based defaults).
+        model_id: Optional model ID for catalog lookup.
+        budget_tokens: Optional token budget (overrides effort levels).
 
     Returns:
         Dict of kwargs to merge into the API call.
     """
-    prov = (provider or "").upper()
-    val = reasoning_value
+    try:
+        prov = (provider or "").strip().lower()
+        if not prov:
+            return {}
+        val = reasoning_value
 
-    # --- Normalize legacy boolean ---
-    if val is True or val == "on" or val == "true":
+        # --- Normalize legacy boolean ---
+        if val is None:
+            return {}
+        if val is True or val == "on" or val == "true":
+            val = "default"
+        if val is False or val == "off" or val == "false":
+            val = "off"
+        if val == "none":
+            val = "off"
+
+        api_type, is_openrouter = _resolve_gateway(provider)
+        if api_type not in ("openai-compatible", "google"):
+            return {}
+
+        v = str(val).strip().lower()
+        if not v:
+            return {}
+
+        # --- Catalog shapes (single lookup) ---
+        shapes: dict[str, Any] | None = None
+        if model_id:
+            model = get_model(provider, model_id)
+            if model is not None and not model.get("reasoning"):
+                return {}
+            shapes = _catalog_reasoning_shapes(model)
+
+        # --- "off" wins over a configured budget ---
+        if v == "off":
+            if api_type == "google":
+                if shapes is None or shapes["has_budget"]:
+                    return {"thinking_config": {"thinking_budget": 0}}
+                return {}
+            if is_openrouter:
+                return {"reasoning": {"exclude": True}}
+            if shapes is None or "none" in shapes["effort_values"]:
+                return {"reasoning_effort": "none"}
+            return {}
+
+        # --- Budget tokens take precedence when provided ---
+        budget = None
+        try:
+            if budget_tokens is not None:
+                budget = int(budget_tokens)
+        except (TypeError, ValueError):
+            budget = None
+        if budget is not None and budget > 0:
+            if api_type == "google":
+                return {"thinking_config": {"thinking_budget": budget}}
+            if is_openrouter:
+                if (
+                    shapes is not None
+                    and not shapes["effort_values"]
+                    and not shapes["has_budget"]
+                ):
+                    return {}
+                return {"reasoning": {"max_tokens": budget}}
+            # Plain gateways have no budget param: fall through to effort.
+
+        # --- Default → don't pass reasoning param ---
+        if v == "default":
+            return {}
+
+        # --- Effort level in gateway shape ---
+        if api_type == "google":
+            if shapes is None or v in shapes["effort_values"]:
+                return {"thinking_config": {"thinking_level": v}}
+            return {}
+        if is_openrouter:
+            if (
+                shapes is not None
+                and not shapes["effort_values"]
+                and not shapes["has_budget"]
+            ):
+                return {}
+            return {"reasoning": {"effort": v}}
+        if shapes is None or v in shapes["effort_values"]:
+            return {"reasoning_effort": v}
         return {}
-    if val is False or val == "off" or val == "false":
-        val = "off"
-    if val == "none":
-        val = "off"
-
-    # --- Default / None → don't pass reasoning param ---
-    if val is None or val == "default" or val == "":
+    except Exception as e:
+        log_error(str(e), source="model_catalog.py:translate_reasoning")
         return {}
-
-    # --- Load provider config from JSON (fresh read, no cache) ---
-    config = _load_reasoning_config()
-    provider_config = config.get(prov.lower())
-    if not provider_config:
-        return {}
-
-    # --- "off" → disable reasoning ---
-    if val == "off":
-        for _param_name, param_def in provider_config.items():
-            if isinstance(param_def, dict) and "off" in param_def:
-                return {_param_name: param_def["off"]}
-        return {}
-
-    # --- Budget tokens take precedence when provided ---
-    if budget_tokens is not None and budget_tokens > 0:
-        for param_name, param_def in provider_config.items():
-            if isinstance(param_def, dict) and param_def.get("type") == "object":
-                fields = param_def.get("fields", {})
-                if "max_tokens" in fields:
-                    return {param_name: {"max_tokens": budget_tokens}}
-                if "thinking_budget" in fields:
-                    return {param_name: {"thinking_budget": budget_tokens}}
-        return {}
-
-    # --- Effort level ---
-    for param_name, param_def in provider_config.items():
-        if isinstance(param_def, dict) and param_def.get("type") == "object":
-            fields = param_def.get("fields", {})
-            if "effort" in fields:
-                return {param_name: {"effort": val}}
-            if "thinking_level" in fields:
-                return {param_name: {"thinking_level": val}}
-        if isinstance(param_def, dict) and param_def.get("type") == "string":
-            if param_name != "reasoning_format":
-                return {param_name: val}
-
-    return {}
 
 
 def get_reasoning_streaming_config(provider: str) -> dict[str, Any]:
-    """Get provider-specific streaming config from reasoning_params.json.
+    """Get extra streaming kwargs for reasoning.
 
     Args:
-        provider: Provider name (e.g. ``"groq"``).
+        provider: Provider name (e.g. ``"openrouter"``).
 
     Returns:
-        Dict of streaming-specific kwargs (e.g. ``{"reasoning_format": "parsed"}``).
+        Empty dict. Reasoning travels in the request built by
+        ``translate_reasoning``; streamed reasoning deltas are parsed
+        from the response (``delta.reasoning`` or ``<think>`` tags).
     """
-    config = _load_reasoning_config()
-    provider_config = config.get(provider.lower(), {})
-    result: dict[str, Any] = {}
-    for param_name, param_def in provider_config.items():
-        if isinstance(param_def, dict) and "streaming_default" in param_def:
-            result[param_name] = param_def["streaming_default"]
-    return result
+    return {}
 
 
 def list_configured_providers() -> list[str]:
@@ -674,3 +769,67 @@ def list_configured_providers() -> list[str]:
         return []
     finally:
         conn.close()
+
+
+_NPM_TO_API_TYPE: dict[str, str] = {
+    "@ai-sdk/groq": "openai-compatible",
+    "@openrouter/ai-sdk-provider": "openai-compatible",
+    "@ai-sdk/openai": "openai-compatible",
+    "@ai-sdk/openai-compatible": "openai-compatible",
+    "@ai-sdk/deepseek": "openai-compatible",
+    "@ai-sdk/xai": "openai-compatible",
+    "@ai-sdk/togetherai": "openai-compatible",
+    "@ai-sdk/fireworks": "openai-compatible",
+    "@ai-sdk/cerebras": "openai-compatible",
+    "@ai-sdk/mistral": "openai-compatible",
+    "@ai-sdk/perplexity": "openai-compatible",
+    "@ai-sdk/azure": "openai-compatible",
+    "@ai-sdk/google": "google",
+    "@ai-sdk/google-vertex": "google",
+    "@ai-sdk/ollama": "ollama",
+}
+"""Map models.dev ``npm`` package → provider API type.
+
+Providers whose ``npm`` is not listed here resolve to ``"unknown"``
+and are rejected with a clear message instead of being assumed
+OpenAI-compatible.
+"""
+
+
+def get_provider_api_type(provider: str) -> str:
+    """Resolve the API type of a provider from the local catalog.
+
+    Reads the ``npm`` package stored at sync time (no network) and maps
+    it via ``_NPM_TO_API_TYPE``. ``LOCAL`` always resolves to
+    ``"ollama"`` (Ollama is not in models.dev).
+
+    Args:
+        provider: Provider name (e.g. ``"openrouter"``, ``"LOCAL"``).
+
+    Returns:
+        ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
+        ``"unknown"`` (never assumed; unknown must be rejected by the
+        caller with a clear message).
+    """
+    try:
+        prov = (provider or "").strip()
+        if not prov:
+            return "unknown"
+        if prov.upper() == "LOCAL":
+            return "ollama"
+        conn = _connect()
+        if conn is None:
+            return "unknown"
+        try:
+            row = conn.execute(
+                "SELECT npm FROM model_catalog WHERE provider = ? LIMIT 1",
+                (prov.lower(),),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None or not row["npm"]:
+            return "unknown"
+        return _NPM_TO_API_TYPE.get(str(row["npm"]).strip(), "unknown")
+    except Exception as e:
+        log_error(str(e), source="model_catalog.py:get_provider_api_type")
+        return "unknown"

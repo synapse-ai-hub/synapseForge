@@ -1,8 +1,9 @@
 """Model resolver — Ollama (LOCAL) model discovery and context window.
 
 This module handles **only** the local Ollama provider.  Cloud providers
-(Groq, Google, OpenRouter, etc.) are now served by :mod:`model_catalog`
-which fetches data from models.dev and caches it in ``agent.db``.
+(curated OpenAI-compatible providers and Google) are now served by
+:mod:`model_catalog` which fetches data from models.dev and caches it
+in ``agent.db``.
 
 Functions exposed:
 
@@ -308,13 +309,15 @@ def get_model_reasoning_options(provider: str, model: str) -> dict:
 
     Returns:
         Dict with ``reasoning_supported``, ``reasoning_options``,
-        ``reasoning_param``, ``reasoning_type``, plus model info.
+        ``reasoning_param``, ``reasoning_type``,
+        ``response_format_supported``, plus model info.
     """
     result = {
         "reasoning_supported": None,
         "reasoning_options": [],
         "reasoning_param": None,
         "reasoning_type": "boolean",
+        "response_format_supported": None,
     }
 
     if not provider or not model:
@@ -323,6 +326,9 @@ def get_model_reasoning_options(provider: str, model: str) -> dict:
     p = provider.strip().upper()
     if p != "LOCAL":
         return result
+
+    # Ollama supports structured output via ``format: json``.
+    result["response_format_supported"] = True
 
     # Get model info from Ollama /api/show
     import requests

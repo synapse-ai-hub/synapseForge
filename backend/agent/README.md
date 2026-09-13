@@ -22,14 +22,14 @@
 
 ## Descripción
 
-El módulo **Agent** es el núcleo del asistente conversacional. Implementa un bucle `while(true)` que itera con el LLM usando detección nativa de tool calls, ejecuta las herramientas, persiste cada mensaje en SQLite y gestiona el contexto con compactación automática. Soporta proveedores cloud (Groq, Google Gemini, OpenRouter) y local (Ollama).
+El módulo **Agent** es el núcleo del asistente conversacional. Implementa un bucle `while(true)` que itera con el LLM usando detección nativa de tool calls, ejecuta las herramientas, persiste cada mensaje en SQLite y gestiona el contexto con compactación automática. Soporta proveedores cloud curados (OpenAI-compatibles y Google Gemini) y local (Ollama).
 
 ### ✨ Características Principales
 
 - **Loop iterativo nativo**: Llama al LLM en un `while(true)` — si responde con `tool_calls`, las ejecuta y continúa; si responde con contenido, lo entrega y termina.
 - **Persistencia SQLite**: Cada mensaje, tool call y resultado se guarda automáticamente en `agent_db/agent.db`.
 - **Contexto compactable**: Gestión inteligente de tokens con estrategias configurables (ask, cod, original) y límite de turnos.
-- **Soporte multi-proveedor**: Funciona con Groq, Google Gemini, OpenRouter (cloud) y Ollama (local) sin cambiar la lógica del loop.
+- **Soporte multi-proveedor**: Funciona con proveedores cloud curados (OpenAI-compatibles y Google Gemini) y Ollama (local) sin cambiar la lógica del loop.
 - **Permisos y prompts**: Resolución dinámica de herramientas y skills desde archivos markdown de agente.
 - **Configuración MCP**: `mcp.json` en `~/.config/synapseForge/` para servidores MCP (Model Context Protocol).
 
@@ -76,7 +76,7 @@ Configuración del loop vía variables de entorno (`.env`):
 
 ### 4. `agent.py` — Clase principal del agente
 
-Centraliza la interacción con los proveedores LLM (Groq, Google Gemini, OpenRouter u Ollama local):
+Centraliza la interacción con los proveedores LLM (proveedores cloud curados u Ollama local):
 - Selección del proveedor según la configuración persistida en DB (nunca variables de entorno).
 - Streaming de respuestas con detección nativa de tool calls.
 - Gestión de la instancia de herramientas (`Tools`).
@@ -277,7 +277,7 @@ Los siguientes parámetros se seleccionan desde el **frontend** y se guardan en 
 | Clave | Descripción | Endpoint |
 |-------|-------------|----------|
 | `selected_model` | Modelo activo (ej. `qwen/qwen3.6-27b`, `llama3.2:3b`) | `POST /config/models/select` |
-| `selected_provider` | Proveedor activo: `LOCAL` (Ollama) o `API` (Groq, Google Gemini, OpenRouter) | `POST /config/models/select` |
+| `selected_provider` | Proveedor activo: `LOCAL` (Ollama) o `API` (cualquier provider cloud curado) | `POST /config/models/select` |
 | `context_window_turns` | Turnos de historial a mantener (`-1` = todos) | `POST /config/context-window` |
 
 Se cargan automáticamente al inicio vía `load_persisted_config()` en `backend/routes/config.py` y se aplican al agente singleton.
@@ -288,7 +288,7 @@ Se cargan automáticamente al inicio vía `load_persisted_config()` en `backend/
 
 1. **Inicio app** → `GET /config/providers` → lista proveedores disponibles (Ollama si `ollama list` responde; cada provider cloud solo si tiene key válida guardada en la DB).
 2. Usuario elige proveedor → `GET /config/models?provider=LOCAL|API` → lista modelos de ese proveedor.
-3. Usuario elige modelo → `POST /config/models/select` con `{"model": "...", "provider": "LOCAL|API"}` (donde `API` cubre Groq, Google Gemini y OpenRouter).
+3. Usuario elige modelo → `POST /config/models/select` con `{"model": "...", "provider": "LOCAL|API"}` (donde `API` cubre cualquier provider cloud curado).
 4. Opcional: `POST /config/context-window` con `{"max_turns": 10}`.
 
 ---
@@ -414,7 +414,7 @@ Los servidores MCP configurados en `mcp.json` exponen sus herramientas automáti
 **El flujo es idéntico para todos los proveedores:**
 
 1. `agent.llm_streaming()` recibe `tools` (lista de esquemas JSON Schema).
-2. **Groq / Google Gemini / OpenRouter**: `client.chat.completions.create(tools=..., tool_choice="auto", stream=True)`
+2. **Providers OpenAI-compatibles / Google Gemini**: `client.chat.completions.create(tools=..., tool_choice="auto", stream=True)`
 3. **Ollama**: `ollama_client.chat(tools=..., stream=True)`
 4. Todos los proveedores devuelven `tool_calls` en streaming.
 5. `llm_streaming` **normaliza** los tool_calls de todos los formatos a:

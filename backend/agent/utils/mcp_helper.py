@@ -8,7 +8,7 @@ Usage::
 
     from backend.agent.utils.mcp_helper import get_mcp_tools, execute_mcp_tool
 
-    # Get all MCP tools as function schemas (works for both providers)
+    # Get all MCP tools as function schemas
     mcp_tools = get_mcp_tools()
     # mcp_tools -> [{"name": ..., "description": ..., "input_schema": ...}, ...]
 
@@ -252,45 +252,6 @@ def _server_has_http_url(server: McpServerConfig) -> bool:
         return False
 
 
-def _mcp_tool_to_groq_entry(mcp_tool: Any, server: McpServerConfig) -> dict[str, Any]:
-    """Convert an MCP tool definition to a Groq native MCP entry.
-
-    Only works for HTTP/SSE-based MCP servers that Groq can reach.
-
-    Args:
-        mcp_tool: MCP tool definition (not used directly for Groq).
-        server: MCP server config with HTTP URL.
-
-    Returns:
-        Groq MCP entry ``{"type": "mcp", "server_label", "server_url", ...}``.
-    """
-    url = server.get("server_url") or server.get("url")
-    return {
-        "type": "mcp",
-        "server_label": server.get("label", "unknown"),
-        "server_url": url,
-        "headers": server.get("headers", {}),
-        "require_approval": server.get("require_approval", "never"),
-    }
-
-
-def get_mcp_tools_groq() -> list[dict[str, Any]]:
-    """Get MCP tool entries in Groq-compatible format.
-
-    Only returns entries for HTTP/SSE-based MCP servers (``transport: "http"``),
-    which Groq can orchestrate server-side.
-
-    Returns:
-        List of ``{"type": "mcp", "server_label", ...}`` entries.
-    """
-    servers = load_mcp_config()
-    groq_entries: list[dict[str, Any]] = []
-    for server in servers:
-        if _server_has_http_url(server):
-            groq_entries.append(_mcp_tool_to_groq_entry({}, server))
-    return groq_entries
-
-
 async def _discover_all(servers: list[McpServerConfig]) -> list[dict[str, Any]]:
     """Discover tools from every configured server and populate the mapping.
 
@@ -404,9 +365,8 @@ def get_mcp_tools_ollama() -> list[dict[str, Any]]:
 def get_mcp_tools() -> list[dict[str, Any]]:
     """Get all MCP tools wrapped as function schemas (universal).
 
-    Works for both providers by wrapping stdio MCP tools as
-    ``"type": "function"`` schemas. This is the recommended approach
-    for local MCP servers like MSSQL.
+    Wraps stdio MCP tools as ``"type": "function"`` schemas. This is
+    the recommended approach for local MCP servers like MSSQL.
 
     Returns:
         List of function schemas ready for ``tools_registry``.

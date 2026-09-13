@@ -388,11 +388,11 @@ class SessionManager:
             usage: Optional dict with token usage, e.g.
                 ``{"prompt_tokens", "completion_tokens", "total_tokens",
                 "total_time"}``. Stored in dedicated columns.
-            tool_call_id: Tool call ID (Groq format, for ``role: "tool"``).
+            tool_call_id: Tool call ID (OpenAI-compatible format, for ``role: "tool"``).
             tool_name: Tool name (Ollama format, for ``role: "tool"``).
             model: LLM model identifier that produced the message
                 (assistant messages only; ``None`` otherwise).
-            provider: Provider name (e.g., "groq", "openrouter", "google", "local").
+            provider: Provider name (e.g., "openrouter", "google", "local").
                 Used to calculate cost per message when combined with model and usage.
             turn_number: Turn number for grouping messages by
                 conversation turn.

@@ -4,6 +4,7 @@ Defines the unified JSON structure that every framework component must return
 to guarantee consistency across the whole API.
 """
 
+import json
 from typing import Any, NotRequired, Optional, TypedDict
 
 
@@ -173,6 +174,31 @@ def zero_usage() -> dict:
         "total_tokens": 0,
         "total_time": 0.0,
     }
+
+
+def parse_output_safe(output: Any) -> Any:
+    """Parse LLM output, returning the parsed JSON value when it holds JSON,
+    else the raw value.
+
+    When the model is asked for structured output it may return a JSON
+    document as a string; this helper converts it to a ``dict``/``list`` so
+    callers can store structured data in the contract ``data`` field. Any
+    non-JSON value (plain text, ``None``, already-structured objects) is
+    returned unchanged, so text responses never break.
+
+    Args:
+        output: Raw LLM output (usually ``str``, but any type is accepted).
+
+    Returns:
+        The parsed JSON value when ``output`` is a JSON ``str``; otherwise
+        ``output`` unchanged.
+    """
+    if not isinstance(output, str):
+        return output
+    try:
+        return json.loads(output)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return output
 
 
 if __name__ == '__main__':

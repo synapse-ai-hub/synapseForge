@@ -82,7 +82,7 @@ The Forge turns those definitions into autonomous systems.
 - **Permission engine** — deny-by-default, per-agent, with wildcards and groups
 - **Agent loop** — iterative reasoning → tool calling → execution → continuation, with streaming SSE
 - **Memory** — persistent conversation indexing and cross-session retrieval
-- **Multi-provider LLM** — Ollama (local), Groq, Google Gemini, OpenRouter
+- **Multi-provider LLM** — Ollama (local), curated cloud providers (OpenAI-compatible + Google Gemini)
 - **MCP integration** — connect external tool servers via the Model Context Protocol
 - **Scheduler** — run prompts on a schedule, notify via UI and Telegram
 
@@ -101,7 +101,7 @@ The result is a self-contained application distribution. Choose the modality tha
 
 ## Quick start
 
-> Currently available on [TestPyPI](https://pypi.org/project/synapseForge/).
+> Currently available on [PyPi](https://pypi.org/project/synapseForge/).
 
 ```bash
 pip install synapseForge
@@ -114,7 +114,7 @@ cd my-project
 synapseforge run .
 ```
 
-On first launch, configure an API key from any supported cloud provider ([OpenRouter](https://openrouter.ai/settings/keys), [Google Gemini](https://aistudio.google.com/apikey) or [Groq](https://console.groq.com/keys) — all with free tiers) and press **Apply**. Ollama is optional. The knowledge base requires an OpenRouter key.
+On first launch, configure an API key from any supported cloud provider (all curated providers offer free tiers) and press **Apply**. Ollama is optional. The knowledge base requires an OpenAI-compatible provider key.
 
 ---
 

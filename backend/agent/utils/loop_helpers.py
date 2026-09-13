@@ -369,7 +369,7 @@ _TRANSIENT_CODES = ("500", "502", "503", "504")
 def classify_llm_error(exc: Exception) -> str:
     """Classify an LLM streaming exception into a retry category.
 
-    Providers wrap HTTP errors differently (Groq/OpenRouter/Ollama), so the
+    Providers wrap HTTP errors differently (OpenRouter/Ollama), so the
     classification is tolerant: it inspects ``str(exc)`` looking for known
     rate-limit and transient-failure markers. Numeric status codes are
     matched with word boundaries so they never match inside other numbers.

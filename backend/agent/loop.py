@@ -14,7 +14,7 @@ Pattern
       response is retried up to ``MAX_EMPTY_RESPONSE_RETRIES`` times).
 6. Persist every message in SQLite.
 
-Both Groq (``client.chat.completions.create``) and Ollama
+All OpenAI-compatible providers (``client.chat.completions.create``) and Ollama
 (``ollama.chat``) support the ``tools`` parameter with JSON Schema
 definitions. Tool calls arrive as structured data, not as text to parse.
 
@@ -68,6 +68,8 @@ from backend.agent.permissions import (
     get_agent_parameters,
 )
 from backend.agent.utils.clean_memory import liberar_modelo
+from backend.agent.utils import provider_keys
+from backend.agent.utils.model_catalog import get_provider_api_type
 from backend.instances import agent, session_manager
 from backend.agent.utils.loop_helpers import (
     build_initial_messages,
@@ -112,6 +114,35 @@ back-off waits of 2s, 4s, 8s, 16s and 32s (62s total).
 
 LLM_BACKOFF_BASE_SECONDS = 2.0
 """Base delay (seconds) for the exponential back-off between LLM retries."""
+
+
+def _resolve_tool_api_type(effective_provider: str | None) -> str:
+    """Resolve the API type used to pick the tool-message format.
+
+    Reads the synced catalog first and falls back to the curated
+    ``provider_keys.PROVIDER_REGISTRY`` when the catalog has no rows
+    for the provider (sync never ran).
+
+    Args:
+        effective_provider: Provider name or ``None``.
+
+    Returns:
+        ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
+        ``"unknown"``.
+    """
+    try:
+        api_type = get_provider_api_type(effective_provider or "")
+    except Exception:
+        api_type = "unknown"
+    if api_type == "unknown":
+        try:
+            info = provider_keys.PROVIDER_REGISTRY.get(
+                (effective_provider or "").strip().lower(), {}
+            )
+            api_type = str(info.get("api_type") or "unknown")
+        except Exception:
+            api_type = "unknown"
+    return api_type
 
 # Tool schema for the router agent (agent_name=None). Fallback only: the
 # router's guaranteed tools (task, help, search_memory, read, websearch,
@@ -209,7 +240,8 @@ def _read_param_override(key: str) -> Any:
     """Read a global advanced-parameter override from ``config_kv``.
 
     Reads the value persisted by ``POST /api/config/models/select``
-    (keys ``param_temperature``, ``param_top_p``, ``param_reasoning``).
+    (keys ``param_temperature``, ``param_top_p``, ``param_reasoning``,
+    ``param_budget_tokens``, ``param_response_format``).
     The literal string ``"null"`` (or a missing/unparseable key) means
     "default" → returns ``None`` so the caller falls back to the next
     level of the precedence chain.
@@ -219,8 +251,8 @@ def _read_param_override(key: str) -> Any:
 
     Returns:
         The parsed override value (``float`` for temperature/top_p,
-        ``bool`` for reasoning) or ``None`` when there is no explicit
-        override.
+        ``bool`` for reasoning, ``str`` for response_format) or ``None``
+        when there is no explicit override.
     """
     try:
         raw = session_manager.get_config(key)
@@ -239,6 +271,8 @@ def _read_param_override(key: str) -> Any:
                 return "off"
             else:
                 return raw.strip()
+        if key == "param_response_format":
+            return raw.strip().lower()
         return float(raw)
     except (TypeError, ValueError):
         return None
@@ -312,7 +346,7 @@ class AgentLoop:
                 differs from this agent's model AND both run on ``LOCAL``, the
                 parent model is liberated on entry and this agent's model is
                 liberated on exit. API-side providers don't need VRAM liberation.
-            parent_provider: Parent agent's effective provider (``"GROQ"``/``"LOCAL"``).
+            parent_provider: Parent agent's effective provider (any curated provider id or ``"LOCAL"``).
                 Used together with ``parent_model`` to decide whether to liberate
                 the parent model (only meaningful when both are LOCAL).
 
@@ -366,6 +400,7 @@ class AgentLoop:
             top_p = 0.5
             reasoning = True  # Default: reasoning enabled (boolean or string level)
             budget_tokens = None
+            response_format = None  # Optional structured output (e.g. {"type": "json_object"})
             max_tokens = 8192
             if parameters:
                 if parameters.get("temperature") is not None:
@@ -381,6 +416,9 @@ class AgentLoop:
                         reasoning = r
                     else:
                         reasoning = str(r)
+                # response_format from frontmatter (optional structured output)
+                if parameters.get("response_format") is not None:
+                    response_format = parameters["response_format"]
                 # model override from frontmatter (optional)
                 if parameters.get("model"):
                     model = parameters["model"]
@@ -400,6 +438,9 @@ class AgentLoop:
             override_budget = _read_param_override("param_budget_tokens")
             if override_budget is not None:
                 budget_tokens = override_budget
+            override_response_format = _read_param_override("param_response_format")
+            if override_response_format is not None:
+                response_format = override_response_format
 
             # Resolve this loop's effective provider. If the agent's frontmatter
             # sets `parameters.provider`, use it for this loop only (passed
@@ -409,13 +450,47 @@ class AgentLoop:
             if parameters and parameters.get("provider"):
                 effective_provider = parameters["provider"]
 
+            # Validate structured output against the effective model. If the
+            # model declaratively does not support it, fall back to text
+            # (warning only — never blocks the loop). Unknown passes.
+            if response_format == "json":
+                try:
+                    if (effective_provider or "").upper() == "LOCAL":
+                        from backend.agent.utils.model_resolver import (
+                            get_model_reasoning_options,
+                        )
+                        local_caps = await asyncio.to_thread(
+                            get_model_reasoning_options, effective_provider, model
+                        )
+                        supports_format = local_caps.get("response_format_supported")
+                    else:
+                        from backend.agent.utils.model_catalog import (
+                            get_reasoning_options,
+                        )
+                        caps = await asyncio.to_thread(
+                            get_reasoning_options,
+                            (effective_provider or "").strip().lower(),
+                            model,
+                        )
+                        supports_format = caps.get("response_format_supported")
+                except Exception as exc:
+                    logger.warning("No se pudo validar response_format: %s", exc)
+                    supports_format = None
+                if supports_format is False:
+                    logger.warning(
+                        "Model '%s' does not support structured output. "
+                        "Falling back to text.",
+                        model,
+                    )
+                    response_format = "text"
+
             logger.info(
                 "Agent loop started — model: %s, provider: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s, reasoning: %s",
                 model, effective_provider, session_id, agent_name, depth, temperature, top_p, reasoning,
             )
 
             # --- Liberate parent model only when both parent and child run on
-            #     LOCAL with different models. Groq providers don't consume VRAM
+            #     LOCAL with different models. API-side providers don't consume VRAM
             #     so there's nothing to free/reload. ---
             parent_is_local = bool(parent_provider) and parent_provider.upper() == "LOCAL"
             child_is_local = bool(effective_provider) and effective_provider.upper() == "LOCAL"
@@ -687,6 +762,7 @@ class AgentLoop:
                             temperature=temperature, top_p=top_p, max_tokens=max_tokens,
                             reasoning=reasoning, budget_tokens=budget_tokens,
                             provider=effective_provider,
+                            response_format=response_format,
                         ):
                             if event["type"] == "chunk":
                                 collected_content += event.get("content", "")
@@ -1025,8 +1101,14 @@ class AgentLoop:
                             if isinstance(llm_payload, (dict, list))
                             else str(llm_payload)
                         )
-                        is_groq = effective_provider.upper() in ('GROQ', 'OPENROUTER')
-                        if is_groq:
+                        # Tool result message format depends on the provider API
+                        # family: OpenAI-style (tool_call_id) for LOCAL and all
+                        # OpenAI-compatible providers, Gemini-style (tool_name)
+                        # only for Google.
+                        uses_openai_tool_format = (
+                            _resolve_tool_api_type(effective_provider) != "google"
+                        )
+                        if uses_openai_tool_format:
                             tool_msg = {
                                 "role": "tool",
                                 "tool_call_id": tc.get("id", ""),

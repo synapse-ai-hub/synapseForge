@@ -57,7 +57,7 @@ _context_window_turns: int = -1
 
 _context_window_tokens: int | None = None
 """Context window (tokens) of the selected model. Detected at model
-selection (Ollama ``/api/show`` / Groq ``/models``) and persisted in
+selection (Ollama ``/api/show`` / OpenAI-compatible ``/models``) and persisted in
 ``config_kv`` as ``selected_model_context_window``."""
 
 _vram_gb: int | None = None
@@ -78,7 +78,7 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
 
     Args:
         model: The model name/ID.
-        provider: ``"LOCAL"``, ``"GROQ"``, ``"GOOGLE"`` or ``"OPENROUTER"``.
+        provider: ``"LOCAL"`` or any curated cloud provider name.
 
     Returns:
         The context window in tokens, or ``None`` if it cannot be resolved.
@@ -293,8 +293,8 @@ async def set_setup_completed() -> JSONResponse:
 def refresh_providers_cache() -> None:
     """Sync model catalog from models.dev for each provider with an API key.
 
-    Called once at application startup.  For cloud providers (Groq, Google,
-    OpenRouter, etc.) the catalog is synced from models.dev into the
+    Called once at application startup.  For cloud providers (any curated
+    provider with a stored key) the catalog is synced from models.dev into the
     ``model_catalog`` table.  For Ollama (LOCAL) the models are listed
     directly via ``ollama list`` and stored in the ``providers`` table.
     """
@@ -315,11 +315,10 @@ def refresh_providers_cache() -> None:
 
     # Cloud providers — sync from models.dev for each configured key.
     _PROVIDER_LABELS = {
-        "groq": "Groq",
-        "google": "Google Gemini",
-        "openrouter": "OpenRouter",
+        entry["provider"].lower(): entry["label"]
+        for entry in provider_keys.list_supported()
     }
-    for provider_id in ["groq", "google", "openrouter"]:
+    for provider_id in list(_PROVIDER_LABELS):
         try:
             api_key = provider_keys.resolve_api_key(provider_id.upper())
             if not api_key:
@@ -457,6 +456,7 @@ _PARAM_KEYS = {
     "top_p": "param_top_p",
     "reasoning": "param_reasoning",
     "budget_tokens": "param_budget_tokens",
+    "response_format": "param_response_format",
 }
 """Mapping of parameter name → ``config_kv`` key. Persisted values use the
 literal string ``"null"`` for "default" (no override)."""
@@ -508,8 +508,8 @@ def _read_param(key: str) -> Any:
 
     Returns:
         The parsed value (``float`` for temperature/top_p, ``str`` for
-        reasoning, ``int`` for budget_tokens) or ``None`` when unset/"null"
-        (default).
+        reasoning/response_format, ``int`` for budget_tokens) or ``None``
+        when unset/"null" (default).
     """
     if session_manager is None:
         return None
@@ -518,6 +518,8 @@ def _read_param(key: str) -> Any:
         return None
     try:
         if key == _PARAM_KEYS["reasoning"]:
+            return raw.strip().lower()
+        if key == _PARAM_KEYS["response_format"]:
             return raw.strip().lower()
         if key == _PARAM_KEYS["budget_tokens"]:
             return int(float(raw))
@@ -531,19 +533,28 @@ async def get_parameters() -> JSONResponse:
     """Return the persisted advanced parameters (``null`` = default).
 
     Also reports whether the currently selected model declaratively supports
-    reasoning (``reasoning_supported``): ``true``/``false`` per the provider
+    reasoning (``reasoning_supported``) and structured output
+    (``response_format_supported``): ``true``/``false`` per the provider
     catalog, or ``null`` when capability is unknown.
     """
     try:
         current_model = agent._resolved_model if agent is not None else None
         current_provider = agent.provider if agent is not None else ""
         reasoning_supported: bool | None = None
+        response_format_supported: bool | None = None
         if current_model and current_provider:
             if current_provider.upper() == "LOCAL":
-                from backend.agent.utils.model_resolver import model_supports_reasoning
+                from backend.agent.utils.model_resolver import (
+                    get_model_reasoning_options,
+                    model_supports_reasoning,
+                )
                 reasoning_supported = await asyncio.to_thread(
                     model_supports_reasoning, current_provider, current_model
                 )
+                local_caps = await asyncio.to_thread(
+                    get_model_reasoning_options, current_provider, current_model
+                )
+                response_format_supported = local_caps.get("response_format_supported")
             else:
                 caps = await asyncio.to_thread(
                     model_catalog.get_reasoning_options,
@@ -551,6 +562,7 @@ async def get_parameters() -> JSONResponse:
                     current_model,
                 )
                 reasoning_supported = caps.get("reasoning_supported")
+                response_format_supported = caps.get("response_format_supported")
         return JSONResponse(
             status_code=200,
             content={
@@ -559,9 +571,11 @@ async def get_parameters() -> JSONResponse:
                 "top_p": _read_param(_PARAM_KEYS["top_p"]),
                 "reasoning": _read_param(_PARAM_KEYS["reasoning"]),
                 "budget_tokens": _read_param(_PARAM_KEYS["budget_tokens"]),
+                "response_format": _read_param(_PARAM_KEYS["response_format"]),
                 "model": current_model,
                 "provider": current_provider or "",
                 "reasoning_supported": reasoning_supported,
+                "response_format_supported": response_format_supported,
             },
         )
     except Exception as exc:
@@ -614,7 +628,7 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     variables).
 
     - ``LOCAL`` → models from the startup cache (Ollama).
-    - ``GROQ`` → models from the startup cache (Groq).
+    - any curated cloud provider → models from the startup cache.
 
     No model is selected automatically: the user must pick one and apply it
     via ``POST /config/models/select``. The response carries ``model: null``
@@ -649,7 +663,7 @@ async def list_models(provider: str | None = None) -> JSONResponse:
             status_code=400,
             content={
                 "status": "error",
-                "message": f"Unknown PROVIDER: '{provider}'. Use 'GROQ', 'LOCAL', 'GOOGLE' or 'OPENROUTER'.",
+                "message": f"Unknown PROVIDER: '{provider}'.",
             },
         )
 
@@ -685,12 +699,14 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
         {"model": "llama3.2", "provider": "LOCAL",
          "temperature": 0.7, "top_p": 0.9, "reasoning": true}
 
-    ``temperature``, ``top_p`` and ``reasoning`` are optional advanced
+    ``temperature``, ``top_p``, ``reasoning``, ``budget_tokens`` and
+    ``response_format`` are optional advanced
     parameters; ``null`` (or omitted) means "default" (the agent's
     frontmatter value, or the hardcoded fallback). The selection and the
     parameters are stored in the agent singleton / persisted in SQLite
     (``config_kv`` keys ``param_temperature``, ``param_top_p``,
-    ``param_reasoning``).
+    ``param_reasoning``, ``param_budget_tokens``,
+    ``param_response_format``).
 
     If ``reasoning=true`` is sent for a model that declaratively does not
     support reasoning (per the provider catalog), the request is rejected
@@ -708,12 +724,14 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             },
         )
 
-    if provider not in {"LOCAL", "GROQ", "GOOGLE", "OPENROUTER"}:
+    from backend.agent.utils import provider_keys
+
+    if provider != "LOCAL" and not provider_keys.is_supported(provider):
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
-                "message": "provider must be 'LOCAL', 'GROQ', 'GOOGLE' or 'OPENROUTER'.",
+                "message": f"Unknown provider: '{provider}'.",
             },
         )
 
@@ -739,6 +757,25 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
                 "message": "reasoning must be a string or null (default).",
             },
         )
+    response_format = data.get("response_format", None)
+    if response_format is not None:
+        if not isinstance(response_format, str):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": "response_format must be 'text', 'json' or null (default).",
+                },
+            )
+        response_format = response_format.strip().lower()
+        if response_format not in ("text", "json"):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": "response_format must be 'text', 'json' or null (default).",
+                },
+            )
     budget_tokens = data.get("budget_tokens", None)
     if budget_tokens is not None:
         try:
@@ -793,6 +830,37 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
                 },
             )
 
+    # --- Structured output validation (declarative catalog check) ---
+    if response_format == "json":
+        try:
+            if provider.upper() == "LOCAL":
+                from backend.agent.utils.model_resolver import get_model_reasoning_options
+                local_caps = await asyncio.to_thread(
+                    get_model_reasoning_options, provider, model
+                )
+                supports_format = local_caps.get("response_format_supported")
+            else:
+                caps = await asyncio.to_thread(
+                    model_catalog.get_reasoning_options,
+                    provider.strip().lower(),
+                    model,
+                )
+                supports_format = caps.get("response_format_supported")
+        except Exception as exc:
+            log_error(str(exc), source="backend/routes/config.py:select_model(format_check)")
+            supports_format = None
+        if supports_format is False:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": (
+                        f"Model '{model}' does not support structured output. "
+                        "Set response_format to text/default or pick another model."
+                    ),
+                },
+            )
+
     # Liberar modelo anterior si es LOCAL (Ollama) y cambió
     modelo_anterior = agent._resolved_model
     if modelo_anterior and modelo_anterior != model and agent.provider.upper() == "LOCAL":
@@ -817,6 +885,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             _persist_param(_PARAM_KEYS["top_p"], top_p)
             _persist_param(_PARAM_KEYS["reasoning"], reasoning)
             _persist_param(_PARAM_KEYS["budget_tokens"], budget_tokens)
+            _persist_param(_PARAM_KEYS["response_format"], response_format)
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py")
         logger.warning("No se pudo persistir el modelo o proveedor seleccionado: %s", exc)
@@ -851,6 +920,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             "top_p": top_p,
             "reasoning": reasoning,
             "budget_tokens": budget_tokens,
+            "response_format": response_format,
         },
     )
 
@@ -861,12 +931,16 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
 
     Query params:
         model: Model name/ID
-        provider: Provider name (LOCAL, GROQ, GOOGLE, OPENROUTER)
+        provider: Provider name (LOCAL or any curated cloud provider)
 
     Returns:
         reasoning_supported: boolean
         reasoning_options: array of {value, label} for the reasoning dropdown
         reasoning_type: "effort_levels" | "budget_tokens" | "boolean"
+        response_format_supported: boolean (structured output support)
+        temperature_supported: boolean
+        tool_call_supported: boolean
+        found: whether the model exists in the local catalog
     """
     if not model or not provider:
         return JSONResponse(
@@ -887,17 +961,30 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
             caps = await asyncio.to_thread(
                 get_model_reasoning_options, provider_u, model
             )
+            found = True
+            temperature_supported: bool | None = True
+            tool_call_supported: bool | None = None
         else:
             # Cloud providers: use model_catalog from models.dev
             caps = await asyncio.to_thread(
                 model_catalog.get_reasoning_options, provider.strip().lower(), model
             )
+            row = await asyncio.to_thread(
+                model_catalog.get_model, provider.strip().lower(), model
+            )
+            found = row is not None
+            temperature_supported = bool(row.get("temperature")) if row else None
+            tool_call_supported = bool(row.get("tool_call")) if row else None
 
         # Build response with only fields that have values
-        response_data = {"status": "success"}
+        response_data = {"status": "success", "found": found}
         for key, value in caps.items():
             if value is not None and value != []:
                 response_data[key] = value
+        if temperature_supported is not None:
+            response_data["temperature_supported"] = temperature_supported
+        if tool_call_supported is not None:
+            response_data["tool_call_supported"] = tool_call_supported
         return JSONResponse(
             status_code=200,
             content=response_data,

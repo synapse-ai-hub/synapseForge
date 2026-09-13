@@ -68,6 +68,8 @@ from backend.agent.permissions import (
     get_agent_parameters,
 )
 from backend.agent.utils.clean_memory import liberar_modelo
+from backend.agent.utils import provider_keys
+from backend.agent.utils.model_catalog import get_provider_api_type
 from backend.instances import agent, session_manager
 from backend.agent.utils.loop_helpers import (
     build_initial_messages,
@@ -112,6 +114,35 @@ back-off waits of 2s, 4s, 8s, 16s and 32s (62s total).
 
 LLM_BACKOFF_BASE_SECONDS = 2.0
 """Base delay (seconds) for the exponential back-off between LLM retries."""
+
+
+def _resolve_tool_api_type(effective_provider: str | None) -> str:
+    """Resolve the API type used to pick the tool-message format.
+
+    Reads the synced catalog first and falls back to the curated
+    ``provider_keys.PROVIDER_REGISTRY`` when the catalog has no rows
+    for the provider (sync never ran).
+
+    Args:
+        effective_provider: Provider name or ``None``.
+
+    Returns:
+        ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
+        ``"unknown"``.
+    """
+    try:
+        api_type = get_provider_api_type(effective_provider or "")
+    except Exception:
+        api_type = "unknown"
+    if api_type == "unknown":
+        try:
+            info = provider_keys.PROVIDER_REGISTRY.get(
+                (effective_provider or "").strip().lower(), {}
+            )
+            api_type = str(info.get("api_type") or "unknown")
+        except Exception:
+            api_type = "unknown"
+    return api_type
 
 # Tool schema for the router agent (agent_name=None). Fallback only: the
 # router's guaranteed tools (task, help, search_memory, read, websearch,
@@ -315,7 +346,7 @@ class AgentLoop:
                 differs from this agent's model AND both run on ``LOCAL``, the
                 parent model is liberated on entry and this agent's model is
                 liberated on exit. API-side providers don't need VRAM liberation.
-            parent_provider: Parent agent's effective provider (``"GROQ"``/``"LOCAL"``).
+            parent_provider: Parent agent's effective provider (``"GROQ"``/``"LOCAL"``/any curated provider).
                 Used together with ``parent_model`` to decide whether to liberate
                 the parent model (only meaningful when both are LOCAL).
 
@@ -1070,8 +1101,14 @@ class AgentLoop:
                             if isinstance(llm_payload, (dict, list))
                             else str(llm_payload)
                         )
-                        is_groq = effective_provider.upper() in ('GROQ', 'OPENROUTER')
-                        if is_groq:
+                        # Tool result message format depends on the provider API
+                        # family: OpenAI-style (tool_call_id) for LOCAL and all
+                        # OpenAI-compatible providers, Gemini-style (tool_name)
+                        # only for Google.
+                        uses_openai_tool_format = (
+                            _resolve_tool_api_type(effective_provider) != "google"
+                        )
+                        if uses_openai_tool_format:
                             tool_msg = {
                                 "role": "tool",
                                 "tool_call_id": tc.get("id", ""),

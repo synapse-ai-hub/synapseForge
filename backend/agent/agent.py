@@ -61,6 +61,18 @@ from backend.utils.spend_handler import calculate_cost, record_spend
 _LEGACY_API_TYPES: dict[str, str] = {
     "GROQ": "openai-compatible",
     "OPENROUTER": "openai-compatible",
+    "OPENAI": "openai-compatible",
+    "DEEPSEEK": "openai-compatible",
+    "XAI": "openai-compatible",
+    "TOGETHER": "openai-compatible",
+    "FIREWORKS": "openai-compatible",
+    "CEREBRAS": "openai-compatible",
+    "MISTRAL": "openai-compatible",
+    "PERPLEXITY": "openai-compatible",
+    "META": "openai-compatible",
+    "MOONSHOTAI": "openai-compatible",
+    "ZHIPUAI": "openai-compatible",
+    "ALIBABA": "openai-compatible",
     "GOOGLE": "google",
     "LOCAL": "ollama",
 }
@@ -149,9 +161,8 @@ class Agent():
         - __api_key (str): API key used to authenticate with the Groq client
           (encrypted DB storage only).
         - __google_api_key (str): API key for the Google GenAI client.
-        - __openrouter_api_key (str): API key for the OpenRouter client.
-        - provider (str | None): ``GROQ``, ``LOCAL``, ``GOOGLE`` or
-          ``OPENROUTER``; set at runtime by the model selection endpoint.
+        - provider (str | None): ``LOCAL`` or any curated cloud provider
+          name; set at runtime by the model selection endpoint.
         - _resolved_model (str | None): Currently resolved model identifier.
         - _context_window (int | None): Context window (tokens) of the
           resolved model.
@@ -159,9 +170,9 @@ class Agent():
           a Groq API key is available).
         - google_client (genai.Client | None): Instantiated Google GenAI
           client (only if a Google API key is available).
-        - openrouter_client (AsyncOpenAI | None): Instantiated OpenRouter
-          client (OpenAI-compatible base URL; only if an OpenRouter API key
-          is available).
+        - _openai_clients (dict): OpenAI-compatible clients, one per
+          curated provider with a stored key (GROQ uses its dedicated
+          ``AsyncGroq`` client instead).
         - ollama_client (AsyncClient | None): Instantiated Ollama client
           (only if the local service is reachable).
         - usage (tuple | None): Last request usage metrics in the form
@@ -171,8 +182,8 @@ class Agent():
     ## Notes:
         - For provider ``GROQ``: requires a Groq API key stored in the DB.
         - For provider ``GOOGLE``: requires a Google API key stored in the DB.
-        - For provider ``OPENROUTER``: requires an OpenRouter API key
-          stored in the DB.
+        - For any other curated OpenAI-compatible provider: requires its
+          API key stored in the DB.
         - For provider ``LOCAL``: requires ``ollama`` installed
           (``pip install ollama``) and the service running.
         - Methods that call the API catch exceptions and print errors rather
@@ -210,10 +221,30 @@ class Agent():
         # Resolve API keys: encrypted DB storage only (no env fallback).
         self.__api_key = provider_keys.resolve_api_key('GROQ')
         self.__google_api_key = provider_keys.resolve_api_key('GOOGLE')
-        self.__openrouter_api_key = provider_keys.resolve_api_key('OPENROUTER')
         self.provider: str | None = None
         self._resolved_model: str | None = None
         self._context_window: int | None = None
+
+        # OpenAI-compatible clients, one per curated provider with a stored
+        # key (see ``provider_keys.PROVIDER_REGISTRY``). GROQ keeps its
+        # dedicated ``AsyncGroq`` client; every other OpenAI-compatible
+        # provider uses ``AsyncOpenAI`` with its own ``base_url``.
+        self._openai_clients: dict[str, Any] = {}
+        try:
+            for _pid, _info in provider_keys.PROVIDER_REGISTRY.items():
+                if str(_info.get("api_type") or "") != "openai-compatible":
+                    continue
+                if _pid == "groq":
+                    continue
+                _pkey = provider_keys.resolve_api_key(_pid.upper())
+                _base = str(_info.get("base_url") or "").rstrip("/")
+                if _pkey and _base:
+                    self._openai_clients[_pid.upper()] = AsyncOpenAI(
+                        base_url=_base, api_key=_pkey
+                    )
+        except Exception as e:
+            log_error(str(e), source="agent.py:__init__(openai_clients)")
+            self._openai_clients = {}
 
         # Always try to create both clients.  The frontend dropdown will
         # only show providers whose client initialised successfully.
@@ -241,19 +272,6 @@ class Agent():
             log_error(str(e), source="agent.py:__init__(google)")
             self.google_client = None
 
-        try:
-            self.openrouter_client = (
-                AsyncOpenAI(
-                    base_url='https://openrouter.ai/api/v1',
-                    api_key=self.__openrouter_api_key,
-                )
-                if self.__openrouter_api_key
-                else None
-            )
-        except Exception as e:
-            log_error(str(e), source="agent.py:__init__(openrouter)")
-            self.openrouter_client = None
-
         self.usage = None
 
         # Cache de prompts cargados desde archivos (evita lecturas repetitivas)
@@ -277,7 +295,8 @@ class Agent():
         the app.
 
         Args:
-            provider: ``GROQ``, ``GOOGLE`` or ``OPENROUTER``.
+            provider: Curated provider name (see
+                ``provider_keys.PROVIDER_REGISTRY``) or ``LOCAL``.
 
         Returns:
             Contract response ``{"status": "success"|"error", "message": ...}``.
@@ -292,22 +311,47 @@ class Agent():
                 key = provider_keys.resolve_api_key('GOOGLE')
                 self.__google_api_key = key
                 self.google_client = genai.Client(api_key=key) if key else None
-            elif provider_u == 'OPENROUTER':
-                key = provider_keys.resolve_api_key('OPENROUTER')
-                self.__openrouter_api_key = key
-                self.openrouter_client = (
-                    AsyncOpenAI(
-                        base_url='https://openrouter.ai/api/v1', api_key=key
-                    )
-                    if key
+            elif provider_u.lower() in provider_keys.PROVIDER_REGISTRY:
+                info = provider_keys.PROVIDER_REGISTRY[provider_u.lower()]
+                if str(info.get("api_type") or "") != "openai-compatible":
+                    return {"status": "error", "message": f"Provider inválido: '{provider}'."}
+                key = provider_keys.resolve_api_key(provider_u)
+                base_url = str(info.get("base_url") or "").rstrip("/")
+                client = (
+                    AsyncOpenAI(base_url=base_url, api_key=key)
+                    if key and base_url
                     else None
                 )
+                self._openai_clients[provider_u] = client
             else:
                 return {"status": "error", "message": f"Provider inválido: '{provider}'."}
             return {"status": "success", "message": f"Cliente de {provider_u} actualizado."}
         except Exception as e:
             log_error(str(e), source="agent.py:rebuild_provider_client")
             return {"status": "error", "message": f"Error reconstruyendo el cliente: {e}"}
+
+    def get_openai_client(self, provider: str) -> Any | None:
+        """Return the OpenAI-compatible client for a provider, if available.
+
+        GROQ resolves to the dedicated ``AsyncGroq`` client; every other
+        OpenAI-compatible provider resolves to its ``AsyncOpenAI`` entry in
+        ``_openai_clients``. Returns ``None`` when the provider has no
+        stored key (or is not OpenAI-compatible).
+
+        Args:
+            provider: Provider name (case-insensitive).
+
+        Returns:
+            The client instance, or ``None`` if unavailable.
+        """
+        try:
+            provider_u = (provider or "").upper()
+            if provider_u == "GROQ":
+                return self.groq_client
+            return self._openai_clients.get(provider_u)
+        except Exception as e:
+            log_error(str(e), source="agent.py:get_openai_client")
+            return None
 
     @property
     def default_model(self) -> str:
@@ -408,8 +452,8 @@ class Agent():
         Args:
             tool_calls: Normalized list (``{"id", "name", "args"}``) or a
                 list that is already in SDK format (has a ``function`` key).
-            is_groq: ``True`` for OpenAI-compatible providers
-                (GROQ/OPENROUTER), ``False`` for Ollama.
+            is_groq: ``True`` for OpenAI-compatible providers,
+                ``False`` for Ollama.
 
         Returns:
             List of tool_calls in the provider's expected format.
@@ -621,7 +665,7 @@ class Agent():
         and swallowed so they never break the calling flow.
 
         Args:
-            provider: The provider name (e.g. ``"GROQ"``, ``"OPENROUTER"``).
+            provider: The provider name (e.g. ``"GROQ"``, ``"OPENAI"``).
             model: The model identifier.
             usage: The usage report dict (``prompt_tokens``, ``completion_tokens``).
         """
@@ -686,7 +730,7 @@ class Agent():
                         not broken.
             budget_tokens: Token budget for reasoning (OpenRouter/Gemini).
                         ``None`` means the provider default.
-            provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
+            provider: Optional provider override (``"GROQ"``, ``"GOOGLE"``,
                        ``"GOOGLE"``, or ``"LOCAL"``).
                        When ``None``, falls back to ``self.provider`` so existing
                        callers keep their current behavior. Pass an explicit value
@@ -734,9 +778,13 @@ class Agent():
                 api_kwargs['max_tokens'] = max_tokens
 
             if api_type == 'openai-compatible':
-                # ── Groq / OpenRouter (OpenAI-compatible) ──
+                # ── OpenAI-compatible providers (registry) ──
                 is_groq = provider_u == 'GROQ'
-                client = self.groq_client if is_groq else self.openrouter_client
+                client = self.groq_client if is_groq else self._openai_clients.get(provider_u)
+                if client is None:
+                    return validate_response(make_error_response(
+                        message=f"Cliente no disponible para el provider '{effective_provider}': falta la API key."
+                    ))
                 oa_kwargs = dict(api_kwargs)
                 if tools:
                     oa_kwargs["tools"] = tools
@@ -977,7 +1025,7 @@ class Agent():
             cleaned_output: Apply ``self.clean()`` to text chunks.
             tools: Tool definitions for function calling.
             stream_cancel_event: Optional event to cancel mid-stream.
-provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
+provider: Optional provider override (``"GROQ"``, ``"GOOGLE"``,
                        ``"GOOGLE"``, or ``"LOCAL"``).
                        When ``None``, falls back to ``self.provider`` so existing
                        callers keep their current behavior. Pass an explicit value
@@ -1025,7 +1073,10 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
 
         if api_type == 'openai-compatible':
             is_groq = provider_u == 'GROQ'
-            client = self.groq_client if is_groq else self.openrouter_client
+            client = self.groq_client if is_groq else self._openai_clients.get(provider_u)
+            if client is None:
+                yield {'type': 'error', 'content': f"Cliente no disponible para el provider '{effective_provider}': falta la API key."}
+                return
             oa_kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": msgs,

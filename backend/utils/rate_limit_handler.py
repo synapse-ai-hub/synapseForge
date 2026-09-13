@@ -385,9 +385,21 @@ def get_adapter(provider: str) -> type[RateLimitAdapter]:
         provider: Provider name (case-insensitive).
 
     Returns:
-        The adapter class for the provider, or the base adapter if not found.
+        The adapter class for the provider; OpenAI-compatible providers
+        without a dedicated adapter use ``OpenAIAdapter``; anything else
+        falls back to the base adapter.
     """
-    return _ADAPTERS.get(provider.lower(), RateLimitAdapter)
+    adapter = _ADAPTERS.get(provider.lower())
+    if adapter is not None:
+        return adapter
+    try:
+        from backend.agent.utils.model_catalog import get_provider_api_type
+
+        if get_provider_api_type(provider) == "openai-compatible":
+            return OpenAIAdapter
+    except Exception:
+        pass
+    return RateLimitAdapter
 
 
 # ---------------------------------------------------------------------------

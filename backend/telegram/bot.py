@@ -1128,13 +1128,16 @@ class TelegramBot:
         await self.send_message(chat_id, f"Sesión '{title}' borrada.")
 
     async def _cmd_proveedor(self, chat_id: int, provider: str | None = None) -> None:
+        from backend.agent.utils import provider_keys
+
+        valid = ["LOCAL"] + [e["provider"] for e in provider_keys.list_supported()]
         if not provider:
             self._awaiting[chat_id] = "proveedor"
-            await self.send_message(chat_id, "¿Qué proveedor? (LOCAL, GROQ u OPENROUTER, o 'cancelar')")
+            await self.send_message(chat_id, f"¿Qué proveedor? ({', '.join(valid)}, o 'cancelar')")
             return
         provider = provider.strip().upper()
-        if provider not in ("LOCAL", "GROQ", "OPENROUTER"):
-            await self.send_message(chat_id, "Proveedor inválido. Usá LOCAL, GROQ u OPENROUTER.")
+        if provider not in valid:
+            await self.send_message(chat_id, f"Proveedor inválido. Usá {', '.join(valid)}.")
             return
         try:
             from backend.instances import agent

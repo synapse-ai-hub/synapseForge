@@ -1,0 +1,125 @@
+scenario: providers-list
+description: >
+  Lista de providers: el endpoint devuelve la caché de inicio con la lista
+  de providers disponibles y su etiqueta.
+cleanup: true
+steps:
+  - action: request
+    method: GET
+    path: /api/config/providers
+    expect:
+      http_status: 200
+      json_status: success
+      json_path_exists:
+        - providers
+---
+scenario: provider-keys-status
+description: >
+  Estado de API keys: el endpoint indica qué providers tienen key guardada,
+  sin exponer el material de la key.
+cleanup: true
+steps:
+  - action: request
+    method: GET
+    path: /api/config/providers/keys
+    expect:
+      http_status: 200
+      json_status: success
+      json_path_exists:
+        - keys
+---
+scenario: provider-key-rejects-unknown-provider
+description: >
+  Guardar key de un provider inexistente: se rechaza con 400 y no se
+  guarda nada.
+cleanup: true
+steps:
+  - action: request
+    method: PUT
+    path: /api/config/providers/NOEXISTE/key
+    body:
+      api_key: sk-test
+    expect:
+      http_status: 400
+      json_status: error
+---
+scenario: provider-key-rejects-empty-key
+description: >
+  Guardar key vacía: se rechaza con 400 y no se guarda nada.
+cleanup: true
+steps:
+  - action: request
+    method: PUT
+    path: /api/config/providers/GROQ/key
+    body:
+      api_key: ""
+    expect:
+      http_status: 400
+      json_status: error
+---
+scenario: provider-key-rejects-invalid-key-live
+description: >
+  Guardar key inválida: la validación viva contra la API del provider la
+  rechaza con 400 y no se guarda nada.
+cleanup: true
+steps:
+  - action: request
+    method: PUT
+    path: /api/config/providers/GROQ/key
+    body:
+      api_key: sk-test-invalid-key-12345
+    expect:
+      http_status: 400
+      json_status: error
+---
+scenario: provider-key-delete-unknown-provider
+description: >
+  Eliminar key de un provider inexistente: se rechaza con 400.
+cleanup: true
+steps:
+  - action: request
+    method: DELETE
+    path: /api/config/providers/NOEXISTE/key
+    expect:
+      http_status: 400
+      json_status: error
+---
+scenario: models-list
+description: >
+  Lista de modelos sin provider seleccionado: el endpoint responde con
+  éxito y la lista de modelos.
+cleanup: true
+steps:
+  - action: request
+    method: GET
+    path: /api/config/models
+    expect:
+      http_status: 200
+      json_status: success
+      json_path_exists:
+        - models
+---
+scenario: models-unknown-provider
+description: >
+  Lista de modelos de un provider inexistente: se rechaza con 400.
+cleanup: true
+steps:
+  - action: request
+    method: GET
+    path: /api/config/models?provider=NOEXISTE
+    expect:
+      http_status: 400
+      json_status: error
+---
+scenario: model-capabilities
+description: >
+  Capacidades de un modelo del catálogo: el endpoint responde con éxito
+  (reasoning, salida estructurada, temperatura y tool calling).
+cleanup: true
+steps:
+  - action: request
+    method: GET
+    path: /api/config/models/capabilities?model=llama-3.1-8b-instant&provider=groq
+    expect:
+      http_status: 200
+      json_status: success

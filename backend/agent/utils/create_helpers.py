@@ -76,12 +76,24 @@ def _resolve_create_model_provider() -> tuple[str, str]:
     )
 
 
-_CLOUD_CLIENT_ATTRS: dict[str, str] = {
-    "GROQ": "groq_client",
-    "GOOGLE": "google_client",
-    "OPENROUTER": "openrouter_client",
-}
-"""Cloud providers mapped to their Agent client attribute name."""
+def _cloud_client_available(prov_u: str) -> bool:
+    """Check whether a cloud provider has an instantiated client.
+
+    Args:
+        prov_u: Upper-cased provider name.
+
+    Returns:
+        ``True`` when the provider can serve a creation task right now.
+    """
+    try:
+        if prov_u == "GOOGLE":
+            return getattr(agent, "google_client", None) is not None
+        get_client = getattr(agent, "get_openai_client", None)
+        if callable(get_client):
+            return get_client(prov_u) is not None
+        return False
+    except Exception:
+        return False
 
 
 def resolve_create_model_provider(
@@ -96,20 +108,15 @@ def resolve_create_model_provider(
 
     Args:
         model: Model identifier chosen by the user.
-        provider: Provider name chosen by the user (``GROQ``, ``GOOGLE`` or
-            ``OPENROUTER``).
+        provider: Curated cloud provider name chosen by the user (any
+            OpenAI-compatible provider or ``GOOGLE``).
 
     Returns:
         Tuple of ``(model, provider)``.
     """
     prov_u = (provider or "").strip().upper()
     model_clean = (model or "").strip()
-    client_attr = _CLOUD_CLIENT_ATTRS.get(prov_u)
-    if (
-        model_clean
-        and client_attr is not None
-        and getattr(agent, client_attr, None) is not None
-    ):
+    if model_clean and _cloud_client_available(prov_u):
         return model_clean, prov_u
     return _resolve_create_model_provider()
 

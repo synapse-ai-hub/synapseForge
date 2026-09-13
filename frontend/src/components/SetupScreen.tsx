@@ -1,22 +1,24 @@
 import { useCallback, useRef, useState, type KeyboardEvent } from "react";
 import { configService } from "../services/configService";
 
-/** Providers offered on the initial setup screen. */
-const SETUP_PROVIDERS: Array<{ id: string; label: string; url: string }> = [
+/** Providers offered on the initial setup screen.
+ *
+ * Only the two auxiliary keys live here: Groq (speech-to-text) and Google
+ * (embeddings for the knowledge source). LLM providers are configured
+ * from the sidebar instead.
+ */
+const SETUP_PROVIDERS: Array<{ id: string; label: string; hint: string; url: string }> = [
   {
     id: "GROQ",
     label: "Groq",
+    hint: "transcripción de voz",
     url: "https://console.groq.com/keys",
   },
   {
     id: "GOOGLE",
     label: "Google Gemini",
+    hint: "fuente de conocimiento",
     url: "https://aistudio.google.com/apikey",
-  },
-  {
-    id: "OPENROUTER",
-    label: "OpenRouter",
-    url: "https://openrouter.ai/settings/keys",
   },
 ];
 
@@ -130,14 +132,13 @@ export function SetupScreen({ onDone }: SetupScreenProps) {
                   Bienvenido a <span className="brand-word">synapseForge</span>
                 </h2>
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  Para usar el asistente necesit&aacute;s una clave (API key) de alg&uacute;n proveedor de inteligencia artificial. Es gratis sacarlas y pod&eacute;s empezar con la capa gratuita de cualquiera de estos:
+                  Para usar el asistente necesit&aacute;s estas claves auxiliares. Es gratis sacarlas y pod&eacute;s empezar con la capa gratuita de cada una:
                 </p>
               </div>
 
               <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
-                <li><strong>OpenRouter</strong> — capa gratuita amplia</li>
-                <li><strong>Google Gemini</strong> — capa gratuita generosa</li>
-                <li><strong>Groq</strong> — muy r&aacute;pido, capa gratuita</li>
+                <li><strong>Groq</strong> — transcripci&oacute;n de voz</li>
+                <li><strong>Google Gemini</strong> — fuente de conocimiento</li>
               </ul>
 
               <div className="text-sm text-gray-600 bg-app-bg-secondary border border-app-border rounded-lg px-4 py-3 leading-relaxed">
@@ -180,11 +181,9 @@ export function SetupScreen({ onDone }: SetupScreenProps) {
                     className="block text-sm font-medium text-gray-700 mb-1"
                   >
                     {p.label}
-                    {p.id === "GOOGLE" && (
-                      <span className="text-xs text-app-text-secondary">
-                        {" "}— necesario para la fuente de conocimiento
-                      </span>
-                    )}
+                    <span className="text-xs text-app-text-secondary">
+                      {" "}— {p.hint}
+                    </span>
                   </label>
                   <div className="flex gap-2">
                     <input

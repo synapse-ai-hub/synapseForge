@@ -70,12 +70,26 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const isFirstLoadRef = useRef(true);
 
   /* ---- provider API keys ---- */
-  const KEY_PROVIDERS: Array<{ provider: string; label: string }> = [
+  /* Curated providers (mirrors backend PROVIDER_REGISTRY). */
+  const KEY_PROVIDER_OPTIONS: Array<{ provider: string; label: string }> = [
     { provider: "GROQ", label: "Groq" },
     { provider: "GOOGLE", label: "Google Gemini" },
     { provider: "OPENROUTER", label: "OpenRouter" },
+    { provider: "OPENAI", label: "OpenAI" },
+    { provider: "DEEPSEEK", label: "DeepSeek" },
+    { provider: "XAI", label: "xAI (Grok)" },
+    { provider: "TOGETHER", label: "Together AI" },
+    { provider: "FIREWORKS", label: "Fireworks AI" },
+    { provider: "CEREBRAS", label: "Cerebras" },
+    { provider: "MISTRAL", label: "Mistral AI" },
+    { provider: "PERPLEXITY", label: "Perplexity" },
+    { provider: "META", label: "Meta (Llama API)" },
+    { provider: "MOONSHOTAI", label: "Moonshot AI (Kimi)" },
+    { provider: "ZHIPUAI", label: "ZhipuAI (GLM)" },
+    { provider: "ALIBABA", label: "Alibaba (Qwen)" },
   ];
   const [providerKeys, setProviderKeys] = useState<ProviderKeyStatus[]>([]);
+  const [keyProvider, setKeyProvider] = useState<string>("");
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [savingKeyProvider, setSavingKeyProvider] = useState<string | null>(null);
   const [keysError, setKeysError] = useState<string | null>(null);
@@ -83,7 +97,17 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const loadProviderKeys = useCallback(async () => {
     try {
       const resp = await configService.getProviderKeys();
-      setProviderKeys(resp.keys || []);
+      const keys = resp.keys || [];
+      setProviderKeys(keys);
+      // Default the dropdown to the first provider without a key.
+      setKeyProvider((prev) => {
+        if (prev) return prev;
+        const configured = new Set(keys.filter((k) => k.configured).map((k) => k.provider));
+        return (
+          KEY_PROVIDER_OPTIONS.find((o) => !configured.has(o.provider))?.provider ||
+          KEY_PROVIDER_OPTIONS[0].provider
+        );
+      });
     } catch (err) {
       console.error("Error cargando API keys:", err);
     }
@@ -709,59 +733,72 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       {/* API keys de providers */}
       <Collapsible title="API keys de proveedores">
         <p className="text-[11px] text-app-text-secondary mb-2">
-          Opcional: guardá una API key por proveedor (queda cifrada en la base local). Si no hay key guardada se usa la variable de entorno.
+          Eleg&iacute; un proveedor y guard&aacute; su API key (queda cifrada en la base local). Se valida al guardar y el proveedor queda disponible de inmediato.
         </p>
         {keysError && (
           <div className="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {keysError}
           </div>
         )}
-        <div className="space-y-2.5">
-          {KEY_PROVIDERS.map(({ provider, label }) => (
-            <div key={provider} className="rounded-lg border border-app-border bg-white p-2.5">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-medium text-app-text">{label}</span>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isKeyConfigured(provider) ? "bg-green-500" : "bg-app-bg-tertiary"
-                    }`}
-                    title={isKeyConfigured(provider) ? "API key configurada" : "Sin API key"}
-                  />
-                  {isKeyConfigured(provider) && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteKey(provider)}
-                      disabled={savingKeyProvider !== null}
-                      className="text-app-text-secondary hover:text-red-500 transition-colors disabled:opacity-50"
-                      aria-label={`Eliminar API key de ${label}`}
-                      title="Eliminar API key guardada"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-1.5">
-                <Input
-                  type="password"
-                  value={keyInputs[provider] || ""}
-                  onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider]: e.target.value }))}
-                  placeholder={isKeyConfigured(provider) ? "••••••••" : "sk-..."}
-                  className="flex-1 text-xs"
-                  autoComplete="off"
-                />
-                <Button
-                  onClick={() => handleSaveKey(provider)}
-                  disabled={savingKeyProvider !== null || !(keyInputs[provider] || "").trim()}
-                  variant="gradient"
-                  className="px-4 text-xs shrink-0"
+        <div className="rounded-lg border border-app-border bg-white p-2.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <select
+              value={keyProvider}
+              onChange={(e) => {
+                setKeyProvider(e.target.value);
+                setKeysError(null);
+              }}
+              className="flex-1 rounded-lg border border-app-border bg-white px-2 py-1.5 text-xs text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light"
+            >
+              {KEY_PROVIDER_OPTIONS.map((o) => (
+                <option key={o.provider} value={o.provider}>
+                  {o.label}{isKeyConfigured(o.provider) ? " ✓" : ""}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-2 ml-2">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isKeyConfigured(keyProvider) ? "bg-green-500" : "bg-app-bg-tertiary"
+                }`}
+                title={isKeyConfigured(keyProvider) ? "API key configurada" : "Sin API key"}
+              />
+              {isKeyConfigured(keyProvider) && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteKey(keyProvider)}
+                  disabled={savingKeyProvider !== null}
+                  className="text-app-text-secondary hover:text-red-500 transition-colors disabled:opacity-50"
+                  aria-label="Eliminar API key guardada"
+                  title="Eliminar API key guardada"
                 >
-                  {savingKeyProvider === provider ? "..." : "Guardar"}
-                </Button>
-              </div>
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
-          ))}
+          </div>
+          <div className="flex gap-1.5">
+            <Input
+              type="password"
+              value={keyInputs[keyProvider] || ""}
+              onChange={(e) => setKeyInputs((prev) => ({ ...prev, [keyProvider]: e.target.value }))}
+              placeholder={isKeyConfigured(keyProvider) ? "••••••••" : "sk-..."}
+              className="flex-1 text-xs"
+              autoComplete="off"
+            />
+            <Button
+              onClick={() => handleSaveKey(keyProvider)}
+              disabled={savingKeyProvider !== null || !(keyInputs[keyProvider] || "").trim() || !keyProvider}
+              variant="gradient"
+              className="px-4 text-xs shrink-0"
+            >
+              {savingKeyProvider === keyProvider
+                ? "..."
+                : isKeyConfigured(keyProvider)
+                  ? "Modificar"
+                  : "Guardar"}
+            </Button>
+          </div>
         </div>
       </Collapsible>
 

@@ -78,7 +78,7 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
 
     Args:
         model: The model name/ID.
-        provider: ``"LOCAL"``, ``"GROQ"``, ``"GOOGLE"`` or ``"OPENROUTER"``.
+        provider: ``"LOCAL"`` or any curated cloud provider name.
 
     Returns:
         The context window in tokens, or ``None`` if it cannot be resolved.
@@ -315,11 +315,10 @@ def refresh_providers_cache() -> None:
 
     # Cloud providers — sync from models.dev for each configured key.
     _PROVIDER_LABELS = {
-        "groq": "Groq",
-        "google": "Google Gemini",
-        "openrouter": "OpenRouter",
+        entry["provider"].lower(): entry["label"]
+        for entry in provider_keys.list_supported()
     }
-    for provider_id in ["groq", "google", "openrouter"]:
+    for provider_id in list(_PROVIDER_LABELS):
         try:
             api_key = provider_keys.resolve_api_key(provider_id.upper())
             if not api_key:
@@ -629,7 +628,7 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     variables).
 
     - ``LOCAL`` → models from the startup cache (Ollama).
-    - ``GROQ`` → models from the startup cache (Groq).
+    - any curated cloud provider → models from the startup cache.
 
     No model is selected automatically: the user must pick one and apply it
     via ``POST /config/models/select``. The response carries ``model: null``
@@ -664,7 +663,7 @@ async def list_models(provider: str | None = None) -> JSONResponse:
             status_code=400,
             content={
                 "status": "error",
-                "message": f"Unknown PROVIDER: '{provider}'. Use 'GROQ', 'LOCAL', 'GOOGLE' or 'OPENROUTER'.",
+                "message": f"Unknown PROVIDER: '{provider}'.",
             },
         )
 
@@ -725,12 +724,14 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             },
         )
 
-    if provider not in {"LOCAL", "GROQ", "GOOGLE", "OPENROUTER"}:
+    from backend.agent.utils import provider_keys
+
+    if provider != "LOCAL" and not provider_keys.is_supported(provider):
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
-                "message": "provider must be 'LOCAL', 'GROQ', 'GOOGLE' or 'OPENROUTER'.",
+                "message": f"Unknown provider: '{provider}'.",
             },
         )
 
@@ -930,7 +931,7 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
 
     Query params:
         model: Model name/ID
-        provider: Provider name (LOCAL, GROQ, GOOGLE, OPENROUTER)
+        provider: Provider name (LOCAL or any curated cloud provider)
 
     Returns:
         reasoning_supported: boolean

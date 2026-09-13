@@ -25,7 +25,7 @@ def get_user_input() -> Dict[str, object]:
     repo: str = _prompt("Nombre del repo", required=True)
     cliente: str = _prompt("Nombre del cliente", required=True)
     logo_cliente: str = _prompt("Logo del cliente (para la app, opcional, sin comillas)", default="")
-    descripcion: str = _prompt("Descripción del proyecto", required=True)
+    nombre: str = _prompt("Nombre del proyecto", required=True)
     tarea: str = _prompt("Nombre de la tarea / rubro", required=True)
 
     # ── Colores (obligatorios) ──────────────────────────────────────────
@@ -65,7 +65,7 @@ def get_user_input() -> Dict[str, object]:
         "repo": repo,
         "cliente": cliente,
         "logo_cliente": logo_cliente or None,
-        "descripcion": descripcion,
+        "nombre": nombre,
         "tarea": tarea,
         "colors": colors,
     }

@@ -43,10 +43,19 @@ function TypingIndicator() {
 /* ------------------------------------------------------------------ */
 
 /** Collapsible reasoning block — cada bloque de razonamiento del LLM, con el mismo estilo de tarjeta que las tools. */
-function ReasoningBlock({ content, defaultOpen }: { content: string; defaultOpen?: boolean }) {
+function ReasoningBlock({ content, defaultOpen, isStreaming = false }: { content: string; defaultOpen?: boolean; isStreaming?: boolean }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   const panelId = `reasoning-${useId()}`;
   const text = content?.trim() || "";
+
+  // Auto-close when streaming ends (open during runtime, closed when done)
+  // NOTE: hook must be before any conditional return (Rules of Hooks)
+  useEffect(() => {
+    if (!isStreaming && open) {
+      setOpen(false);
+    }
+  }, [isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!text) return null;
   return (
     <div className="rounded-lg border border-app-border bg-app-bg-tertiary p-2.5">
@@ -200,6 +209,13 @@ function ToolCallBlock({
   const [childContentFallback, setChildContentFallback] = useState<string>("");
   const [childStepsFallback, setChildStepsFallback] = useState<SubagentStep[]>([]);
   const fetchedRef = useRef(false);
+
+  // Auto-close when streaming ends (open during runtime, closed when done)
+  useEffect(() => {
+    if (!isStreaming && open) {
+      setOpen(false);
+    }
+  }, [isStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Determine status: 'calling' | 'success' | 'error'
   const isTask = toolCall.tool === "task";
@@ -453,7 +469,7 @@ function ToolCallBlock({
             <div className="border-t border-app-border pt-2 space-y-2">
               {childSteps.map((step, i) => {
                 if (step.kind === "reasoning") {
-                  return <ReasoningBlock key={i} content={step.content} defaultOpen={isStreaming} />;
+                  return <ReasoningBlock key={i} content={step.content} defaultOpen={isStreaming} isStreaming={isStreaming} />;
                 }
                 if (step.kind === "text") return null;
                 const childStatus = getChildStatus(step.result, !isStreaming);
@@ -582,7 +598,7 @@ function MessageRow({
               {message.blocks.map((block, i) => {
                 if (block.type === "reasoning") {
                   if (!verboseMode) return null;
-                  return <ReasoningBlock key={i} content={block.content} defaultOpen={message.isStreaming} />;
+                  return <ReasoningBlock key={i} content={block.content} defaultOpen={message.isStreaming} isStreaming={message.isStreaming} />;
                 }
                 if (block.type === "text") {
                   return (

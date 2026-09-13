@@ -213,6 +213,26 @@ class SessionManager:
         finally:
             conn.close()
 
+    def get_last_assistant_message(self, session_id: str, turn_number: int) -> dict | None:
+        """Return the last assistant message dict of the given turn.
+
+        Shared by the chat route and the scheduler to read the final assistant
+        answer (content) or its persisted status without duplicating the
+        reverse-scan over ``load_messages``.
+
+        Args:
+            session_id: The session identifier.
+            turn_number: The turn number to look for.
+
+        Returns:
+            The last assistant message dict of that turn, or ``None`` if none.
+        """
+        messages = self.load_messages(session_id, max_turns=0)
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant" and msg.get("turn_number") == turn_number:
+                return msg
+        return None
+
     def get_session_metadata(self, session_id: str) -> dict:
         """Load the metadata JSON of a session.
 

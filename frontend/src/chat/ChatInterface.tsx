@@ -894,7 +894,7 @@ export const ChatInterface = forwardRef<ChatInterfaceHandle, ChatInterfaceProps>
           />
           <h1 className="text-lg sm:text-2xl font-semibold text-app-text">
             {/* @ts-ignore */}
-            <descripcion>Nombre del proyecto</descripcion>
+            <nombre>nombre_proyecto</nombre>
           </h1>
         </div>
 

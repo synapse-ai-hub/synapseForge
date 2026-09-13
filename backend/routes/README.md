@@ -4,7 +4,7 @@
 
 ---
 
-<h1 align="center">[API Routes — <descripcion>Nombre del proyecto</descripcion>]</h1>
+<h1 align="center">[API Routes — <nombre>nombre_proyecto</nombre>]</h1>
 
 ---
 
@@ -16,7 +16,7 @@
 
 ---
 
-<h3 align="center">[Endpoints HTTP de la API del <descripcion>Nombre del proyecto</descripcion>]</h3>
+<h3 align="center">[Endpoints HTTP de la API del <nombre>nombre_proyecto</nombre>]</h3>
 
 ---
 

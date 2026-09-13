@@ -1,4 +1,4 @@
-# <descripcion>nombre__proyecto</descripcion> - Backend Dependencies
+# <nombre>nombre_proyecto</nombre> - Backend Dependencies
 # Install: pip install -r requirements.txt
 
 # --- Web Framework ---

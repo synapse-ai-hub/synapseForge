@@ -175,7 +175,7 @@ Remote control for the agent. Send messages, switch models, create skills/tools,
 
 ### Scheduled tasks
 
-Define tasks (prompt + time + days) from the UI or Telegram. The backend executes them with the selected model and notifies via the UI and Telegram.
+Define tasks (name + prompt + time + days) from the UI or Telegram. Each task can be equipped with tools, skills and model parameters, and its prompt can be refined with the LLM wizard. Activating a task creates a dedicated sub-agent with those permissions; the backend runs it on schedule and notifies via the UI and Telegram.
 
 ---
 

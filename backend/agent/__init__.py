@@ -1,4 +1,4 @@
-"""Agent loop package for the <descripcion>Nombre del proyecto</descripcion>.
+"""Agent loop package for the <nombre>nombre_proyecto</nombre>.
 
 Contains the while(true) agent loop, SQLite session persistence,
 context management, and compaction configuration.

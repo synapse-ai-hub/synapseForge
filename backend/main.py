@@ -1,4 +1,4 @@
-"""FastAPI application entry point for the <descripcion>Nombre del proyecto</descripcion> API.
+"""FastAPI application entry point for the <nombre>nombre_proyecto</nombre> API.
 
 This module initializes the FastAPI application, configures CORS middleware,
 mounts route handlers, and provides a health check endpoint.
@@ -182,7 +182,7 @@ async def _heartbeat_watchdog() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown hooks."""
-    logger.info("Starting <descripcion>Nombre del proyecto</descripcion> API ...")
+    logger.info("Starting <nombre>nombre_proyecto</nombre> API ...")
 
     # Ensure config directory exists (~/.config/synapseForge/)
     try:
@@ -248,7 +248,7 @@ async def lifespan(app: FastAPI):
         log_error(str(exc), source="main.py:lifespan(scheduler)")
         logger.warning("Failed to start scheduler service: %s", exc)
 
-    logger.info("<descripcion>Nombre del proyecto</descripcion> API started successfully.")
+    logger.info("<nombre>nombre_proyecto</nombre> API started successfully.")
 
     # Pre-create the RAG vector DB (Gemini Embedding 2) once at startup,
     # only if the Gemini key is configured. It is shared and never
@@ -285,11 +285,11 @@ async def lifespan(app: FastAPI):
         log_error(str(exc), source="main.py:lifespan(telegram_stop)")
     # Liberar el modelo local (si el proveedor actual es LOCAL) al cerrar
     await _liberar_modelo_al_cerrar()
-    logger.info("<descripcion>Nombre del proyecto</descripcion> API shutting down.")
+    logger.info("<nombre>nombre_proyecto</nombre> API shutting down.")
 
 
 app = FastAPI(
-    title="<descripcion>Nombre del proyecto</descripcion> API",
+    title="<nombre>nombre_proyecto</nombre> API",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -457,7 +457,7 @@ else:
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    logger.info("Starting <descripcion>Nombre del proyecto</descripcion> API on http://0.0.0.0:8000")
+    logger.info("Starting <nombre>nombre_proyecto</nombre> API on http://0.0.0.0:8000")
     uvicorn.run(
         "backend.main:app",
         host="0.0.0.0",

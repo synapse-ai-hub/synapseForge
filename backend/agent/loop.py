@@ -14,7 +14,7 @@ Pattern
       response is retried up to ``MAX_EMPTY_RESPONSE_RETRIES`` times).
 6. Persist every message in SQLite.
 
-Both Groq (``client.chat.completions.create``) and Ollama
+All OpenAI-compatible providers (``client.chat.completions.create``) and Ollama
 (``ollama.chat``) support the ``tools`` parameter with JSON Schema
 definitions. Tool calls arrive as structured data, not as text to parse.
 
@@ -346,7 +346,7 @@ class AgentLoop:
                 differs from this agent's model AND both run on ``LOCAL``, the
                 parent model is liberated on entry and this agent's model is
                 liberated on exit. API-side providers don't need VRAM liberation.
-            parent_provider: Parent agent's effective provider (``"GROQ"``/``"LOCAL"``/any curated provider).
+            parent_provider: Parent agent's effective provider (any curated provider id or ``"LOCAL"``).
                 Used together with ``parent_model`` to decide whether to liberate
                 the parent model (only meaningful when both are LOCAL).
 
@@ -490,7 +490,7 @@ class AgentLoop:
             )
 
             # --- Liberate parent model only when both parent and child run on
-            #     LOCAL with different models. Groq providers don't consume VRAM
+            #     LOCAL with different models. API-side providers don't consume VRAM
             #     so there's nothing to free/reload. ---
             parent_is_local = bool(parent_provider) and parent_provider.upper() == "LOCAL"
             child_is_local = bool(effective_provider) and effective_provider.upper() == "LOCAL"

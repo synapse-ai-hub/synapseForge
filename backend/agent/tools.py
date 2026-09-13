@@ -1973,9 +1973,9 @@ class Tools:
         parameters instead of inventing them.
 
         Args:
-            provider: Provider name (e.g. ``"groq"``, ``"openrouter"``,
+            provider: Provider name (e.g. ``"openrouter"``,
                 ``"google"``, ``"LOCAL"``).
-            model: Model identifier (e.g. ``"llama-3.1-8b-instant"``).
+            model: Model identifier (e.g. ``"qwen/qwen3-32b"``).
 
         Returns:
             dict with ``{status, message, data, usage}``. On success,

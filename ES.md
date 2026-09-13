@@ -82,7 +82,7 @@ La fábrica transforma esas definiciones en sistemas autónomos.
 - **Motor de permisos** — deny-by-default, por agente, con wildcards y grupos
 - **Agent loop** — razonamiento iterativo → tool calling → ejecución → continuación, con streaming SSE
 - **Memoria** — indexación persistente de conversaciones y recuperación cross-sesión
-- **LLM multi-proveedor** — Ollama (local), Groq, Google Gemini, OpenRouter
+- **LLM multi-proveedor** — Ollama (local), providers cloud curados (OpenAI-compatibles + Google Gemini)
 - **Integración MCP** — conectá servidores de herramientas externos vía Model Context Protocol
 - **Scheduler** — ejecutá prompts en un schedule, notificá vía UI y Telegram
 
@@ -101,7 +101,7 @@ El resultado es una distribución de aplicación autónoma. Elegí la modalidad 
 
 ## Inicio rápido
 
-> Actualmente disponible en [TestPyPI](https://pypi.org/project/synapseForge/).
+> Actualmente disponible en [PyPi](https://pypi.org/project/synapseForge/).
 
 ```bash
 pip install synapseForge
@@ -114,7 +114,7 @@ cd my-project
 synapseforge run .
 ```
 
-En el primer inicio, configurá una API key de cualquier proveedor cloud soportado ([OpenRouter](https://openrouter.ai/settings/keys), [Google Gemini](https://aistudio.google.com/apikey) o [Groq](https://console.groq.com/keys) — todos con free tier) y presioná **Apply**. Ollama es opcional. La base de conocimiento requiere una key de OpenRouter.
+En el primer inicio, configurá una API key de cualquier proveedor cloud soportado (todos los providers curados tienen free tier) y presioná **Apply**. Ollama es opcional. La base de conocimiento requiere una key de un provider OpenAI-compatible.
 
 ---
 

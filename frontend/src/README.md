@@ -27,7 +27,7 @@ Frontend del **<descripcion>Nombre del proyecto</descripcion>**. Aplicación Rea
 ### ✨ Características Principales
 
 - **Chat streaming SSE**: Conversación en tiempo real con Server-Sent Events.
-- **Configuración dinámica**: Selección de proveedor (Ollama, Groq, Google Gemini, OpenRouter), modelo y ventana de contexto desde la UI.
+- **Configuración dinámica**: Selección de proveedor (providers cloud curados u Ollama local), modelo y ventana de contexto desde la UI.
 - **Gestión de sesiones**: Sidebar con historial, títulos, preview y eliminación.
 - **Tool calls visibles**: Colapsables por tool con input/output formateado.
 - **Adjuntos**: Arrastrar y soltar archivos; extracción de texto automática.

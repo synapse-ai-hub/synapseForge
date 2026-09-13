@@ -33,7 +33,7 @@
 The generated project includes:
 
 - **Agent Framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), sessions (SQLite WAL), per-agent permissions, skills and sub-agent delegation
-- **Multi-provider LLM**: LOCAL (Ollama), Groq, Google Gemini and Gemini Embedding 2 — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
+- **Multi-provider LLM**: LOCAL (Ollama) plus curated cloud providers (OpenAI-compatible + Google Gemini and Gemini Embedding 2) — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
 - **RAG knowledge base**: ChromaDB vector collections with Gemini Embedding 2; upload files and web pages, cosine-similarity search
 - **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview (with real tools enabled), with ephemeral cloud model selection per task
 - **Scheduled tasks**: user-defined tasks (description + time + weekdays) managed from the header Agenda or via Telegram; the backend runs them with the selected model and notifies the result in the UI bell and on Telegram
@@ -59,9 +59,9 @@ Package dependencies: `Pillow` (.ico generation) — everything else is project-
 | Node.js | 20+ | `launch` (frontend build), `run` (dev server) |
 | Docker | 20+ | Optional: containerized deployment |
 
-**LLM provider (required):** at least one cloud API key is needed to use the app — [OpenRouter](https://openrouter.ai/settings/keys), [Google Gemini](https://aistudio.google.com/apikey) or [Groq](https://console.groq.com/keys) all offer free tiers. Keys are loaded from the in-app config panel (**Providers**) on first launch; nothing else has to be installed.
+**LLM provider (required):** at least one cloud API key is needed to use the app — all curated providers offer free tiers. Keys are loaded from the in-app config panel (**Providers**) on first launch; nothing else has to be installed.
 
-> The **knowledge base** feature specifically requires an **OpenRouter** key (free tier works). Without it, that section stays disabled — everything else runs normally.
+> The **knowledge base** feature specifically requires an **OpenAI-compatible provider** key (free tier works). Without it, that section stays disabled — everything else runs normally.
 
 **Ollama (optional):** local models are supported but not required. Install Ollama only if you want to run models locally.
 

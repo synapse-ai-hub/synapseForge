@@ -225,7 +225,7 @@ export const configService = {
     }
   },
 
-  /** List providers that are currently available (Groq, Ollama, …). */
+  /** List providers that are currently available (curated cloud providers, Ollama, …). */
   async getProviders(): Promise<ProvidersResponse> {
     const response = await fetch(`${API_BASE_URL}/api/config/providers`, {
       method: "GET",

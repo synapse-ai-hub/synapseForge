@@ -57,7 +57,7 @@ _context_window_turns: int = -1
 
 _context_window_tokens: int | None = None
 """Context window (tokens) of the selected model. Detected at model
-selection (Ollama ``/api/show`` / Groq ``/models``) and persisted in
+selection (Ollama ``/api/show`` / OpenAI-compatible ``/models``) and persisted in
 ``config_kv`` as ``selected_model_context_window``."""
 
 _vram_gb: int | None = None
@@ -293,8 +293,8 @@ async def set_setup_completed() -> JSONResponse:
 def refresh_providers_cache() -> None:
     """Sync model catalog from models.dev for each provider with an API key.
 
-    Called once at application startup.  For cloud providers (Groq, Google,
-    OpenRouter, etc.) the catalog is synced from models.dev into the
+    Called once at application startup.  For cloud providers (any curated
+    provider with a stored key) the catalog is synced from models.dev into the
     ``model_catalog`` table.  For Ollama (LOCAL) the models are listed
     directly via ``ollama list`` and stored in the ``providers`` table.
     """

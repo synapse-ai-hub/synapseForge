@@ -14,7 +14,7 @@ Gracias por contribuir a `<repo>nombre_repo</repo>`. Este documento resume las n
 
 ### Providers
 
-El sistema soporta múltiples proveedores de LLM (Ollama local y Groq API como base). Para agregar un nuevo proveedor:
+El sistema soporta múltiples proveedores de LLM (Ollama local y providers cloud curados como base). Para agregar un nuevo proveedor:
 
 1. Revisar `backend/agent/agent.py` — ahí está la clase `Agent` con los métodos de conexión.
 2. Agregar el nuevo provider siguiendo la misma interfaz: recibe `model`, `messages` y devuelve streaming o completion.

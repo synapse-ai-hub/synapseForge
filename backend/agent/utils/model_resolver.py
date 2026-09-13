@@ -1,8 +1,9 @@
 """Model resolver — Ollama (LOCAL) model discovery and context window.
 
 This module handles **only** the local Ollama provider.  Cloud providers
-(Groq, Google, OpenRouter, etc.) are now served by :mod:`model_catalog`
-which fetches data from models.dev and caches it in ``agent.db``.
+(curated OpenAI-compatible providers and Google) are now served by
+:mod:`model_catalog` which fetches data from models.dev and caches it
+in ``agent.db``.
 
 Functions exposed:
 

@@ -10,7 +10,6 @@ python-multipart>=0.0.29
 anyio>=4.13.0
 
 # --- LLM ---
-groq>=1.2.0
 ollama>=0.1.0
 google-genai>=1.0.0
 openai>=1.0.0

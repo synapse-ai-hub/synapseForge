@@ -169,7 +169,7 @@ def is_supported(provider: str) -> bool:
     """Check whether a provider id is in the curated registry.
 
     Args:
-        provider: Provider id (case-insensitive, e.g. ``"groq"``).
+        provider: Provider id (case-insensitive, e.g. ``"openrouter"``).
 
     Returns:
         True if the provider can be managed through this module.

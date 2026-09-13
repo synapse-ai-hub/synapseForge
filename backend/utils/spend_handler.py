@@ -47,7 +47,7 @@ def check_spend_limit(provider: str, model: str | None) -> tuple[bool, dict | No
     the operation is blocked.
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
         model: Optional model identifier. If provided, both model and
             provider limits are checked.
 
@@ -149,7 +149,7 @@ def record_spend(
     Calculates total_tokens and cost_total automatically.
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
         model: The model identifier (e.g., "llama-3.1-8b-instant").
         prompt_tokens: Number of prompt tokens consumed in this transaction.
         completion_tokens: Number of completion tokens generated.
@@ -242,7 +242,7 @@ def calculate_cost(
         - cost_total: cost_input + cost_output
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
         model: The model identifier (e.g., "llama-3.1-8b-instant").
         prompt_tokens: Number of prompt tokens consumed.
         completion_tokens: Number of completion tokens generated.
@@ -300,7 +300,7 @@ def get_spend_config(provider: str, model: str | None) -> dict | None:
     then falls back to a provider-level configuration.
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
         model: Optional model identifier. If provided, looks for a model-specific
             configuration first.
 
@@ -357,7 +357,7 @@ def set_spend_limit(
     For provider-level limits (model is None), uses UPDATE + INSERT pattern.
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
         model: Optional model identifier. If None, sets a provider-level limit.
         limit_amount: The spending limit in USD. Setting to 0 effectively
             removes the limit (requests will always be allowed).
@@ -417,7 +417,7 @@ def get_spend_by_provider(provider: str) -> list[dict]:
     the specified provider.
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
 
     Returns:
         A list of dictionaries containing spend data for each model:
@@ -522,7 +522,7 @@ def get_billing_stats(provider: str) -> dict | None:
     and cost totals for the given provider.
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
 
     Returns:
         A dict with ``provider``, ``requests``, ``prompt_tokens``,
@@ -566,7 +566,7 @@ def get_current_spend(provider: str) -> float:
     """Retrieve the current accumulated spend for a provider.
 
     Args:
-        provider: The provider name (e.g., "groq", "openrouter").
+        provider: The provider name (e.g., "openrouter", "google").
 
     Returns:
         The total accumulated cost for the provider, or 0.0 if none.

@@ -43,7 +43,6 @@ RATE_LIMIT_MESSAGES = {
     # Tokens per minute exceeded
     "tpm": "Se alcanzó el límite de tokens por minuto del proveedor. Probá de nuevo en un momento.",
     # Provider-specific messages
-    "groq": "Límite de uso de Groq alcanzado. Cambiá a otro proveedor o esperá unos minutos.",
     "openrouter": "Límite de uso de OpenRouter alcanzado. Revisá tu plan en openrouter.ai o cambiá de proveedor.",
     "google": "Límite de uso de Google AI alcanzado. Probá de nuevo más tarde o cambiá a otro modelo.",
     "openai": "Límite de uso de OpenAI alcanzado. Revisá tu quota en platform.openai.com.",
@@ -168,52 +167,6 @@ class RateLimitAdapter:
         if status_code == 413:
             return "413"
         return "429"
-
-
-class GroqAdapter(RateLimitAdapter):
-    """Rate limit adapter for Groq API responses."""
-
-    provider_name = "groq"
-
-    @classmethod
-    def parse(cls, response_body: str | dict | None, status_code: int = 429) -> RateLimitInfo | None:
-        """Parse a Groq rate limit response.
-
-        Groq error format:
-        {"error": {"message": "...", "code": "rate_limit_exceeded", "type": "rate_limit_error"}}
-        """
-        try:
-            if isinstance(response_body, str):
-                data = json.loads(response_body)
-            else:
-                data = response_body or {}
-
-            error = data.get("error", {})
-            message = error.get("message", "") or str(data)
-            code = error.get("code", "")
-
-            # Check for rate limit indicators
-            if any(p in message.lower() or p in code.lower() for p in _RATE_LIMIT_PATTERNS):
-                retry_after = error.get("retry_after") or cls._extract_retry_after(message)
-
-                return RateLimitInfo(
-                    error_type=cls.get_error_type(status_code, response_body),
-                    provider=cls.provider_name,
-                    retry_after=retry_after,
-                    details=message,
-                    user_message=get_rate_limit_message(status_code, cls.provider_name),
-                )
-        except (json.JSONDecodeError, TypeError):
-            pass
-        return None
-
-    @staticmethod
-    def _extract_retry_after(message: str) -> int | None:
-        """Extract retry_after value from error message."""
-        match = re.search(r"retry\s*after[:\s]*(\d+)", message, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-        return None
 
 
 class OpenRouterAdapter(RateLimitAdapter):
@@ -369,9 +322,10 @@ class OpenAIAdapter(RateLimitAdapter):
 # Adapter registry
 # ---------------------------------------------------------------------------
 
-# Map provider names to their adapter classes
+# Map provider names to their adapter classes.
+# Providers without a dedicated adapter use OpenAIAdapter when their
+# api_type is "openai-compatible" (see get_adapter), else the base adapter.
 _ADAPTERS: dict[str, type[RateLimitAdapter]] = {
-    "groq": GroqAdapter,
     "openrouter": OpenRouterAdapter,
     "google": GoogleAdapter,
     "openai": OpenAIAdapter,

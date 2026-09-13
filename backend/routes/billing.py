@@ -113,7 +113,7 @@ async def get_usage_metrics(
     """Return usage metrics aggregated by provider-model.
 
     Args:
-        provider: Optional provider filter (e.g., 'groq', 'openrouter').
+        provider: Optional provider filter (e.g., 'openrouter', 'google').
 
     Returns:
         A contract response with ``data`` containing aggregated usage metrics.
@@ -207,7 +207,7 @@ async def get_billing_config(
 
 @router.post("/billing-config")
 async def create_billing_config(
-    provider: str = Query(..., description="Provider name (e.g., 'groq', 'openrouter')"),
+    provider: str = Query(..., description="Provider name (e.g., 'openrouter', 'google')"),
     model: str | None = Query(default=None, description="Model name (optional for provider-level limit)"),
     limit_amount: float = Query(..., ge=0, description="Spend limit amount in USD"),
 ):

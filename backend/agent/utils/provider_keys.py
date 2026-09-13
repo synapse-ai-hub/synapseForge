@@ -313,7 +313,7 @@ def validate_key(provider: str, api_key: str) -> dict:
                     "status": "error",
                     "message": f"API key de Google inválida: {e}",
                 }
-        else:  # GROQ
+        elif provider_u == "GROQ":
             # Validate by listing models via Groq API
             import requests
 
@@ -331,6 +331,25 @@ def validate_key(provider: str, api_key: str) -> dict:
                 return {
                     "status": "error",
                     "message": "API key de Groq inválida o sin modelos disponibles.",
+                }
+        elif provider_u == "OPENROUTER":
+            # Validate by listing models via OpenRouter API (OpenAI-compatible)
+            import requests
+
+            resp = requests.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                timeout=30,
+            )
+            if resp.status_code == 401:
+                return {"status": "error", "message": "API key de OpenRouter inválida."}
+            resp.raise_for_status()
+            data = resp.json()
+            models = data.get("data", [])
+            if not models:
+                return {
+                    "status": "error",
+                    "message": "API key de OpenRouter inválida o sin modelos disponibles.",
                 }
         return {"status": "success", "message": f"API key de {provider_u} válida."}
     except Exception as e:

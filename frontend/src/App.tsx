@@ -6,6 +6,12 @@ import {
 } from "./chat/ChatInterface";
 import { HistoryModal } from "./components/HistoryModal";
 import { MetricsModal } from "./components/MetricsModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
 import { UsageTab } from "./components/UsageTab";
 import { BillingTab } from "./components/BillingTab";
 import { SchedulerModal } from "./components/SchedulerModal";
@@ -441,21 +447,27 @@ const handleTelegramToggle = useCallback((val: boolean) => {
         onClose={() => setShowMetrics(false)}
       />
 
-      {(showUsage || showBilling) && (
-        <div className="fixed bottom-4 right-4 z-40 w-[420px] max-h-[70vh] overflow-y-auto rounded-2xl border border-app-border bg-white shadow-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-app-text">{showUsage ? "Uso" : "Facturación"}</h3>
-            <button
-              onClick={() => { setShowUsage(false); setShowBilling(false); }}
-              className="text-xs text-app-text-secondary hover:text-app-text"
-            >
-              Cerrar
-            </button>
+      <Dialog open={showUsage} onOpenChange={(o) => { if (!o) setShowUsage(false); }}>
+        <DialogContent className="flex h-[620px] max-w-4xl w-[720px] flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle>Uso</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+            <UsageTab />
           </div>
-          {showUsage && <UsageTab />}
-          {showBilling && <BillingTab />}
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBilling} onOpenChange={(o) => { if (!o) setShowBilling(false); }}>
+        <DialogContent className="flex h-[620px] max-w-4xl w-[720px] flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle>Facturación</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+            <BillingTab />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <SchedulerModal
         open={showScheduler}

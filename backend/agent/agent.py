@@ -779,7 +779,7 @@ class Agent():
                 completion_tokens = response.usage.completion_tokens
                 prompt_tokens = response.usage.prompt_tokens
                 total_tokens = response.usage.total_tokens
-                total_time = round(response.usage.total_time, 2)
+                total_time = round(getattr(response.usage, 'total_time', 0) or 0, 2)
 
             elif api_type == 'ollama':
                 # ── Ollama (local) ──

@@ -43,9 +43,7 @@ export function BillingTab() {
       if (!res.ok) throw new Error("Error fetching spend");
       const json = await res.json();
       if (json.status === "error") throw new Error(json.message);
-      const records: SpendRecord[] = (json.data?.spend || []).filter(
-        (r: SpendRecord) => r.cost_total > 0,
-      );
+      const records: SpendRecord[] = json.data?.spend || [];
       setSpend(records);
     } catch (err: any) {
       setError(err.message || "Error inesperado");
@@ -87,8 +85,7 @@ export function BillingTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-app-text">Facturación</h3>
+      <div className="flex items-center justify-end">
         <button
           onClick={fetchSpend}
           disabled={loading}

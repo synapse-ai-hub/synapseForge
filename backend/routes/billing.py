@@ -106,7 +106,7 @@ def _get_all_provider_stats() -> list[dict[str, Any]]:
         return []
 
 
-@router.get("/api/usage-metrics")
+@router.get("/usage-metrics")
 async def get_usage_metrics(
     provider: str | None = Query(default=None, description="Filter by provider name"),
 ):
@@ -167,7 +167,7 @@ async def get_usage_metrics(
         return validate_response(make_error_response(message="Error fetching usage metrics"))
 
 
-@router.get("/api/billing-config")
+@router.get("/billing-config")
 async def get_billing_config(
     provider: str | None = Query(default=None, description="Filter by provider name"),
     model: str | None = Query(default=None, description="Filter by model name"),
@@ -205,7 +205,7 @@ async def get_billing_config(
         return validate_response(make_error_response(message="Error fetching billing config"))
 
 
-@router.post("/api/billing-config")
+@router.post("/billing-config")
 async def create_billing_config(
     provider: str = Query(..., description="Provider name (e.g., 'groq', 'openrouter')"),
     model: str | None = Query(default=None, description="Model name (optional for provider-level limit)"),
@@ -246,7 +246,7 @@ async def create_billing_config(
         return validate_response(make_error_response(message="Error configuring spend limit"))
 
 
-@router.get("/api/billing-stats")
+@router.get("/billing-stats")
 async def get_billing_statistics(
     provider: str | None = Query(default=None, description="Filter by provider name"),
 ):
@@ -310,7 +310,7 @@ async def get_billing_statistics(
         return validate_response(make_error_response(message="Error fetching billing statistics"))
 
 
-@router.get("/api/spend")
+@router.get("/spend")
 async def get_spend(
     provider: str | None = Query(default=None, description="Filter by provider name"),
 ):

@@ -52,6 +52,7 @@ _INTERVIEW_TOOLS_PERMS: dict[str, str] = {
     "grep": "allow",
     "websearch": "allow",
     "webfetch": "allow",
+    "query_model_capabilities": "allow",
 }
 """Native tools enabled during creation interviews (read/explore + web)."""
 

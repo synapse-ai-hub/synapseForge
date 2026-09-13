@@ -485,8 +485,11 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td>Temperatura</td><td>Qué tan creativas o deterministas son las respuestas (0 = muy determinista, 1 = muy creativo).</td></tr>
               <tr><td>Top-p</td><td>Cuánta variedad de palabras se consideran al generar.</td></tr>
               <tr><td>Modelo</td><td>Qué modelo usar. Si no se especifica, hereda el del agente padre.</td></tr>
+              <tr><td>Proveedor</td><td>Qué proveedor usar para el modelo. Normalmente se omite, salvo que el agente necesite un modelo específico.</td></tr>
               <tr><td>Máximo de tokens</td><td>Límite de la longitud de la respuesta.</td></tr>
               <tr><td>Semilla</td><td>Para generación reproducible (útil en testing).</td></tr>
+              <tr><td>Reasoning</td><td>Nivel de razonamiento del modelo (si lo soporta). Si el modelo no lo soporta, se omite.</td></tr>
+              <tr><td>Salida estructurada (JSON)</td><td>Formato de salida del modelo: texto o JSON (solo si el modelo lo soporta).</td></tr>
             </tbody>
           </table>
           <h3>Permisos</h3>

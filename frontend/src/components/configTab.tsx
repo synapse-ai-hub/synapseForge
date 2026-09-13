@@ -17,6 +17,7 @@ const DEFAULT_PARAMS: AdvancedParams = {
   top_p: null,
   reasoning: null,
   budget_tokens: null,
+  response_format: null,
 };
 
 function paramsEqual(a: AdvancedParams, b: AdvancedParams): boolean {
@@ -24,7 +25,8 @@ function paramsEqual(a: AdvancedParams, b: AdvancedParams): boolean {
     a.temperature === b.temperature &&
     a.top_p === b.top_p &&
     a.reasoning === b.reasoning &&
-    a.budget_tokens === b.budget_tokens
+    a.budget_tokens === b.budget_tokens &&
+    a.response_format === b.response_format
   );
 }
 
@@ -40,10 +42,11 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
   const [savingModel, setSavingModel] = useState(false);
   const [savingContext, setSavingContext] = useState(false);
 
-  /* ---- advanced parameters (temperature / top_p / reasoning) ---- */
+  /* ---- advanced parameters (temperature / top_p / reasoning / response_format) ---- */
   const [pendingParams, setPendingParams] = useState<AdvancedParams>(DEFAULT_PARAMS);
   const [savedParams, setSavedParams] = useState<AdvancedParams>(DEFAULT_PARAMS);
   const [reasoningSupported, setReasoningSupported] = useState<boolean | null>(null);
+  const [responseFormatSupported, setResponseFormatSupported] = useState<boolean | null>(null);
   const [reasoningOptions, setReasoningOptions] = useState<Array<{ value: string; label: string }>>([
     { value: "", label: "Default" },
     { value: "yes", label: "Sí" },
@@ -170,10 +173,12 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
           top_p: prm.top_p,
           reasoning: prm.reasoning,
           budget_tokens: prm.budget_tokens,
+          response_format: prm.response_format,
         };
         setPendingParams(p);
         setSavedParams(p);
         setReasoningSupported(prm.reasoning_supported);
+        setResponseFormatSupported(prm.response_format_supported);
       }
     } catch (err) {
       console.error("Error cargando configuración:", err);
@@ -219,6 +224,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
         { value: "no", label: "No" },
       ]);
       setReasoningSupported(null);
+      setResponseFormatSupported(null);
     }
   };
 
@@ -228,6 +234,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
       if (response && response.reasoning_options) {
         setReasoningOptions(response.reasoning_options);
         setReasoningSupported(response.reasoning_supported ?? true);
+        setResponseFormatSupported(response.response_format_supported ?? null);
         setReasoningParam(response.reasoning_param ?? null);
         setReasoningType(response.reasoning_type ?? null);
         setBudgetMin(response.budget_min ?? null);
@@ -245,6 +252,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
           { value: "", label: "Default" },
         ]);
         setReasoningSupported(null);
+        setResponseFormatSupported(null);
         setReasoningParam(null);
         setReasoningType(null);
         setContextWindow(null);
@@ -262,6 +270,7 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
         { value: "", label: "Default" },
       ]);
       setReasoningSupported(null);
+      setResponseFormatSupported(null);
       setReasoningParam(null);
       setReasoningType(null);
       setContextWindow(null);
@@ -303,6 +312,13 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
     setPendingParams((prev) => ({
       ...prev,
       reasoning: value === "" ? null : value,
+    }));
+  };
+
+  const handleResponseFormatChange = (value: string) => {
+    setPendingParams((prev) => ({
+      ...prev,
+      response_format: value === "" ? null : value,
     }));
   };
 
@@ -584,6 +600,28 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
                   {opt.label}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Salida */}
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-app-text">Salida</label>
+            <select
+              value={pendingParams.response_format ?? ""}
+              disabled={responseFormatSupported === false}
+              title={
+                responseFormatSupported === false
+                  ? "El modelo actual no soporta salida estructurada."
+                  : undefined
+              }
+              onChange={(e) => handleResponseFormatChange(e.target.value)}
+              className={`rounded-lg border border-app-border bg-white px-2 py-1 text-xs text-app-text focus:outline-none focus:ring-2 focus:ring-app-primary-light ${
+                responseFormatSupported === false ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+            >
+              <option value="">Default</option>
+              <option value="text">Texto</option>
+              <option value="json">JSON</option>
             </select>
           </div>
 

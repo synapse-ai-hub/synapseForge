@@ -45,7 +45,7 @@ from backend.agent.utils.contract import (
 
 from backend.agent.tools import Tools
 
-from backend.agent.utils.model_catalog import translate_reasoning, get_reasoning_streaming_config
+from backend.agent.utils.model_catalog import translate_reasoning, get_reasoning_streaming_config, get_provider_api_type
 from backend.utils.spend_handler import calculate_cost, record_spend
 
 # Marcadores de comentarios usados en este proyecto:
@@ -57,6 +57,38 @@ from backend.utils.spend_handler import calculate_cost, record_spend
 # DEBUG  : código o mensajes usados solo para depuración temporal.
 # OK     : bloque probado y estable en las condiciones actuales.
 # PROD   : código / config específica de producción; tocar con extremo cuidado.
+
+_LEGACY_API_TYPES: dict[str, str] = {
+    "GROQ": "openai-compatible",
+    "OPENROUTER": "openai-compatible",
+    "GOOGLE": "google",
+    "LOCAL": "ollama",
+}
+"""Fallback name-based API types.
+
+Used only when the local catalog has no rows for the provider (e.g.
+sync never ran). Keeps the pre-refactor behavior for the known
+providers instead of rejecting them.
+"""
+
+
+def _resolve_api_type(effective_provider: str | None) -> tuple[str, str]:
+    """Resolve provider name and API type for LLM dispatch.
+
+    Args:
+        effective_provider: Provider name or ``None``.
+
+    Returns:
+        Tuple ``(provider_u, api_type)`` where ``provider_u`` is the
+        upper-cased name (``""`` when missing) and ``api_type`` is
+        ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
+        ``"unknown"``.
+    """
+    provider_u = (effective_provider or "").upper()
+    api_type = get_provider_api_type(effective_provider or "")
+    if api_type == "unknown":
+        api_type = _LEGACY_API_TYPES.get(provider_u, "unknown")
+    return provider_u, api_type
 
 
 load_dotenv()  
@@ -376,7 +408,8 @@ class Agent():
         Args:
             tool_calls: Normalized list (``{"id", "name", "args"}``) or a
                 list that is already in SDK format (has a ``function`` key).
-            is_groq: ``True`` for Groq, ``False`` for Ollama.
+            is_groq: ``True`` for OpenAI-compatible providers
+                (GROQ/OPENROUTER), ``False`` for Ollama.
 
         Returns:
             List of tool_calls in the provider's expected format.
@@ -581,7 +614,7 @@ class Agent():
 
         return contents, system_instruction
 
-    def _record_spend(self, provider: str, model: str, usage: dict | None) -> None:
+    def _record_spend(self, provider: str | None, model: str, usage: dict | None) -> None:
         """Record token usage and cost for a completed LLM call.
 
         Cloud providers only (LOCAL/Ollama has no cost). Failures are logged
@@ -615,12 +648,13 @@ class Agent():
                           top_p: float | None = None,
                           max_tokens: int | None = None,
                           cleaned_output: bool = True,
-                          tools: list | None = None,
-                          json_format: bool = False,
-                          reasoning: bool = True,
-                          budget_tokens: int | None = None,
-                          provider: str | None = None,
-                          **kwargs) -> ContractResponse:
+                           tools: list | None = None,
+                           json_format: bool = False,
+                           response_format: str | None = None,
+                           reasoning: bool = True,
+                           budget_tokens: int | None = None,
+                           provider: str | None = None,
+                           **kwargs) -> ContractResponse:
         """Send a chat completion and return content + tool_calls.
 
         Accepts either the classic ``prompt`` + ``system_content`` (backwards
@@ -639,6 +673,12 @@ class Agent():
             tools: Tool definitions for function calling.
             json_format: Force JSON output. For Groq: adds ``response_format={"type": "json_object"}``.
                          For Ollama: adds ``format="json"`` to the request.
+            response_format: Structured-output mode (``"text"``/``"json"``/``None``).
+                         ``"json"`` behaves like ``json_format=True`` on every
+                         provider (OpenAI-compatible ``response_format``,
+                         Ollama ``format="json"``, Gemini
+                         ``response_mime_type="application/json"``).
+                         ``"text"``/``None`` means plain text (default).
             reasoning: Whether to allow the model to reason (thinking). When
                         ``False``, reasoning is disabled on providers that support
                         it (Ollama ``think=False``, Groq ``reasoning_effort="none"``)
@@ -661,13 +701,14 @@ class Agent():
             - ``usage`` — token / time report.
         """
         effective_provider = provider if provider is not None else self.provider
+        provider_u, api_type = _resolve_api_type(effective_provider)
         try:
             # --- Build messages ---
             if messages is not None:
-                # GROQ/OPENROUTER/LOCAL need SDK-wrapped tool_calls; GOOGLE
+                # OpenAI-compatible/LOCAL need SDK-wrapped tool_calls; GOOGLE
                 # keeps the normalized form (its converter reads it directly
                 # and must preserve extra keys like ``thought_signature``).
-                needs_sdk_tc = effective_provider.upper() in ('GROQ', 'LOCAL', 'OPENROUTER')
+                needs_sdk_tc = api_type in ('openai-compatible', 'ollama')
                 msgs = []
                 for m in messages:
                     m_copy = dict(m)
@@ -675,7 +716,7 @@ class Agent():
                     if tcs and isinstance(tcs, list) and needs_sdk_tc:
                         m_copy["tool_calls"] = self._to_provider_tool_calls(
                             tcs,
-                            effective_provider.upper() in ('GROQ', 'OPENROUTER'),
+                            api_type == 'openai-compatible',
                         )
                     msgs.append(m_copy)
             else:
@@ -692,15 +733,15 @@ class Agent():
             if max_tokens is not None:
                 api_kwargs['max_tokens'] = max_tokens
 
-            if effective_provider.upper() in ('GROQ', 'OPENROUTER'):
+            if api_type == 'openai-compatible':
                 # ── Groq / OpenRouter (OpenAI-compatible) ──
-                is_groq = effective_provider.upper() == 'GROQ'
+                is_groq = provider_u == 'GROQ'
                 client = self.groq_client if is_groq else self.openrouter_client
                 oa_kwargs = dict(api_kwargs)
                 if tools:
                     oa_kwargs["tools"] = tools
                     oa_kwargs["tool_choice"] = "auto"
-                if json_format:
+                if json_format or response_format == "json":
                     oa_kwargs["response_format"] = {"type": "json_object"}
 
                 reasoning_kwargs = translate_reasoning(
@@ -740,7 +781,7 @@ class Agent():
                 total_tokens = response.usage.total_tokens
                 total_time = round(response.usage.total_time, 2)
 
-            elif effective_provider.upper() == 'LOCAL':
+            elif api_type == 'ollama':
                 # ── Ollama (local) ──
                 options = {}
                 if temperature is not None:
@@ -763,7 +804,7 @@ class Agent():
                     model=model,
                     messages=msgs,
                     tools=tools if tools else None,
-                    format="json" if json_format else None,
+                    format="json" if (json_format or response_format == "json") else None,
                     options=options,
                     keep_alive=-1,
                 )
@@ -800,7 +841,7 @@ class Agent():
                 prompt_tokens = response.prompt_eval_count or 0
                 total_tokens = (response.eval_count or 0) + (response.prompt_eval_count or 0)
                 total_time = round((response.total_duration or 0) / 1_000_000_000, 2)
-            elif effective_provider.upper() == 'GOOGLE':
+            elif api_type == 'google':
                 # ── Google Gemini ──
                 contents, system_instruction = self._to_gemini_contents(msgs)
                 config_kwargs: dict[str, Any] = {}
@@ -809,12 +850,14 @@ class Agent():
                 if top_p is not None:
                     config_kwargs['top_p'] = top_p
                 if max_tokens is not None:
-                    config_kwargs['max_output_tokens'] = max_tokens
+                    config_kwargs['max_tokens'] = max_tokens
                 if system_instruction:
                     config_kwargs['system_instruction'] = system_instruction
                 gemini_tools = self._to_gemini_tools(tools)
                 if gemini_tools:
                     config_kwargs['tools'] = gemini_tools
+                if response_format == "json":
+                    config_kwargs['response_mime_type'] = 'application/json'
 
                 # Use translator for reasoning (Google)
                 reasoning_kwargs = translate_reasoning(
@@ -954,11 +997,16 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             Streaming event dicts.
         """
         effective_provider = provider if provider is not None else self.provider
+        provider_u, api_type = _resolve_api_type(effective_provider)
+        # Structured-output mode arrives via **kwargs (loop passes the raw
+        # "text"/"json"/None value). Pop it here so the raw string never
+        # reaches a provider SDK, and translate it per api_type below.
+        stream_format = kwargs.pop("response_format", None)
         if messages is not None:
-            # GROQ/OPENROUTER/LOCAL need SDK-wrapped tool_calls; GOOGLE
+            # OpenAI-compatible/LOCAL need SDK-wrapped tool_calls; GOOGLE
             # keeps the normalized form (its converter reads it directly
             # and must preserve extra keys like ``thought_signature``).
-            needs_sdk_tc = effective_provider.upper() in ('GROQ', 'LOCAL', 'OPENROUTER')
+            needs_sdk_tc = api_type in ('openai-compatible', 'ollama')
             msgs = []
             for m in messages:
                 m_copy = dict(m)
@@ -966,7 +1014,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                 if tcs and isinstance(tcs, list) and needs_sdk_tc:
                     m_copy["tool_calls"] = self._to_provider_tool_calls(
                         tcs,
-                        effective_provider.upper() in ('GROQ', 'OPENROUTER'),
+                        api_type == 'openai-compatible',
                     )
                 msgs.append(m_copy)
         else:
@@ -975,8 +1023,8 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                 msgs.append({'role': 'system', 'content': system_content})
             msgs.append({'role': 'user', 'content': prompt or ''})
 
-        if effective_provider.upper() in ('GROQ', 'OPENROUTER'):
-            is_groq = effective_provider.upper() == 'GROQ'
+        if api_type == 'openai-compatible':
+            is_groq = provider_u == 'GROQ'
             client = self.groq_client if is_groq else self.openrouter_client
             oa_kwargs: dict[str, Any] = {
                 "model": model,
@@ -990,6 +1038,8 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             if tools:
                 oa_kwargs["tools"] = tools
                 oa_kwargs["tool_choice"] = "auto"
+            if stream_format == "json":
+                oa_kwargs["response_format"] = {"type": "json_object"}
 
             reasoning_kwargs = translate_reasoning(
                 provider=effective_provider,
@@ -1108,7 +1158,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                         "args": args,
                     })
                 yield {'type': 'tool_calls_detected', 'content': normalized}
-        elif effective_provider.upper() == 'LOCAL':
+        elif api_type == 'ollama':
             options = {}
             if temperature is not None:
                 options['temperature'] = temperature
@@ -1127,6 +1177,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             # "on"/"off", "low"/"medium"/"high"/"max", "default"
             chat_kwargs = dict(model=model, messages=msgs, stream=True,
                                tools=tools if tools else None,
+                               format="json" if stream_format == "json" else None,
                                options=options, keep_alive=-1)
 
             def _try_stream(use_think=False):
@@ -1281,7 +1332,7 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
                     })
                 yield {'type': 'tool_calls_detected', 'content': normalized}
 
-        elif effective_provider.upper() == 'GOOGLE':
+        elif api_type == 'google':
             # ── Google Gemini ──
             contents, system_instruction = self._to_gemini_contents(msgs)
             config_kwargs: dict[str, Any] = {}
@@ -1296,6 +1347,8 @@ provider: Optional provider override (``"GROQ"``, ``"OPENROUTER"``,
             gemini_tools = self._to_gemini_tools(tools)
             if gemini_tools:
                 config_kwargs['tools'] = gemini_tools
+            if stream_format == "json":
+                config_kwargs['response_mime_type'] = 'application/json'
 
             # Use translator for reasoning (Google)
             reasoning_kwargs = translate_reasoning(

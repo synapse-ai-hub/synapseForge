@@ -209,7 +209,8 @@ def _read_param_override(key: str) -> Any:
     """Read a global advanced-parameter override from ``config_kv``.
 
     Reads the value persisted by ``POST /api/config/models/select``
-    (keys ``param_temperature``, ``param_top_p``, ``param_reasoning``).
+    (keys ``param_temperature``, ``param_top_p``, ``param_reasoning``,
+    ``param_budget_tokens``, ``param_response_format``).
     The literal string ``"null"`` (or a missing/unparseable key) means
     "default" → returns ``None`` so the caller falls back to the next
     level of the precedence chain.
@@ -219,8 +220,8 @@ def _read_param_override(key: str) -> Any:
 
     Returns:
         The parsed override value (``float`` for temperature/top_p,
-        ``bool`` for reasoning) or ``None`` when there is no explicit
-        override.
+        ``bool`` for reasoning, ``str`` for response_format) or ``None``
+        when there is no explicit override.
     """
     try:
         raw = session_manager.get_config(key)
@@ -239,6 +240,8 @@ def _read_param_override(key: str) -> Any:
                 return "off"
             else:
                 return raw.strip()
+        if key == "param_response_format":
+            return raw.strip().lower()
         return float(raw)
     except (TypeError, ValueError):
         return None
@@ -404,6 +407,9 @@ class AgentLoop:
             override_budget = _read_param_override("param_budget_tokens")
             if override_budget is not None:
                 budget_tokens = override_budget
+            override_response_format = _read_param_override("param_response_format")
+            if override_response_format is not None:
+                response_format = override_response_format
 
             # Resolve this loop's effective provider. If the agent's frontmatter
             # sets `parameters.provider`, use it for this loop only (passed
@@ -412,6 +418,40 @@ class AgentLoop:
             effective_provider = agent.provider
             if parameters and parameters.get("provider"):
                 effective_provider = parameters["provider"]
+
+            # Validate structured output against the effective model. If the
+            # model declaratively does not support it, fall back to text
+            # (warning only — never blocks the loop). Unknown passes.
+            if response_format == "json":
+                try:
+                    if (effective_provider or "").upper() == "LOCAL":
+                        from backend.agent.utils.model_resolver import (
+                            get_model_reasoning_options,
+                        )
+                        local_caps = await asyncio.to_thread(
+                            get_model_reasoning_options, effective_provider, model
+                        )
+                        supports_format = local_caps.get("response_format_supported")
+                    else:
+                        from backend.agent.utils.model_catalog import (
+                            get_reasoning_options,
+                        )
+                        caps = await asyncio.to_thread(
+                            get_reasoning_options,
+                            (effective_provider or "").strip().lower(),
+                            model,
+                        )
+                        supports_format = caps.get("response_format_supported")
+                except Exception as exc:
+                    logger.warning("No se pudo validar response_format: %s", exc)
+                    supports_format = None
+                if supports_format is False:
+                    logger.warning(
+                        "Model '%s' does not support structured output. "
+                        "Falling back to text.",
+                        model,
+                    )
+                    response_format = "text"
 
             logger.info(
                 "Agent loop started — model: %s, provider: %s, session: %s, agent: %s, depth: %d, temp: %s, top_p: %s, reasoning: %s",

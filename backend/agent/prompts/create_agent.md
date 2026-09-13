@@ -28,8 +28,9 @@ El archivo resultante debe ser: frontmatter YAML delimitado por `---` + cuerpo m
 ---
 name: analizador-ventas
 description: Analiza datos de ventas y genera reportes con gráficos.
-temperature: 0.0
-top_p: 0.5
+parameters:
+  temperature: 0.0
+  top_p: 0.5
 permission:
   tools:
     read: allow
@@ -92,7 +93,7 @@ Si el agente no necesita skills, RAG, delegación ni MCP, OMITÍ esos bloques.
 
 1. `name`: nombre en snake_case, DEBE coincidir con el nombre del archivo (sin `.md`).
 2. `description`: una línea clara con qué hace el agente y cuándo delegarle tareas. La usan los demás agentes para decidir si delegarle.
-3. `temperature`, `top_p`, `seed`: van como claves de primer nivel del frontmatter (fuera de `permission`). NO uses un bloque `parameters:`. Definí `temperature` y `top_p` según el rol del agente (0.0/0.5 para tareas deterministas, 0.3-0.7/0.8-0.9 para creativas). `seed` es opcional, usá un número entero o omitilo.
+3. `temperature`, `top_p`, `model`, `provider`, `max_tokens`, `seed`, `reasoning`, `response_format`: van DENTRO del bloque `parameters:` (hermano de `permission`, al mismo nivel). PROHIBIDO ponerlos como claves sueltas de primer nivel: el sistema solo lee el bloque `parameters` y las claves sueltas se ignoran. Definí `temperature` y `top_p` según el rol del agente (0.0/0.5 para tareas deterministas, 0.3-0.7/0.8-0.9 para creativas). `model`, `provider`, `max_tokens` y `seed` son opcionales y normalmente se omiten (el agente usa los valores globales): solo incluilos si el agente necesita un modelo específico para su tarea. Para `reasoning` y `response_format`: llamá a la tool `query_model_capabilities` con el provider y el modelo elegidos y copiá esos valores SOLO si el modelo los soporta; si no los soporta, omitilos. PROHIBIDO inventar valores.
 4. `permission`: cada tipo de recurso va como bloque anidado: `tools`, `skill`, `rag`, `task`, y servidores MCP. Incluí SOLO lo que el agente necesita (mínimo privilegio). Las tools seleccionadas en la entrevista van en `tools`; sumá las nativas que su rol exija. Las skills van en `skill`.
 
 ## CÓMO GENERAR EL CUERPO DEL SYSTEM PROMPT

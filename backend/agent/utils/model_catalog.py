@@ -387,6 +387,8 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
     - ``reasoning_options``: list of ``{"value": ..., "label": ...}``
     - ``reasoning_type``: ``"effort_levels"`` | ``"budget_tokens"`` |
       ``"toggle"`` | ``"boolean"``
+    - ``response_format_supported``: bool | None (from models.dev
+      ``structured_output`` flag)
 
     Args:
         provider: Provider name.
@@ -399,6 +401,7 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
         "reasoning_supported": None,
         "reasoning_options": [],
         "reasoning_type": None,
+        "response_format_supported": None,
         "context_window": None,
         "input_limit": None,
         "output_limit": None,
@@ -411,6 +414,10 @@ def get_reasoning_options(provider: str, model_id: str) -> dict:
     model = get_model(provider, model_id)
     if model is None:
         return result
+
+    # Structured output support comes straight from models.dev.
+    if model.get("structured_output") is not None:
+        result["response_format_supported"] = bool(model.get("structured_output"))
 
     # Add model info
     result["context_window"] = model.get("context_window")
@@ -674,3 +681,67 @@ def list_configured_providers() -> list[str]:
         return []
     finally:
         conn.close()
+
+
+_NPM_TO_API_TYPE: dict[str, str] = {
+    "@ai-sdk/groq": "openai-compatible",
+    "@openrouter/ai-sdk-provider": "openai-compatible",
+    "@ai-sdk/openai": "openai-compatible",
+    "@ai-sdk/openai-compatible": "openai-compatible",
+    "@ai-sdk/deepseek": "openai-compatible",
+    "@ai-sdk/xai": "openai-compatible",
+    "@ai-sdk/togetherai": "openai-compatible",
+    "@ai-sdk/fireworks": "openai-compatible",
+    "@ai-sdk/cerebras": "openai-compatible",
+    "@ai-sdk/mistral": "openai-compatible",
+    "@ai-sdk/perplexity": "openai-compatible",
+    "@ai-sdk/azure": "openai-compatible",
+    "@ai-sdk/google": "google",
+    "@ai-sdk/google-vertex": "google",
+    "@ai-sdk/ollama": "ollama",
+}
+"""Map models.dev ``npm`` package → provider API type.
+
+Providers whose ``npm`` is not listed here resolve to ``"unknown"``
+and are rejected with a clear message instead of being assumed
+OpenAI-compatible.
+"""
+
+
+def get_provider_api_type(provider: str) -> str:
+    """Resolve the API type of a provider from the local catalog.
+
+    Reads the ``npm`` package stored at sync time (no network) and maps
+    it via ``_NPM_TO_API_TYPE``. ``LOCAL`` always resolves to
+    ``"ollama"`` (Ollama is not in models.dev).
+
+    Args:
+        provider: Provider name (e.g. ``"groq"``, ``"LOCAL"``).
+
+    Returns:
+        ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
+        ``"unknown"`` (never assumed; unknown must be rejected by the
+        caller with a clear message).
+    """
+    try:
+        prov = (provider or "").strip()
+        if not prov:
+            return "unknown"
+        if prov.upper() == "LOCAL":
+            return "ollama"
+        conn = _connect()
+        if conn is None:
+            return "unknown"
+        try:
+            row = conn.execute(
+                "SELECT npm FROM model_catalog WHERE provider = ? LIMIT 1",
+                (prov.lower(),),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None or not row["npm"]:
+            return "unknown"
+        return _NPM_TO_API_TYPE.get(str(row["npm"]).strip(), "unknown")
+    except Exception as e:
+        log_error(str(e), source="model_catalog.py:get_provider_api_type")
+        return "unknown"

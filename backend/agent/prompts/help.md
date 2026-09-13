@@ -18,7 +18,7 @@ Los sub-agentes son agentes especializados que se definen externamente al códig
      - Para tools planas: `read: allow`
      - Para `task` (delegación a sub-agentes): `task: { nombre_agente: allow }`
    - **`skill`**: Define qué skills puede cargar. Misma sintaxis que `permission`.
-   - **`parameters`**: Configuración del modelo para este agente: `temperature`, `top_p`, `model`, `seed`.
+   - **`parameters`**: Configuración del modelo para este agente: `temperature`, `top_p`, `model`, `provider`, `max_tokens`, `seed`, `reasoning`, `response_format`. `model`, `provider`, `max_tokens` y `seed` son opcionales y normalmente se omiten (el agente usa los valores globales), salvo que necesite un modelo específico para su tarea. `reasoning` y `response_format` solo se incluyen si el modelo los soporta.
 
 4. Debajo del frontmatter va el cuerpo del prompt del agente: su rol, instrucciones específicas, reglas de comportamiento.
 

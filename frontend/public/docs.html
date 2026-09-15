@@ -165,6 +165,7 @@ synapseForge run .
               <tr><td><code>synapseForge colors [directorio]</code></td><td>Edita solo la paleta de colores de un proyecto existente</td></tr>
               <tr><td><code>synapseForge run [directorio]</code></td><td>Levanta el proyecto en modo desarrollo (requiere el venv activado)</td></tr>
               <tr><td><code>synapseForge launch -p &lt;directorio&gt; -n &lt;nombre&gt;</code></td><td>Compila todo a una app de escritorio / zip distribuible</td></tr>
+              <tr><td><code>synapseForge update [directorio]</code></td><td>Actualiza el proyecto al último template (preserva datos)</td></tr>
             </tbody>
           </table>
         </section>
@@ -181,7 +182,7 @@ synapseForge run .
               <tr><td>Node.js</td><td>20 o superior</td><td>Build del frontend y modo desarrollo</td></tr>
             </tbody>
           </table>
-          <blockquote><p><strong>API key:</strong> para usar la app necesitás al menos una API key de un proveedor cloud — <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">OpenRouter</a>, <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google Gemini</a> o <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>, todos con capa gratis. Se carga desde la pantalla inicial de configuración (o Configuración → Providers). Ollama es opcional: solo si querés modelos locales.</p></blockquote>
+          <blockquote><p><strong>API key:</strong> para usar la app necesitás al menos una API key de un proveedor cloud curado (todos con capa gratis). Se carga desde la pantalla inicial de configuración (o Configuración → Providers). Ollama es opcional: solo si querés modelos locales.</p></blockquote>
           <h3>Instalación desde PyPI</h3>
           <p>La forma más rápida:</p>
           <pre><code>pip install synapseForge</code></pre>
@@ -273,7 +274,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           </table>
           <p>Todo esto se lee en tiempo de ejecución, así que podés agregar, modificar o quitar archivos sin reinstalar nada. Solo necesitás reiniciar el backend para que los cambios tomen efecto.</p>
           <h3><code>config.yaml</code> — permisos del agente principal</h3>
-          <p>El agente principal (el router) <strong>no tiene tools ni skills directas por defecto</strong> — solo puede delegar tareas mediante <code>task</code>. Si existe <code>~/.config/synapseForge/config.yaml</code>, sus permisos se toman de ahí (misma lógica que el frontmatter de los agentes):</p>
+          <p>El agente principal (el router) tiene <strong>siempre</strong> un conjunto base de tools de lectura y delegación: <code>task</code>, <code>help</code>, <code>search_memory</code>, <code>read</code>, <code>websearch</code> y <code>webfetch</code>. Este piso está garantizado: exista o no <code>~/.config/synapseForge/config.yaml</code>, el yaml no puede quitárselas. Si existe <code>config.yaml</code>, sus permisos se <strong>agregan</strong> encima del piso base (misma lógica que el frontmatter de los agentes):</p>
           <pre><code>permissions:
   tool:
     read: allow
@@ -282,9 +283,9 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
   task:
     explorador: allow</code></pre>
           <ul>
-            <li>Si el archivo <strong>no existe</strong> → el agente principal queda solo con <code>task</code> (delegación siempre disponible).</li>
-            <li>Si existe → usa <strong>solo</strong> los permisos explícitos del yaml.</li>
-            <li><code>task</code> está <strong>siempre</strong> disponible: si el yaml no lo lista, puede delegar a todos los sub-agentes; si lo lista, solo a los indicados.</li>
+            <li>Si el archivo <strong>no existe</strong> → el agente principal opera solo con el piso base (<code>task</code>, <code>help</code>, <code>search_memory</code>, <code>read</code>, <code>websearch</code>, <code>webfetch</code>).</li>
+            <li>Si existe → sus permisos se <strong>agregan</strong> encima del piso base.</li>
+            <li><code>task</code> es la excepción restrictible: si el yaml lo lista con sub-agentes, solo puede delegar a esos; si no lo lista, a todos.</li>
           </ul>
         </section>
 
@@ -292,7 +293,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h2>Base de conocimiento (RAG)</h2>
           <h3>¿Qué es?</h3>
           <p>El sistema de <strong>RAG</strong> (Retrieval-Augmented Generation) te permite armar una <strong>base de conocimiento</strong> que el agente consulta para responder con información específica de tu dominio. El contenido se guarda en <strong>colecciones vectoriales</strong> (ChromaDB) y se busca por <strong>similitud coseno</strong>.</p>
-          <blockquote><p><strong>Requisito:</strong> la base de conocimiento necesita una <strong>API key de OpenRouter</strong> (tiene capa gratis) cargada en Configuración → Providers. Sin esa key, esta sección queda deshabilitada — el resto de la app funciona normalmente.</p></blockquote>
+          <blockquote><p><strong>Requisito:</strong> la base de conocimiento necesita una <strong>API key de Google</strong> (tiene capa gratis) cargada en Configuración → Providers. Los embeddings se calculan con Gemini Embedding (<code>gemini-embedding-exp-02-05</code>). Sin esa key, esta sección queda deshabilitada — el resto de la app funciona normalmente.</p></blockquote>
           <h3>¿Cómo se organiza?</h3>
           <p>El contenido se agrupa en <strong>colecciones</strong>. Cada colección es un tema o fuente de información independiente (similar a NotebookLM). Podés tener tantas colecciones como necesites, y cada agente accede solo a las que tiene permitidas.</p>
           <h3>¿Qué podés cargar?</h3>
@@ -547,9 +548,9 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>Panel de configuración</h3>
           <p>En el panel lateral, hay una pestaña de <strong>Configuración</strong> con las siguientes opciones:</p>
           <h4>Proveedor y modelo</h4>
-          <p>Podés seleccionar el proveedor de modelos (Ollama local, Groq, Google Gemini u OpenRouter) y el modelo específico a utilizar. La selección se persiste entre sesiones y se aplica con el botón <strong>Aplicar</strong>. Al primer arranque aparece una pantalla inicial de configuración (que podés saltar) para cargar tus API keys; sin ningún proveedor disponible, el chat y los creadores quedan bloqueados hasta configurar uno.</p>
+          <p>Podés seleccionar el proveedor de modelos (Ollama local si está corriendo, o cualquier provider cloud curado: Google y 14 OpenAI-compatibles) y el modelo específico a utilizar. Los modelos se listan desde el catálogo models.dev cacheado en SQLite: no hay modelos fijos. La selección se persiste entre sesiones y se aplica con el botón <strong>Aplicar</strong>. Al primer arranque aparece una pantalla inicial de configuración (que podés saltar) para cargar tus API keys; sin ningún proveedor disponible, el chat y los creadores quedan bloqueados hasta configurar uno.</p>
           <h4>Providers (API keys)</h4>
-          <p>En la sección <strong>Providers</strong> podés cargar la API key de cada proveedor cloud (Groq, Google Gemini, OpenRouter). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Al guardar una key se valida contra la API del proveedor: si es inválida se rechaza; si es válida, el proveedor queda disponible de inmediato en los selectores.</p>
+          <p>En la sección <strong>Providers</strong> podés cargar la API key de cualquiera de los 15 providers cloud curados: Google más 14 OpenAI-compatibles (Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. La pantalla inicial solo pide las dos keys auxiliares (Groq para transcripción de voz, Google para la fuente de conocimiento); el resto de los providers se configura acá. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Al guardar una key se valida en vivo contra la API del proveedor: si es inválida se rechaza; si es válida, el proveedor queda disponible de inmediato en los selectores.</p>
           <h4>Contexto (turnos)</h4>
           <p>Controla cuántos turnos de conversación se mantienen en el contexto del modelo. <code>-1</code> significa todo el historial. Reducir este número ayuda a controlar el uso de tokens y el costo.</p>
           <h4>Modo verbose</h4>
@@ -620,6 +621,8 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>/detener</code></td><td>Detiene la tarea en curso.</td></tr>
               <tr><td><code>/proveedor</code></td><td>Cambia el proveedor (entre los disponibles; pregunta y espera respuesta).</td></tr>
               <tr><td><code>/modelo</code></td><td>Cambia el modelo (lista y espera respuesta).</td></tr>
+              <tr><td><code>/uso</code></td><td>Muestra uso por proveedor/modelo (tokens, costo).</td></tr>
+              <tr><td><code>/facturacion</code></td><td>Muestra/configura límites de gasto (flujo pregunta-respuesta).</td></tr>
               <tr><td><code>/skills</code></td><td>Lista skills (solo dev).</td></tr>
               <tr><td><code>/tools</code></td><td>Lista tools (solo dev).</td></tr>
               <tr><td><code>/agentes</code></td><td>Lista agentes (solo dev).</td></tr>
@@ -632,7 +635,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td><code>/ayuda</code></td><td>Muestra la ayuda.</td></tr>
             </tbody>
           </table>
-          <p>Los comandos que necesitan un argumento (<code>/usar</code>, <code>/borrar</code>, <code>/proveedor</code>, <code>/modelo</code>, <code>/crear</code>, <code>/archivo</code>, <code>/agendar</code>, <code>/horario</code>, <code>/eliminar_tarea</code>) usan un sistema de <strong>pregunta y respuesta</strong>: el bot muestra la lista de opciones y espera que el usuario responda con el texto. <code>/cancelar</code> (o la palabra "cancelar") aborta la espera.</p>
+          <p>Los comandos que necesitan un argumento (<code>/usar</code>, <code>/borrar</code>, <code>/proveedor</code>, <code>/modelo</code>, <code>/crear</code>, <code>/archivo</code>, <code>/agendar</code>, <code>/horario</code>, <code>/eliminar_tarea</code>, <code>/facturacion</code>) usan un sistema de <strong>pregunta y respuesta</strong>: el bot muestra la lista de opciones y espera que el usuario responda con el texto. <code>/cancelar</code> (o la palabra "cancelar") aborta la espera.</p>
           <h3>Creación de skills y RAG por Telegram</h3>
           <p>El bot detecta la intención de crear una skill o un RAG (por ejemplo, "crear skill" o "crear rag") y entra en un <strong>modo de creación</strong>:</p>
           <ul>
@@ -762,8 +765,8 @@ synapseForge run .</code></pre>
             <li>Abre el navegador automáticamente en la URL del frontend.</li>
           </ol>
           <h3>Configurar las claves de tu proveedor</h3>
-          <p>Para usar la app necesitás al menos una API key de un proveedor cloud. Al primer arranque aparece una pantalla de configuración donde podés cargarlas directamente (también desde Configuración → <strong>Providers</strong>). Recomendaciones con capa gratis: <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener">OpenRouter</a>, <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google Gemini</a> y <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>. Ollama es opcional: solo si querés correr modelos locales.</p>
-          <blockquote><p><strong>Importante:</strong> la base de conocimiento necesita específicamente una API key de OpenRouter (capa gratis). Sin ella esa sección queda deshabilitada; el resto funciona con cualquier proveedor.</p></blockquote>
+          <p>Para usar la app necesitás al menos una API key de un proveedor cloud curado. Al primer arranque aparece una pantalla de configuración donde podés cargarlas directamente (también desde Configuración → <strong>Providers</strong>). La pantalla inicial pide solo las dos keys auxiliares: Groq (transcripción de voz) y Google (fuente de conocimiento); los providers de LLM se configuran desde el panel lateral. Ollama es opcional: solo si querés correr modelos locales.</p>
+          <blockquote><p><strong>Importante:</strong> la base de conocimiento necesita específicamente una API key de Google (capa gratis). Los embeddings se calculan con Gemini Embedding (<code>gemini-embedding-exp-02-05</code>). Sin ella esa sección queda deshabilitada; el resto funciona con cualquier proveedor.</p></blockquote>
           <p>Las keys se guardan cifradas en la base de datos SQLite interna, se validan contra la API del proveedor al guardarlas y no se vuelven a mostrar.</p>
           <h3>Probar en otra máquina de la red</h3>
           <p>Si querés acceder desde otra computadora o dispositivo:</p>

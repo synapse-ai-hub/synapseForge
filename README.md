@@ -82,7 +82,7 @@ The Forge turns those definitions into autonomous systems.
 - **Permission engine** — deny-by-default, per-agent, with wildcards and groups
 - **Agent loop** — iterative reasoning → tool calling → execution → continuation, with streaming SSE
 - **Memory** — persistent conversation indexing and cross-session retrieval
-- **Multi-provider LLM** — Ollama (local), curated cloud providers (OpenAI-compatible + Google Gemini)
+- **Multi-provider LLM** — Ollama (local), curated cloud providers (OpenAI-compatible + Google)
 - **MCP integration** — connect external tool servers via the Model Context Protocol
 - **Scheduler** — run prompts on a schedule, notify via UI and Telegram
 
@@ -101,7 +101,7 @@ The result is a self-contained application distribution. Choose the modality tha
 
 ## Quick start
 
-> Currently available on [PyPi](https://pypi.org/project/synapseForge/).
+> Currently available on [PyPI](https://pypi.org/project/synapseForge/).
 
 ```bash
 pip install synapseForge
@@ -114,7 +114,7 @@ cd my-project
 synapseforge run .
 ```
 
-On first launch, configure an API key from any supported cloud provider (all curated providers offer free tiers) and press **Apply**. Ollama is optional. The knowledge base requires an OpenAI-compatible provider key.
+On first launch, configure an API key from any curated cloud provider (all offer free tiers) and press **Apply**. Ollama is optional. The knowledge base requires a Google key, and voice notes require a Groq key.
 
 ---
 
@@ -126,6 +126,7 @@ On first launch, configure an API key from any supported cloud provider (all cur
 | `synapseforge launch -p <path> -n <name>` | Build a desktop app / portable distribution zip |
 | `synapseforge colors [dir]` | Edit project colors live |
 | `synapseforge run [dir]` | Start development servers |
+| `synapseforge update [dir]` | Update project to latest template (preserves data) |
 
 ```mermaid
 flowchart LR
@@ -158,16 +159,15 @@ React/Vite/TypeScript SPA with Tailwind v4 and shadcn/ui. Multi-page: chat, skil
 
 | Provider | Type | Notes |
 |----------|------|-------|
-| Ollama | Local | Optional, requires local install |
-| Groq | Cloud | Free tier |
-| Google Gemini | Cloud | Free tier |
-| Gemini Embedding 2 | Cloud | Free tier, required for RAG embeddings |
+| Ollama | Local | Optional, requires local install; listed only while running |
+| Google | Cloud | Gemini models + RAG embeddings; free tier |
+| OpenAI-compatible | Cloud | Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba (Qwen); free tiers |
 
-API keys are validated on save and stored encrypted (Fernet) in SQLite. No environment variables needed.
+Cloud providers are curated in-app: each API key is validated live against its own API and stored encrypted (Fernet) in SQLite, and a provider is listed only while its key is saved. No environment variables needed. Models come from the models.dev catalog cached in SQLite — select provider + model explicitly and press **Apply**.
 
 ### Knowledge base (RAG)
 
-ChromaDB with Gemini Embedding 2 (`gemini-embedding-exp-02-05`). Upload files and web pages — content is extracted, chunked and indexed for semantic retrieval. Long-term memory: every conversation turn is automatically indexed and searchable across sessions via `search_memory`.
+ChromaDB with Gemini embeddings (`gemini-embedding-exp-02-05`) via the Google provider. Upload files and web pages — content is extracted, chunked and indexed for semantic retrieval. Requires a Google API key: without it, the knowledge base stays disabled and everything else runs normally. Long-term memory: every conversation turn is automatically indexed and searchable across sessions via `search_memory`.
 
 ### Telegram
 

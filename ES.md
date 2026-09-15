@@ -82,7 +82,7 @@ La fábrica transforma esas definiciones en sistemas autónomos.
 - **Motor de permisos** — deny-by-default, por agente, con wildcards y grupos
 - **Agent loop** — razonamiento iterativo → tool calling → ejecución → continuación, con streaming SSE
 - **Memoria** — indexación persistente de conversaciones y recuperación cross-sesión
-- **LLM multi-proveedor** — Ollama (local), providers cloud curados (OpenAI-compatibles + Google Gemini)
+- **LLM multi-proveedor** — Ollama (local), providers cloud curados (OpenAI-compatibles + Google)
 - **Integración MCP** — conectá servidores de herramientas externos vía Model Context Protocol
 - **Scheduler** — ejecutá prompts en un schedule, notificá vía UI y Telegram
 
@@ -101,7 +101,7 @@ El resultado es una distribución de aplicación autónoma. Elegí la modalidad 
 
 ## Inicio rápido
 
-> Actualmente disponible en [PyPi](https://pypi.org/project/synapseForge/).
+> Actualmente disponible en [PyPI](https://pypi.org/project/synapseForge/).
 
 ```bash
 pip install synapseForge
@@ -114,7 +114,7 @@ cd my-project
 synapseforge run .
 ```
 
-En el primer inicio, configurá una API key de cualquier proveedor cloud soportado (todos los providers curados tienen free tier) y presioná **Apply**. Ollama es opcional. La base de conocimiento requiere una key de un provider OpenAI-compatible.
+En el primer inicio, configurá una API key de cualquier proveedor cloud curado (todos con free tier) y presioná **Apply**. Ollama es opcional. La base de conocimiento requiere una key de Google, y las notas de voz requieren una key de Groq.
 
 ---
 
@@ -126,6 +126,7 @@ En el primer inicio, configurá una API key de cualquier proveedor cloud soporta
 | `synapseforge launch -p <path> -n <name>` | Construir una app de escritorio / zip de distribución portable |
 | `synapseforge colors [dir]` | Editar colores del proyecto en vivo |
 | `synapseforge run [dir]` | Iniciar servidores de desarrollo |
+| `synapseforge update [dir]` | Actualizar el proyecto al último template (preserva datos) |
 
 ```mermaid
 flowchart LR
@@ -158,16 +159,15 @@ SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui. Multi-página: chat, crea
 
 | Proveedor | Tipo | Notas |
 |-----------|------|-------|
-| Ollama | Local | Opcional, requiere instalación local |
-| Groq | Cloud | Free tier |
-| Google Gemini | Cloud | Free tier |
-| Gemini Embedding 2 | Cloud | Free tier, requerido para embeddings de RAG |
+| Ollama | Local | Opcional, requiere instalación local; figura solo mientras está corriendo |
+| Google | Cloud | Modelos Gemini + embeddings de RAG; free tier |
+| OpenAI-compatibles | Cloud | Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba (Qwen); free tiers |
 
-Las API keys se validan al guardar y se almacenan encriptadas (Fernet) en SQLite. No se necesitan variables de entorno.
+Los providers cloud están curados en la app: cada API key se valida en vivo contra su propia API y se guarda encriptada (Fernet) en SQLite, y un proveedor figura solo mientras su key está guardada. No se necesitan variables de entorno. Los modelos vienen del catálogo models.dev cacheado en SQLite — elegí proveedor + modelo explícitamente y presioná **Apply**.
 
 ### Base de conocimiento (RAG)
 
-ChromaDB con embeddings de Gemini Embedding 2 (`gemini-embedding-exp-02-05`). Subí archivos y páginas web — el contenido se extrae, chunking y se indexa para recuperación semántica. Memoria de largo plazo: cada turno de conversación se indexa automáticamente y se puede buscar cross-sesión vía `search_memory`.
+ChromaDB con embeddings de Gemini (`gemini-embedding-exp-02-05`) vía el proveedor Google. Subí archivos y páginas web — el contenido se extrae, chunking y se indexa para recuperación semántica. Requiere una API key de Google: sin ella, la base de conocimiento queda deshabilitada y el resto de la app funciona normalmente. Memoria de largo plazo: cada turno de conversación se indexa automáticamente y se puede buscar cross-sesión vía `search_memory`.
 
 ### Telegram
 

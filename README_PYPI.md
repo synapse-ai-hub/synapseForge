@@ -33,8 +33,8 @@
 The generated project includes:
 
 - **Agent Framework**: AgentLoop with native tool calling, tools registry (native + external + MCP), sessions (SQLite WAL), per-agent permissions, skills and sub-agent delegation
-- **Multi-provider LLM**: LOCAL (Ollama) plus curated cloud providers (OpenAI-compatible + Google Gemini and Gemini Embedding 2) — cloud API keys managed from the config panel, validated against each provider's API and stored encrypted in SQLite
-- **RAG knowledge base**: ChromaDB vector collections with Gemini Embedding 2; upload files and web pages, cosine-similarity search
+- **Multi-provider LLM**: Ollama (local) plus curated cloud providers — 14 OpenAI-compatible (Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba) + Google (Gemini models and embeddings) — cloud API keys validated live against each provider's API and stored encrypted in SQLite
+- **RAG knowledge base**: ChromaDB vector collections with Gemini embeddings (`gemini-embedding-exp-02-05`) via the Google provider; upload files and web pages, cosine-similarity search
 - **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview (with real tools enabled), with ephemeral cloud model selection per task
 - **Scheduled tasks**: user-defined tasks (name + description + time + weekdays) managed from the header Agenda or via Telegram; each task can be equipped with tools, skills and model parameters, and its prompt refined with the LLM wizard. Activating a task creates a dedicated sub-agent with those permissions; the backend runs it on schedule and notifies the result in the UI bell and on Telegram
 - **Telegram bot**: remote control that bridges messages to the agent through the web UI (commands, voice transcription, attachments)
@@ -55,13 +55,13 @@ Package dependencies: `Pillow` (.ico generation) — everything else is project-
 
 | Tool | Version | Needed for |
 |------|---------|------------|
-| Python | 3.12+ | `init`, `launch`, `run`, `colors` |
+| Python | 3.12+ | `init`, `launch`, `run`, `colors`, `update` |
 | Node.js | 20+ | `launch` (frontend build), `run` (dev server) |
 | Docker | 20+ | Optional: containerized deployment |
 
-**LLM provider (required):** at least one cloud API key is needed to use the app — all curated providers offer free tiers. Keys are loaded from the in-app config panel (**Providers**) on first launch; nothing else has to be installed.
+**LLM provider (required):** at least one curated cloud API key is needed to use the app — all curated providers offer free tiers. Keys are loaded from the in-app config panel (**Providers**) on first launch; nothing else has to be installed.
 
-> The **knowledge base** feature specifically requires an **OpenAI-compatible provider** key (free tier works). Without it, that section stays disabled — everything else runs normally.
+> The **knowledge base** feature specifically requires a **Google** key (free tier works). Without it, that section stays disabled — everything else runs normally. Voice notes on Telegram are transcribed with Groq Whisper and require a Groq key.
 
 **Ollama (optional):** local models are supported but not required. Install Ollama only if you want to run models locally.
 
@@ -95,14 +95,6 @@ synapseforge launch -p ./my-project -n "MyApp"
 Builds the frontend, bundles embedded Python and packages everything into a self-contained desktop app / zip ready to deliver. By default the backend ships as `.py` sources; pass `-c` / `--compile` to compile it to `.pyc`. Other options: `--skip-frontend`, `--no-embed`.
 
 Alternatively, deploy the project as a container with the bundled Docker setup (`docker compose up --build -d`), which serves the built frontend from the backend in a single image.
-
-### Update to latest template
-
-```bash
-synapseforge update ./my-project
-```
-
-Backs up the entire project (including `agent.db` and `config/replace.json`), downloads the latest template, and restores your data. If anything fails, the project is automatically restored from the backup.
 
 ### Update to latest template
 

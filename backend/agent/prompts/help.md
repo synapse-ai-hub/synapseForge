@@ -122,20 +122,22 @@ Las skills son conjuntos de instrucciones y material de referencia que se cargan
 
 ## Configuración del modelo
 
-Al primer arranque aparece una pantalla inicial de configuración (se puede saltar) donde se cargan las API keys de los proveedores cloud. Sin ningún provider disponible, el chat y los creadores quedan bloqueados hasta configurar uno.
+Al primer arranque aparece una pantalla inicial de configuración (se puede saltar) donde se cargan las dos API keys auxiliares: **Groq** (transcripción de voz) y **Google** (fuente de conocimiento). Los providers de LLM se configuran desde el panel lateral. Sin ningún provider disponible, el chat y los creadores quedan bloqueados hasta configurar uno.
 
 El modelo y proveedor se configuran desde el panel de Configuración en la interfaz:
 
-1. **Proveedor**: seleccionar entre los disponibles (providers cloud curados — OpenAI-compatibles y Google Gemini; Ollama para local, si está instalado).
+1. **Proveedor**: seleccionar entre los disponibles (providers cloud curados: 14 OpenAI-compatibles + Google; Ollama para local, si está instalado).
 2. **Modelo**: elegir entre los modelos disponibles para ese proveedor.
 3. Los cambios persisten en la base de datos SQLite y se aplican al siguiente mensaje.
 
 El modelo se elige explícitamente: seleccioná proveedor + modelo y pulsá **Aplicar**.
 
 Soportados:
-- **Providers OpenAI-compatibles**: Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba (Qwen).
-- **Google Gemini**: modelos de la API de Google (Gemini).
+- **OpenAI-compatibles**: Groq, OpenRouter, OpenAI, DeepSeek, xAI (Grok), Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta (Llama API), Moonshot AI (Kimi), ZhipuAI (GLM), Alibaba (Qwen).
+- **Google**: modelos Gemini de la API de Google (también provee los embeddings de RAG).
 - **Ollama**: modelos locales (opcional — solo aparece si Ollama está corriendo).
+
+Los modelos de cada provider se listan desde el catálogo models.dev cacheado en SQLite: no hay modelos fijos.
 
 ### API keys de los providers
 
@@ -282,8 +284,8 @@ Las tareas se persisten en la base de datos SQLite interna. Al activar una tarea
 
 El sistema soporta **colecciones RAG** (bases de conocimiento vectoriales con ChromaDB) que se crean desde la interfaz de creación (pestaña **RAG**). Cada colección vive en `~/.config/synapseForge/knowledge/` y se construye subiendo archivos y URLs, que se procesan y almacenan como documentos vectoriales.
 
-- Los embeddings se calculan con Gemini Embedding 2 (`gemini-embedding-exp-02-05`).
-- **Requiere una API key de Gemini** cargada en **Providers**: sin ella, la sección de fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
+- Los embeddings se calculan con Gemini Embedding (`gemini-embedding-exp-02-05`) vía el proveedor Google.
+- **Requiere una API key de Google** cargada en **Providers**: sin ella, la sección de fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
 - Las colecciones se listan y consultan desde la interfaz.
 - Sirven para darle al agente acceso a conocimiento específico del dominio (documentos, manuales, bases de datos de texto) mediante búsqueda semántica.
 

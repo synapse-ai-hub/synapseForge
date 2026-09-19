@@ -988,6 +988,7 @@ class Tools:
                 record_external_usage(
                     "embedding", "google", db.embed_func.model_name, 1,
                     duration=_rag_duration,
+                    prompt_tokens=db.embed_func.count_tokens([query]),
                 )
             except Exception:
                 pass
@@ -1072,6 +1073,7 @@ class Tools:
                 record_external_usage(
                     "embedding", "google", db.embed_func.model_name, 1,
                     duration=_mem_duration,
+                    prompt_tokens=db.embed_func.count_tokens([query]),
                 )
             except Exception:
                 pass

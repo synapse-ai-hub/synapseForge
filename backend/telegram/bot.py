@@ -1136,7 +1136,7 @@ class TelegramBot:
             self._awaiting[chat_id] = "proveedor"
             await self.send_message(chat_id, f"¿Qué proveedor? ({', '.join(valid)}, o 'cancelar')")
             return
-        provider = provider.strip().upper()
+        provider = provider.strip()
         if provider not in valid:
             await self.send_message(chat_id, f"Proveedor inválido. Usá {', '.join(valid)}.")
             return
@@ -1155,13 +1155,13 @@ class TelegramBot:
         from backend.agent.utils import model_catalog
         try:
             from backend.instances import agent
-            provider = (agent.provider or "LOCAL").strip().upper()
+            provider = (agent.provider or "LOCAL").strip()
         except Exception:
             provider = "LOCAL"
-        if provider.upper() == 'LOCAL':
+        if provider == 'LOCAL':
             models = get_ollama_models()
         else:
-            models = model_catalog.get_models(provider.lower())
+            models = model_catalog.get_models(provider)
         if not models:
             await self.send_message(chat_id, "No hay modelos disponibles.")
             return
@@ -1187,7 +1187,7 @@ class TelegramBot:
             # Persist the model's context window at the same moment (same
             # helper used by the web UI model selection).
             from backend.routes.config import _detect_and_persist_context_window
-            provider = (agent.provider or "LOCAL").strip().upper()
+            provider = (agent.provider or "LOCAL").strip()
             await asyncio.to_thread(_detect_and_persist_context_window, selected, provider)
         except Exception as exc:
             logger.warning("No se pudo cambiar el modelo: %s", exc)
@@ -1388,7 +1388,7 @@ class TelegramBot:
                 await self.send_message(chat_id, "Opción inválida.")
         elif cmd == "billing_provider":
             # Provider selected, ask for model
-            provider = text.strip().upper()
+            provider = text.strip()
             if provider.isdigit():
                 try:
                     from backend.agent.utils.provider_keys import list_configured
@@ -1429,7 +1429,7 @@ class TelegramBot:
         """Apply a billing limit for a provider/model."""
         try:
             from backend.utils.spend_handler import set_spend_limit
-            success = set_spend_limit(provider.lower(), model, limit)
+            success = set_spend_limit(provider.strip(), model, limit)
             if success:
                 msg = f"Límite configurado: {provider}"
                 if model:

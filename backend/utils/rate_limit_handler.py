@@ -343,7 +343,7 @@ def get_adapter(provider: str) -> type[RateLimitAdapter]:
         without a dedicated adapter use ``OpenAIAdapter``; anything else
         falls back to the base adapter.
     """
-    adapter = _ADAPTERS.get(provider.lower())
+    adapter = _ADAPTERS.get(provider)
     if adapter is not None:
         return adapter
     try:
@@ -471,7 +471,7 @@ def get_rate_limit_message(error_type: str, provider: str | None) -> str:
     """
     # Check for provider-specific message first
     if provider:
-        provider_msg = RATE_LIMIT_MESSAGES.get(provider.lower())
+        provider_msg = RATE_LIMIT_MESSAGES.get(provider)
         if provider_msg:
             return provider_msg
 

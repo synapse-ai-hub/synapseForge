@@ -58,21 +58,21 @@ from backend.utils.spend_handler import calculate_cost, record_spend
 # PROD   : código / config específica de producción; tocar con extremo cuidado.
 
 _LEGACY_API_TYPES: dict[str, str] = {
-    "GROQ": "openai-compatible",
-    "OPENROUTER": "openai-compatible",
-    "OPENAI": "openai-compatible",
-    "DEEPSEEK": "openai-compatible",
-    "XAI": "openai-compatible",
-    "TOGETHER": "openai-compatible",
-    "FIREWORKS": "openai-compatible",
-    "CEREBRAS": "openai-compatible",
-    "MISTRAL": "openai-compatible",
-    "PERPLEXITY": "openai-compatible",
-    "META": "openai-compatible",
-    "MOONSHOTAI": "openai-compatible",
-    "ZHIPUAI": "openai-compatible",
-    "ALIBABA": "openai-compatible",
-    "GOOGLE": "google",
+    "groq": "openai-compatible",
+    "openrouter": "openai-compatible",
+    "openai": "openai-compatible",
+    "deepseek": "openai-compatible",
+    "xai": "openai-compatible",
+    "togetherai": "openai-compatible",
+    "fireworks-ai": "openai-compatible",
+    "cerebras": "openai-compatible",
+    "mistral": "openai-compatible",
+    "perplexity": "openai-compatible",
+    "meta": "openai-compatible",
+    "moonshotai": "openai-compatible",
+    "zhipuai": "openai-compatible",
+    "alibaba": "openai-compatible",
+    "google": "google",
     "LOCAL": "ollama",
 }
 """Fallback name-based API types.
@@ -90,12 +90,12 @@ def _resolve_api_type(effective_provider: str | None) -> tuple[str, str]:
         effective_provider: Provider name or ``None``.
 
     Returns:
-        Tuple ``(provider_u, api_type)`` where ``provider_u`` is the
-        upper-cased name (``""`` when missing) and ``api_type`` is
+        Tuple ``(provider, api_type)`` where ``provider`` is the name
+        as configured (``""`` when missing) and ``api_type`` is
         ``"openai-compatible"``, ``"google"``, ``"ollama"`` or
         ``"unknown"``.
     """
-    provider_u = (effective_provider or "").upper()
+    provider_u = (effective_provider or "").strip()
     api_type = get_provider_api_type(effective_provider or "")
     if api_type == "unknown":
         api_type = _LEGACY_API_TYPES.get(provider_u, "unknown")
@@ -213,7 +213,7 @@ class Agent():
         super().__init__()
 
         # Resolve API keys: encrypted DB storage only (no env fallback).
-        self.__google_api_key = provider_keys.resolve_api_key('GOOGLE')
+        self.__google_api_key = provider_keys.resolve_api_key('google')
         self.provider: str | None = None
         self._resolved_model: str | None = None
         self._context_window: int | None = None
@@ -226,10 +226,10 @@ class Agent():
             for _pid, _info in provider_keys.PROVIDER_REGISTRY.items():
                 if str(_info.get("api_type") or "") != "openai-compatible":
                     continue
-                _pkey = provider_keys.resolve_api_key(_pid.upper())
+                _pkey = provider_keys.resolve_api_key(_pid)
                 _base = str(_info.get("base_url") or "").rstrip("/")
                 if _pkey and _base:
-                    self._openai_clients[_pid.upper()] = AsyncOpenAI(
+                    self._openai_clients[_pid] = AsyncOpenAI(
                         base_url=_base, api_key=_pkey
                     )
         except Exception as e:
@@ -285,14 +285,14 @@ class Agent():
         Returns:
             Contract response ``{"status": "success"|"error", "message": ...}``.
         """
-        provider_u = (provider or "").upper()
+        provider_u = (provider or "").strip()
         try:
-            if provider_u == 'GOOGLE':
-                key = provider_keys.resolve_api_key('GOOGLE')
+            if provider_u == 'google':
+                key = provider_keys.resolve_api_key('google')
                 self.__google_api_key = key
                 self.google_client = genai.Client(api_key=key) if key else None
-            elif provider_u.lower() in provider_keys.PROVIDER_REGISTRY:
-                info = provider_keys.PROVIDER_REGISTRY[provider_u.lower()]
+            elif provider_u in provider_keys.PROVIDER_REGISTRY:
+                info = provider_keys.PROVIDER_REGISTRY[provider_u]
                 if str(info.get("api_type") or "") != "openai-compatible":
                     return {"status": "error", "message": f"Provider inválido: '{provider}'."}
                 key = provider_keys.resolve_api_key(provider_u)
@@ -323,7 +323,7 @@ class Agent():
             The client instance, or ``None`` if unavailable.
         """
         try:
-            provider_u = (provider or "").upper()
+            provider_u = (provider or "").strip()
             return self._openai_clients.get(provider_u)
         except Exception as e:
             log_error(str(e), source="agent.py:get_openai_client")
@@ -649,10 +649,10 @@ class Agent():
             usage: The usage report dict (``prompt_tokens``, ``completion_tokens``).
         """
         try:
-            if (provider or "").upper() == "LOCAL":
+            if (provider or "").strip() == "LOCAL":
                 return
             usage = usage or {}
-            provider_name = (provider or "unknown").lower()
+            provider_name = (provider or "unknown").strip()
             prompt_tokens = usage.get("prompt_tokens") or 0
             completion_tokens = usage.get("completion_tokens") or 0
             cost_input, cost_output, _ = calculate_cost(
@@ -728,6 +728,10 @@ class Agent():
         effective_provider = provider if provider is not None else self.provider
         provider_u, api_type = _resolve_api_type(effective_provider)
         try:
+            # Wall-clock for unified timing: time-to-first-token and total
+            # time are always measured client-side, the same way for every
+            # provider (no native provider timing is used).
+            _proc_t0 = time.time()
             # --- Build messages ---
             if messages is not None:
                 # OpenAI-compatible/LOCAL need SDK-wrapped tool_calls; GOOGLE
@@ -809,7 +813,7 @@ class Agent():
                 completion_tokens = response.usage.completion_tokens
                 prompt_tokens = response.usage.prompt_tokens
                 total_tokens = response.usage.total_tokens
-                total_time = round(getattr(response.usage, 'total_time', 0) or 0, 2)
+                total_time = round(time.time() - _proc_t0, 2)
 
             elif api_type == 'ollama':
                 # ── Ollama (local) ──
@@ -870,7 +874,7 @@ class Agent():
                 completion_tokens = response.eval_count or 0
                 prompt_tokens = response.prompt_eval_count or 0
                 total_tokens = (response.eval_count or 0) + (response.prompt_eval_count or 0)
-                total_time = round((response.total_duration or 0) / 1_000_000_000, 2)
+                total_time = round(time.time() - _proc_t0, 2)
             elif api_type == 'google':
                 # ── Google Gemini ──
                 contents, system_instruction = self._to_gemini_contents(msgs)
@@ -899,7 +903,6 @@ class Agent():
                 if "thinking_config" in reasoning_kwargs:
                     config_kwargs["thinking_config"] = reasoning_kwargs["thinking_config"]
 
-                _google_start = time.time()
                 response = await self.google_client.aio.models.generate_content(
                     model=model,
                     contents=contents,
@@ -933,7 +936,7 @@ class Agent():
                     completion_tokens = response.usage_metadata.candidates_token_count or 0
                     prompt_tokens = response.usage_metadata.prompt_token_count or 0
                     total_tokens = response.usage_metadata.total_token_count or 0
-                total_time = round(time.time() - _google_start, 2)
+                total_time = round(time.time() - _proc_t0, 2)
             else:
                 return validate_response(make_error_response(message=f"PROVIDER inválido: '{effective_provider}'"))
 
@@ -1130,7 +1133,6 @@ provider: Optional provider override (any curated provider id,
                         'prompt_tokens': _u.prompt_tokens,
                         'completion_tokens': _u.completion_tokens,
                         'total_tokens': _u.total_tokens,
-                        'total_time': round(getattr(_u, 'total_time', 0) or 0, 2),
                     }
                 if chunk.choices:
                     delta = chunk.choices[0].delta
@@ -1181,6 +1183,10 @@ provider: Optional provider override (any curated provider id,
 
             # After stream finishes, record spend (every call counts, even
             # without usage metadata) and yield usage (if captured).
+            # ``total_time`` is always measured client-side (wall-clock),
+            # the same way for every provider.
+            if usage_data is not None:
+                usage_data['total_time'] = round(time.time() - _stream_t0, 2)
             self._record_spend(effective_provider, model, usage_data)
             if usage_data is not None:
                 usage_data['time_to_first_token'] = _ttft
@@ -1262,7 +1268,6 @@ provider: Optional provider override (any curated provider id,
                             'prompt_tokens': getattr(chunk, 'prompt_eval_count', 0) or 0,
                             'completion_tokens': getattr(chunk, 'eval_count', 0) or 0,
                             'total_tokens': (getattr(chunk, 'prompt_eval_count', 0) or 0) + (getattr(chunk, 'eval_count', 0) or 0),
-                            'total_time': round((getattr(chunk, 'total_duration', 0) or 0) / 1_000_000_000, 2),
                         }
                     # Ollama thinking (DeepSeek R1, gemma4, qwen3.5, etc.)
                     if chunk.message and hasattr(chunk.message, 'thinking') and chunk.message.thinking:
@@ -1324,7 +1329,6 @@ provider: Optional provider override (any curated provider id,
                                 'prompt_tokens': getattr(chunk, 'prompt_eval_count', 0) or 0,
                                 'completion_tokens': getattr(chunk, 'eval_count', 0) or 0,
                                 'total_tokens': (getattr(chunk, 'prompt_eval_count', 0) or 0) + (getattr(chunk, 'eval_count', 0) or 0),
-                                'total_time': round((getattr(chunk, 'total_duration', 0) or 0) / 1_000_000_000, 2),
                             }
                         if chunk.message and hasattr(chunk.message, 'thinking') and chunk.message.thinking:
                             has_dedicated_thinking = True
@@ -1365,6 +1369,10 @@ provider: Optional provider override (any curated provider id,
 
             # After stream finishes, record spend (every call counts, even
             # without usage metadata) and yield usage (if captured).
+            # ``total_time`` is always measured client-side (wall-clock),
+            # the same way for every provider.
+            if usage_data is not None:
+                usage_data['total_time'] = round(time.time() - _stream_t0, 2)
             self._record_spend(effective_provider, model, usage_data)
             if usage_data is not None:
                 usage_data['time_to_first_token'] = _ttft
@@ -1469,6 +1477,10 @@ provider: Optional provider override (any curated provider id,
 
             # After stream finishes, record spend (every call counts, even
             # without usage metadata) and yield usage (if captured).
+            # ``total_time`` is always measured client-side (wall-clock),
+            # the same way for every provider.
+            if usage_data is not None:
+                usage_data['total_time'] = round(time.time() - _stream_t0, 2)
             self._record_spend(effective_provider, model, usage_data)
             if usage_data is not None:
                 usage_data['time_to_first_token'] = _ttft

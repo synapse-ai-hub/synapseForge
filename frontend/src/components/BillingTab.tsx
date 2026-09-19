@@ -62,7 +62,7 @@ export function BillingTab() {
         const keysJson = await keysRes.json();
         const keys: Array<{ provider: string; configured: boolean }> = keysJson.keys || [];
         setKeyProviders(
-          keys.filter((k) => k.configured).map((k) => k.provider.toLowerCase()),
+          keys.filter((k) => k.configured).map((k) => k.provider),
         );
       }
     } catch (err: any) {
@@ -187,19 +187,40 @@ export function BillingTab() {
                 </div>
                 <span className="text-xs text-app-text-secondary">Req: {s.requests || 0}</span>
               </div>
-              <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-app-text-secondary">
-                <span>
-                  Entrada: {(s.prompt_tokens || 0).toLocaleString()} tok @ {formatRate(s.cost_input_rate)} = $
-                  {(s.cost_input || 0).toFixed(4)}
-                </span>
-                <span>
-                  Salida: {(s.completion_tokens || 0).toLocaleString()} tok @ {formatRate(s.cost_output_rate)} = $
-                  {(s.cost_output || 0).toFixed(4)}
-                </span>
-                <span className="text-right font-medium text-app-text">
-                  Total: ${(s.cost_total || 0).toFixed(4)}
-                </span>
-              </div>
+              <table className="mt-2 w-full text-xs">
+                <thead>
+                  <tr className="text-left text-app-text-secondary">
+                    <th className="py-1 pr-2 font-normal">Concepto</th>
+                    <th className="py-1 pr-2 text-right font-normal">Tokens</th>
+                    <th className="py-1 pr-2 text-right font-normal">Tarifa /1M</th>
+                    <th className="py-1 text-right font-normal">Costo USD</th>
+                  </tr>
+                </thead>
+                <tbody className="tabular-nums">
+                  <tr className="border-t border-app-border text-app-text-secondary">
+                    <td className="py-1 pr-2">Entrada</td>
+                    <td className="py-1 pr-2 text-right">{(s.prompt_tokens || 0).toLocaleString()}</td>
+                    <td className="py-1 pr-2 text-right">{formatRate(s.cost_input_rate)}</td>
+                    <td className="py-1 text-right font-medium text-app-text">
+                      ${(s.cost_input || 0).toFixed(4)}
+                    </td>
+                  </tr>
+                  <tr className="border-t border-app-border text-app-text-secondary">
+                    <td className="py-1 pr-2">Salida</td>
+                    <td className="py-1 pr-2 text-right">{(s.completion_tokens || 0).toLocaleString()}</td>
+                    <td className="py-1 pr-2 text-right">{formatRate(s.cost_output_rate)}</td>
+                    <td className="py-1 text-right font-medium text-app-text">
+                      ${(s.cost_output || 0).toFixed(4)}
+                    </td>
+                  </tr>
+                  <tr className="border-t border-app-border font-medium text-app-text">
+                    <td className="py-1 pr-2">Total ({s.requests || 0} req)</td>
+                    <td className="py-1 pr-2 text-right">{(s.total_tokens || 0).toLocaleString()}</td>
+                    <td className="py-1 pr-2 text-right">—</td>
+                    <td className="py-1 text-right">${(s.cost_total || 0).toFixed(4)}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           ))}
           {filteredSpend.length === 0 && (

@@ -73,13 +73,13 @@ PROVIDER_REGISTRY: dict[str, dict[str, str | None]] = {
         "base_url": "https://api.x.ai/v1",
         "key_url": "https://console.x.ai/",
     },
-    "together": {
+    "togetherai": {
         "label": "Together AI",
         "api_type": "openai-compatible",
         "base_url": "https://api.together.xyz/v1",
         "key_url": "https://api.together.ai/settings/api-keys",
     },
-    "fireworks": {
+    "fireworks-ai": {
         "label": "Fireworks AI",
         "api_type": "openai-compatible",
         "base_url": "https://api.fireworks.ai/inference/v1",
@@ -148,12 +148,12 @@ def list_supported() -> list[dict[str, str | None]]:
 
     Returns:
         List of ``{"provider", "label", "api_type", "key_url"}`` dicts
-        (``provider`` upper-cased, no key material).
+        (``provider`` as in models.dev, no key material).
     """
     try:
         return [
             {
-                "provider": pid.upper(),
+                "provider": pid,
                 "label": str(info.get("label") or pid),
                 "api_type": str(info.get("api_type") or ""),
                 "key_url": info.get("key_url"),
@@ -169,13 +169,13 @@ def is_supported(provider: str) -> bool:
     """Check whether a provider id is in the curated registry.
 
     Args:
-        provider: Provider id (case-insensitive, e.g. ``"openrouter"``).
+        provider: Provider id (as in models.dev, e.g. ``"openrouter"``).
 
     Returns:
         True if the provider can be managed through this module.
     """
     try:
-        return (provider or "").strip().lower() in PROVIDER_REGISTRY
+        return (provider or "").strip() in PROVIDER_REGISTRY
     except Exception as e:
         log_error(str(e), source="provider_keys.py:is_supported")
         return False
@@ -254,15 +254,15 @@ def save_key(provider: str, api_key: str) -> dict:
     """Encrypt and persist an API key for the given provider.
 
     Args:
-        provider: Curated provider name (case-insensitive, see
+        provider: Curated provider name (as in models.dev, see
         ``PROVIDER_REGISTRY``).
         api_key: The plain-text API key (never stored in clear).
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
-    provider_l = (provider or "").strip().lower()
-    if provider_l not in PROVIDER_REGISTRY:
+    provider_id = (provider or "").strip()
+    if provider_id not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     if not api_key or not api_key.strip():
         return {"status": "error", "message": "La API key no puede estar vacía."}
@@ -288,7 +288,7 @@ def save_key(provider: str, api_key: str) -> dict:
                         api_key_encrypted = excluded.api_key_encrypted,
                         updated_at = excluded.updated_at
                     """,
-                    (provider_l, encrypted, now),
+                    (provider_id, encrypted, now),
                 )
         finally:
             conn.close()
@@ -296,12 +296,12 @@ def save_key(provider: str, api_key: str) -> dict:
         try:
             from backend.agent.utils.model_catalog import sync_catalog
 
-            sync_catalog(provider_l)
+            sync_catalog(provider_id)
         except Exception as sync_err:
             # Sync failure is non-blocking: the key is already saved.
             log_error(str(sync_err), source="provider_keys.py:save_key:sync_catalog")
-            logger.warning("Catalog sync failed for %s: %s", provider_l, sync_err)
-        return {"status": "success", "message": f"API key de {provider_l} guardada."}
+            logger.warning("Catalog sync failed for %s: %s", provider_id, sync_err)
+        return {"status": "success", "message": f"API key de {provider_id} guardada."}
     except Exception as e:
         log_error(str(e), source="provider_keys.py:save_key")
         return {"status": "error", "message": f"Error guardando la API key: {e}"}
@@ -314,13 +314,13 @@ def get_key(provider: str) -> str | None:
     frontend.
 
     Args:
-        provider: Provider name (case-insensitive).
+        provider: Provider name (as in models.dev).
 
     Returns:
         The plain-text API key, or ``None`` if not stored / undecryptable.
     """
-    provider_l = (provider or "").strip().lower()
-    if provider_l not in PROVIDER_REGISTRY:
+    provider_id = (provider or "").strip()
+    if provider_id not in PROVIDER_REGISTRY:
         return None
     fernet = _load_fernet()
     if fernet is None:
@@ -332,7 +332,7 @@ def get_key(provider: str) -> str | None:
         try:
             row = conn.execute(
                 "SELECT api_key_encrypted FROM provider_api_keys WHERE provider = ?",
-                (provider_l,),
+                (provider_id,),
             ).fetchone()
         finally:
             conn.close()
@@ -349,14 +349,14 @@ def delete_key(provider: str) -> dict:
     """Remove the stored API key for a provider.
 
     Args:
-        provider: Curated provider name (case-insensitive, see
+        provider: Curated provider name (as in models.dev, see
             ``PROVIDER_REGISTRY``).
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
-    provider_l = (provider or "").strip().lower()
-    if provider_l not in PROVIDER_REGISTRY:
+    provider_id = (provider or "").strip()
+    if provider_id not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     try:
         conn = _connect()
@@ -365,22 +365,22 @@ def delete_key(provider: str) -> dict:
         try:
             with conn:
                 cursor = conn.execute(
-                    "DELETE FROM provider_api_keys WHERE provider = ?", (provider_l,)
+                    "DELETE FROM provider_api_keys WHERE provider = ?", (provider_id,)
                 )
             deleted = cursor.rowcount > 0
             # Also delete the model catalog for this provider.
             if deleted:
                 conn.execute(
                     "DELETE FROM model_catalog WHERE provider = ?",
-                    (provider_l,),
+                    (provider_id,),
                 )
                 conn.commit()
         finally:
             conn.close()
         message = (
-            f"API key de {provider_l} eliminada."
+            f"API key de {provider_id} eliminada."
             if deleted
-            else f"No había API key guardada para {provider_l}."
+            else f"No había API key guardada para {provider_id}."
         )
         return {"status": "success", "message": message}
     except Exception as e:
@@ -399,8 +399,7 @@ def list_configured() -> list[dict[str, Any]]:
     """
     result: list[dict[str, Any]] = []
     for pid in sorted(PROVIDER_REGISTRY):
-        provider = pid.upper()
-        result.append({"provider": provider, "configured": get_key(provider) is not None})
+        result.append({"provider": pid, "configured": get_key(pid) is not None})
     return result
 
 
@@ -411,7 +410,7 @@ def resolve_api_key(provider: str) -> str | None:
     variables are never consulted.
 
     Args:
-        provider: Provider name (case-insensitive).
+        provider: Provider name (as in models.dev).
 
     Returns:
         The API key string, or ``None`` if none is stored.
@@ -426,21 +425,21 @@ def validate_key(provider: str, api_key: str) -> dict:
     this check succeeds.
 
     Args:
-        provider: Curated provider name (case-insensitive, see
+        provider: Curated provider name (as in models.dev, see
             ``PROVIDER_REGISTRY``).
         api_key: The plain-text API key to verify.
 
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
-    provider_u = (provider or "").upper()
-    if provider_u.lower() not in PROVIDER_REGISTRY:
+    provider_id = (provider or "").strip()
+    if provider_id not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     if not api_key or not api_key.strip():
         return {"status": "error", "message": "La API key no puede estar vacía."}
     key = api_key.strip()
     try:
-        if provider_u == "GOOGLE":
+        if provider_id == "google":
             # Validate by listing models via Google GenAI SDK
             try:
                 from google import genai
@@ -456,13 +455,13 @@ def validate_key(provider: str, api_key: str) -> dict:
                     "status": "error",
                     "message": f"API key de Google inválida: {e}",
                 }
-        elif PROVIDER_REGISTRY[provider_u.lower()].get("api_type") == "openai-compatible":
+        elif PROVIDER_REGISTRY[provider_id].get("api_type") == "openai-compatible":
             # Validate by listing models via the provider's
             # OpenAI-compatible API (``GET {base_url}/models``).
             import requests
 
-            base_url = str(PROVIDER_REGISTRY[provider_u.lower()].get("base_url") or "").rstrip("/")
-            label = str(PROVIDER_REGISTRY[provider_u.lower()].get("label") or provider_u)
+            base_url = str(PROVIDER_REGISTRY[provider_id].get("base_url") or "").rstrip("/")
+            label = str(PROVIDER_REGISTRY[provider_id].get("label") or provider_id)
             resp = requests.get(
                 f"{base_url}/models",
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
@@ -480,10 +479,10 @@ def validate_key(provider: str, api_key: str) -> dict:
                 }
         else:
             return {"status": "error", "message": f"Provider inválido: '{provider}'."}
-        return {"status": "success", "message": f"API key de {provider_u} válida."}
+        return {"status": "success", "message": f"API key de {provider_id} válida."}
     except Exception as e:
         log_error(str(e), source="provider_keys.py:validate_key")
         return {
             "status": "error",
-            "message": f"No se pudo validar la API key de {provider_u}: {e}",
+            "message": f"No se pudo validar la API key de {provider_id}: {e}",
         }

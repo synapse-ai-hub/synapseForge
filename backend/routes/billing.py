@@ -238,7 +238,7 @@ async def create_billing_config(
                             (f"/{model}" if model else "") +
                             f" = ${limit_amount}",
                     data={
-                        "provider": provider.lower(),
+                        "provider": provider,
                         "model": model,
                         "limit_amount": limit_amount,
                     },

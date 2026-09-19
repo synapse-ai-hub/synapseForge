@@ -90,7 +90,7 @@ def should_sync(provider: str) -> bool:
     try:
         row = conn.execute(
             "SELECT value FROM config_kv WHERE key = ?",
-            (f"catalog_sync_{provider.lower()}",),
+            (f"catalog_sync_{provider}",),
         ).fetchone()
         if row is None:
             return True
@@ -117,7 +117,7 @@ def _set_sync_timestamp(provider: str) -> None:
                 """INSERT INTO config_kv (key, value)
                    VALUES (?, ?)
                    ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
-                (f"catalog_sync_{provider.lower()}", str(time.time())),
+                (f"catalog_sync_{provider}", str(time.time())),
             )
     except Exception as e:
         log_error(str(e), source="model_catalog.py:_set_sync_timestamp")
@@ -222,7 +222,7 @@ def sync_catalog(provider: str) -> dict:
         ``{"status": "success", "models": count}`` or
         ``{"status": "error", "message": ...}``.
     """
-    provider = (provider or "").strip().lower()
+    provider = (provider or "").strip()
     if not provider:
         return {"status": "error", "message": "Provider is empty."}
 
@@ -321,7 +321,7 @@ def get_models(provider: str) -> list[str]:
     try:
         rows = conn.execute(
             "SELECT model_id FROM model_catalog WHERE provider = ? ORDER BY model_id",
-            (provider.strip().lower(),),
+            (provider.strip(),),
         ).fetchall()
         return [row["model_id"] for row in rows]
     except Exception as e:
@@ -347,7 +347,7 @@ def get_model(provider: str, model_id: str) -> dict[str, Any] | None:
     try:
         row = conn.execute(
             "SELECT * FROM model_catalog WHERE provider = ? AND model_id = ?",
-            (provider.strip().lower(), model_id),
+            (provider.strip(), model_id),
         ).fetchone()
         if row is None:
             return None
@@ -569,9 +569,9 @@ def _resolve_gateway(provider: str) -> tuple[str, bool]:
                 from backend.agent.utils.provider_keys import PROVIDER_REGISTRY
             except ImportError:
                 PROVIDER_REGISTRY = {}
-            info = PROVIDER_REGISTRY.get((provider or "").strip().lower(), {})
+            info = PROVIDER_REGISTRY.get((provider or "").strip(), {})
             api_type = str(info.get("api_type") or "unknown")
-        return api_type, (provider or "").strip().lower() == "openrouter"
+        return api_type, (provider or "").strip() == "openrouter"
     except Exception as e:
         log_error(str(e), source="model_catalog.py:_resolve_gateway")
         return "unknown", False
@@ -648,7 +648,7 @@ def translate_reasoning(
         Dict of kwargs to merge into the API call.
     """
     try:
-        prov = (provider or "").strip().lower()
+        prov = (provider or "").strip()
         if not prov:
             return {}
         val = reasoning_value
@@ -815,7 +815,7 @@ def get_provider_api_type(provider: str) -> str:
         prov = (provider or "").strip()
         if not prov:
             return "unknown"
-        if prov.upper() == "LOCAL":
+        if prov == "LOCAL":
             return "ollama"
         conn = _connect()
         if conn is None:
@@ -823,7 +823,7 @@ def get_provider_api_type(provider: str) -> str:
         try:
             row = conn.execute(
                 "SELECT npm FROM model_catalog WHERE provider = ? LIMIT 1",
-                (prov.lower(),),
+                (prov,),
             ).fetchone()
         finally:
             conn.close()

@@ -350,6 +350,7 @@ async def upload_files(name: str, files: list[UploadFile] = File(...)):
                 record_external_usage(
                     "embedding", "google", db.embed_func.model_name, len(documents),
                     duration=_upload_duration,
+                    prompt_tokens=db.embed_func.count_tokens(documents),
                 )
             except Exception:
                 pass
@@ -448,6 +449,7 @@ async def add_url(name: str, req: AddUrlRequest):
             record_external_usage(
                 "embedding", "google", db.embed_func.model_name, len(documents),
                 duration=_url_duration,
+                prompt_tokens=db.embed_func.count_tokens(documents),
             )
         except Exception:
             pass

@@ -69,7 +69,7 @@ def _resolve_create_model_provider() -> tuple[str | None, str]:
         when no provider is configured at all.
     """
     current_model = getattr(agent, "_resolved_model", None)
-    current_provider = (getattr(agent, "provider", None) or "").strip().upper()
+    current_provider = (getattr(agent, "provider", None) or "").strip()
     if current_model and current_provider and _cloud_client_available(current_provider):
         return current_model, current_provider
     try:
@@ -78,7 +78,7 @@ def _resolve_create_model_provider() -> tuple[str | None, str]:
             for _pid, _info in provider_keys.PROVIDER_REGISTRY.items():
                 if str(_info.get("api_type") or "") != "openai-compatible":
                     continue
-                prov_u = _pid.upper()
+                prov_u = _pid
                 if get_client(prov_u) is None:
                     continue
                 try:
@@ -97,13 +97,13 @@ def _cloud_client_available(prov_u: str) -> bool:
     """Check whether a cloud provider has an instantiated client.
 
     Args:
-        prov_u: Upper-cased provider name.
+        prov_u: Provider name as configured (models.dev id).
 
     Returns:
         ``True`` when the provider can serve a creation task right now.
     """
     try:
-        if prov_u == "GOOGLE":
+        if prov_u == "google":
             return getattr(agent, "google_client", None) is not None
         get_client = getattr(agent, "get_openai_client", None)
         if callable(get_client):
@@ -126,12 +126,12 @@ def resolve_create_model_provider(
     Args:
         model: Model identifier chosen by the user.
         provider: Curated cloud provider name chosen by the user (any
-            OpenAI-compatible provider or ``GOOGLE``).
+            OpenAI-compatible provider or ``google``).
 
     Returns:
         Tuple of ``(model, provider)``.
     """
-    prov_u = (provider or "").strip().upper()
+    prov_u = (provider or "").strip()
     model_clean = (model or "").strip()
     if model_clean and _cloud_client_available(prov_u):
         return model_clean, prov_u

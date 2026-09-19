@@ -364,7 +364,7 @@ def test_plain_gateway_effort_wins_over_budget(catalog_db):
 
 
 def test_provider_without_synced_models_uses_registry_fallback(catalog_db):
-    assert tr("together", "medium", "some-model") == {"reasoning_effort": "medium"}
+    assert tr("togetherai", "medium", "some-model") == {"reasoning_effort": "medium"}
 
 
 def test_unknown_provider_sends_nothing(catalog_db):
@@ -390,11 +390,11 @@ def test_invalid_budget_falls_back_to_effort(catalog_db):
 # --- Provider normalization, model_id=None, LOCAL, int values ---
 
 def test_provider_name_normalization(catalog_db):
-    assert tr("GROQ", "high", "openai/gpt-oss-120b") == {"reasoning_effort": "high"}
+    assert tr("groq", "high", "openai/gpt-oss-120b") == {"reasoning_effort": "high"}
     assert tr("  openrouter  ", "medium", "openai/gpt-oss-120b") == {
         "reasoning": {"effort": "medium"}
     }
-    assert tr("Google", "high", "gemini-3.1-pro-preview") == {
+    assert tr("google", "high", "gemini-3.1-pro-preview") == {
         "thinking_config": {"thinking_level": "high"}
     }
 

@@ -406,9 +406,9 @@ class SessionManager:
                 usage=zero_usage(),
             )
 
-        # Canonical storage: provider always lowercase (models.dev convention).
+        # Canonical storage: provider exactly as configured (models.dev id).
         if isinstance(provider, str):
-            provider = provider.strip().lower()
+            provider = provider.strip()
 
         # Calculate cost if provider, model, and usage are available
         cost_input = 0.0
@@ -419,7 +419,7 @@ class SessionManager:
             completion_tokens = (usage or {}).get("completion_tokens") or 0
             if prompt_tokens or completion_tokens:
                 cost_input, cost_output, cost_total = calculate_cost(
-                    provider.lower(), model, prompt_tokens, completion_tokens
+                    provider, model, prompt_tokens, completion_tokens
                 )
 
         conn = self._get_connection()

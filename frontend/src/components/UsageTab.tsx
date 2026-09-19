@@ -103,23 +103,23 @@ export function UsageTab() {
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Solicitudes</div>
+              <div className="mb-1 flex min-h-8 items-start text-xs text-app-text-secondary">Solicitudes</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.requests}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Tokens totales</div>
+              <div className="mb-1 flex min-h-8 items-start text-xs text-app-text-secondary">Tokens totales</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.total_tokens}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Gasto (USD)</div>
+              <div className="mb-1 flex min-h-8 items-start text-xs text-app-text-secondary">Gasto (USD)</div>
               <div className="text-xl font-bold text-app-text">{(usage.totals.cost ?? 0).toFixed(2)}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Prompt tokens</div>
+              <div className="mb-1 flex min-h-8 items-start text-xs text-app-text-secondary">Prompt tokens</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.prompt_tokens}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Completion tokens</div>
+              <div className="mb-1 flex min-h-8 items-start text-xs text-app-text-secondary">Completion tokens</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.completion_tokens}</div>
             </div>
           </div>

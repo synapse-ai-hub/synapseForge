@@ -474,6 +474,7 @@ def reindex_collection(db, name: str) -> dict:
         record_external_usage(
             "embedding", "google", db.embed_func.model_name, len(all_documents),
             duration=_embed_duration,
+            prompt_tokens=db.embed_func.count_tokens(all_documents),
         )
     except Exception:
         pass
@@ -515,6 +516,7 @@ def reindex_collection(db, name: str) -> dict:
             record_external_usage(
                 "embedding", "google", db.embed_func.model_name, 1,
                 duration=_sanity_duration,
+                prompt_tokens=db.embed_func.count_tokens([sample]),
             )
         except Exception:
             pass
@@ -642,6 +644,7 @@ def _index_turn_sync(
                 record_external_usage(
                     "embedding", "google", db.embed_func.model_name, 1,
                     duration=_mem_duration,
+                    prompt_tokens=db.embed_func.count_tokens([document]),
                 )
             except Exception:
                 pass
@@ -673,6 +676,7 @@ def _index_turn_sync(
                 record_external_usage(
                     "embedding", "google", db.embed_func.model_name, len(documents),
                     duration=_mem_duration,
+                    prompt_tokens=db.embed_func.count_tokens(documents),
                 )
             except Exception:
                 pass

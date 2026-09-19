@@ -86,11 +86,11 @@ def _detect_and_persist_context_window(model: str, provider: str) -> int | None:
     global _context_window_tokens
     cw = None
     try:
-        if provider.upper() == "LOCAL":
+        if provider == "LOCAL":
             cw = get_ollama_context_window(model)
         else:
             # Cloud providers: use model_catalog from models.dev
-            cw = model_catalog.get_context_window(provider.strip().lower(), model)
+            cw = model_catalog.get_context_window(provider.strip(), model)
     except Exception as exc:
         log_error(str(exc), source="backend/routes/config.py:_detect_and_persist_context_window")
         logger.warning("No se pudo detectar la context window de %s: %s", model, exc)
@@ -315,12 +315,12 @@ def refresh_providers_cache() -> None:
 
     # Cloud providers — sync from models.dev for each configured key.
     _PROVIDER_LABELS = {
-        entry["provider"].lower(): entry["label"]
+        entry["provider"]: entry["label"]
         for entry in provider_keys.list_supported()
     }
     for provider_id in list(_PROVIDER_LABELS):
         try:
-            api_key = provider_keys.resolve_api_key(provider_id.upper())
+            api_key = provider_keys.resolve_api_key(provider_id)
             if not api_key:
                 continue
             # Sync catalog from models.dev (rate-limited to 24h).
@@ -329,7 +329,7 @@ def refresh_providers_cache() -> None:
             models = model_catalog.get_models(provider_id)
             if models:
                 cached.append({
-                    "provider": provider_id.upper(),
+                    "provider": provider_id,
                     "label": _PROVIDER_LABELS.get(provider_id, provider_id),
                     "models": models,
                 })
@@ -420,7 +420,7 @@ async def save_provider_key(provider: str, data: dict[str, Any]) -> JSONResponse
         status_code=200,
         content={
             "status": "success",
-            "message": f"API key de {(provider or '').upper()} validada y guardada.",
+            "message": f"API key de {(provider or '').strip()} validada y guardada.",
         },
     )
 
@@ -543,7 +543,7 @@ async def get_parameters() -> JSONResponse:
         reasoning_supported: bool | None = None
         response_format_supported: bool | None = None
         if current_model and current_provider:
-            if current_provider.upper() == "LOCAL":
+            if current_provider == "LOCAL":
                 from backend.agent.utils.model_resolver import (
                     get_model_reasoning_options,
                     model_supports_reasoning,
@@ -558,7 +558,7 @@ async def get_parameters() -> JSONResponse:
             else:
                 caps = await asyncio.to_thread(
                     model_catalog.get_reasoning_options,
-                    current_provider.strip().lower(),
+                    current_provider.strip(),
                     current_model,
                 )
                 reasoning_supported = caps.get("reasoning_supported")
@@ -602,16 +602,16 @@ def _effective_provider(provider: str | None = None) -> str:
         provider: Explicit provider from the query param, if any.
 
     Returns:
-        Upper-case provider name, or empty string when none was selected.
+        Provider name as configured, or empty string when none was selected.
     """
     if provider:
-        return provider.strip().upper()
+        return provider.strip()
 
     if session_manager is not None:
         try:
             persisted = session_manager.get_config("selected_provider")
             if persisted:
-                return persisted.strip().upper()
+                return persisted.strip()
         except Exception as exc:
             log_error(str(exc), source="backend/routes/config.py")
             logger.warning("No se pudo leer el proveedor persistido: %s", exc)
@@ -655,7 +655,7 @@ async def list_models(provider: str | None = None) -> JSONResponse:
     # Serve models from the startup cache (providers table) — no network calls.
     cached_providers = session_manager.get_providers() if session_manager is not None else []
     cached = next(
-        (p for p in cached_providers if p["provider"].upper() == provider.upper()),
+        (p for p in cached_providers if p["provider"] == provider),
         None,
     )
     if cached is None:
@@ -713,7 +713,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
     with a contract error response.
     """
     model = data.get("model", "").strip()
-    provider = data.get("provider", "").strip().upper()
+    provider = data.get("provider", "").strip()
 
     if not model:
         return JSONResponse(
@@ -803,7 +803,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
     # --- Reasoning capacity validation (declarative catalog check) ---
     if reasoning and reasoning not in ("default", ""):
         try:
-            if provider.upper() == "LOCAL":
+            if provider == "LOCAL":
                 from backend.agent.utils.model_resolver import model_supports_reasoning
                 supports_reasoning = await asyncio.to_thread(
                     model_supports_reasoning, provider, model
@@ -811,7 +811,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             else:
                 caps = await asyncio.to_thread(
                     model_catalog.get_reasoning_options,
-                    provider.strip().lower(),
+                    provider.strip(),
                     model,
                 )
                 supports_reasoning = caps.get("reasoning_supported")
@@ -833,7 +833,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
     # --- Structured output validation (declarative catalog check) ---
     if response_format == "json":
         try:
-            if provider.upper() == "LOCAL":
+            if provider == "LOCAL":
                 from backend.agent.utils.model_resolver import get_model_reasoning_options
                 local_caps = await asyncio.to_thread(
                     get_model_reasoning_options, provider, model
@@ -842,7 +842,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
             else:
                 caps = await asyncio.to_thread(
                     model_catalog.get_reasoning_options,
-                    provider.strip().lower(),
+                    provider.strip(),
                     model,
                 )
                 supports_format = caps.get("response_format_supported")
@@ -863,7 +863,7 @@ async def select_model(data: dict[str, Any]) -> JSONResponse:
 
     # Liberar modelo anterior si es LOCAL (Ollama) y cambió
     modelo_anterior = agent._resolved_model
-    if modelo_anterior and modelo_anterior != model and agent.provider.upper() == "LOCAL":
+    if modelo_anterior and modelo_anterior != model and agent.provider == "LOCAL":
         try:
             from backend.agent.utils.clean_memory import liberar_modelo
             await asyncio.to_thread(liberar_modelo, modelo_anterior)
@@ -951,7 +951,7 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
             },
         )
 
-    provider_u = provider.strip().upper()
+    provider_u = provider.strip()
 
     try:
         if provider_u == "LOCAL":
@@ -967,10 +967,10 @@ async def get_model_capabilities(model: str, provider: str) -> JSONResponse:
         else:
             # Cloud providers: use model_catalog from models.dev
             caps = await asyncio.to_thread(
-                model_catalog.get_reasoning_options, provider.strip().lower(), model
+                model_catalog.get_reasoning_options, provider.strip(), model
             )
             row = await asyncio.to_thread(
-                model_catalog.get_model, provider.strip().lower(), model
+                model_catalog.get_model, provider.strip(), model
             )
             found = row is not None
             temperature_supported = bool(row.get("temperature")) if row else None
@@ -1019,7 +1019,7 @@ def load_persisted_config() -> None:
         model = session_manager.get_config("selected_model")
         provider = session_manager.get_config("selected_provider")
         if provider and agent is not None:
-            agent.provider = provider.strip().upper()
+            agent.provider = provider.strip()
             logger.info("Proveedor persistido cargado desde SQLite: %s", provider)
         if model and agent is not None:
             agent._resolved_model = model

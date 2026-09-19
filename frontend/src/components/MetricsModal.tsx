@@ -66,7 +66,7 @@ function KpiCard({
 }) {
   return (
     <div className="rounded-lg border border-app-border bg-white p-4">
-      <div className="mb-1 flex items-center gap-2 text-xs text-app-text-secondary">
+      <div className="mb-1 flex min-h-8 items-start gap-2 text-xs text-app-text-secondary">
         {icon}
         {title}
       </div>

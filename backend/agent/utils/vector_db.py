@@ -93,6 +93,31 @@ class GeminiEmbeddingFunction(EmbeddingFunction[Documents]):
             raise RuntimeError(f"No se pudieron generar los embeddings: {e}") from e
         return vectors
 
+    def count_tokens(self, input: Documents) -> int:
+        """Count tokens with the server-side tokenizer.
+
+        Calls ``client.models.count_tokens`` so the count uses Google's
+        own tokenizer for the embedding model. Never raises: returns 0
+        when the call fails.
+
+        Args:
+            input: List of texts to count.
+
+        Returns:
+            Total token count (0 on failure).
+        """
+        try:
+            if not input:
+                return 0
+            resp = self.client.models.count_tokens(
+                model=self.model_name,
+                contents=list(input),
+            )
+            return int(resp.total_tokens or 0)
+        except Exception as e:
+            logger.warning("No se pudieron contar tokens: %s", e)
+            return 0
+
 
 class VectorDB:
     """ChromaDB vector operations wrapper.

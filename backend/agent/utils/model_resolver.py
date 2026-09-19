@@ -156,14 +156,14 @@ def ensure_context_window(agent, model: str) -> int | None:
     if agent is not None and getattr(agent, "_context_window", None):
         return agent._context_window
 
-    provider = (getattr(agent, "provider", None) or "LOCAL").strip().upper()
+    provider = (getattr(agent, "provider", None) or "LOCAL").strip()
     cw = None
     try:
-        if provider.upper() == "LOCAL":
+        if provider == "LOCAL":
             cw = get_ollama_context_window(model)
         else:
             from backend.agent.utils import model_catalog
-            cw = model_catalog.get_context_window(provider.lower(), model)
+            cw = model_catalog.get_context_window(provider, model)
     except Exception as e:
         log_error(str(e), source="model_resolver.py:ensure_context_window")
         cw = None
@@ -288,7 +288,7 @@ def model_supports_reasoning(provider: str, model: str) -> bool | None:
     """
     if not provider or not model:
         return None
-    if provider.strip().upper() != "LOCAL":
+    if provider.strip() != "LOCAL":
         return None
 
     model_lower = model.lower()
@@ -323,7 +323,7 @@ def get_model_reasoning_options(provider: str, model: str) -> dict:
     if not provider or not model:
         return result
 
-    p = provider.strip().upper()
+    p = provider.strip()
     if p != "LOCAL":
         return result
 

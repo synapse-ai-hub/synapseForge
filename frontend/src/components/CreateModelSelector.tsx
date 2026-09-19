@@ -41,7 +41,7 @@ export function CreateModelSelector({ onApply, onProvidersChange }: CreateModelS
         const data = await resp.json();
         if (cancelled) return;
         const cloud = (data.providers || []).filter(
-          (p: ProviderEntry) => p.provider.toUpperCase() !== "LOCAL",
+          (p: ProviderEntry) => p.provider !== "LOCAL",
         );
         setProviders(cloud);
         onProvidersChange?.(cloud.length);

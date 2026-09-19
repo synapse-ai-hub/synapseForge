@@ -137,7 +137,7 @@ def _resolve_tool_api_type(effective_provider: str | None) -> str:
     if api_type == "unknown":
         try:
             info = provider_keys.PROVIDER_REGISTRY.get(
-                (effective_provider or "").strip().lower(), {}
+                (effective_provider or "").strip(), {}
             )
             api_type = str(info.get("api_type") or "unknown")
         except Exception:
@@ -449,13 +449,15 @@ class AgentLoop:
             effective_provider = agent.provider
             if parameters and parameters.get("provider"):
                 effective_provider = parameters["provider"]
+            if isinstance(effective_provider, str):
+                effective_provider = effective_provider.strip() or None
 
             # Validate structured output against the effective model. If the
             # model declaratively does not support it, fall back to text
             # (warning only — never blocks the loop). Unknown passes.
             if response_format == "json":
                 try:
-                    if (effective_provider or "").upper() == "LOCAL":
+                    if (effective_provider or "").strip() == "LOCAL":
                         from backend.agent.utils.model_resolver import (
                             get_model_reasoning_options,
                         )
@@ -469,7 +471,7 @@ class AgentLoop:
                         )
                         caps = await asyncio.to_thread(
                             get_reasoning_options,
-                            (effective_provider or "").strip().lower(),
+                            (effective_provider or "").strip(),
                             model,
                         )
                         supports_format = caps.get("response_format_supported")
@@ -492,8 +494,8 @@ class AgentLoop:
             # --- Liberate parent model only when both parent and child run on
             #     LOCAL with different models. API-side providers don't consume VRAM
             #     so there's nothing to free/reload. ---
-            parent_is_local = bool(parent_provider) and parent_provider.upper() == "LOCAL"
-            child_is_local = bool(effective_provider) and effective_provider.upper() == "LOCAL"
+            parent_is_local = bool(parent_provider) and parent_provider.strip() == "LOCAL"
+            child_is_local = bool(effective_provider) and effective_provider.strip() == "LOCAL"
             if parent_model and model != parent_model and parent_is_local and child_is_local:
                 logger.info("Liberando modelo del parent (%s) — subagente usa %s", parent_model, model)
                 ctx = get_error_context()
@@ -762,9 +764,9 @@ class AgentLoop:
                     # limit is exceeded (cloud providers only; LOCAL/Ollama has
                     # no cost). Both the model-specific and the provider-level
                     # limits are checked by ``check_spend_limit``.
-                    if (effective_provider or "").upper() != "LOCAL":
+                    if (effective_provider or "").strip() != "LOCAL":
                         can_proceed, _spend_info = check_spend_limit(
-                            (effective_provider or "").lower(), model
+                            (effective_provider or "").strip(), model
                         )
                         if not can_proceed:
                             budget_msg = (

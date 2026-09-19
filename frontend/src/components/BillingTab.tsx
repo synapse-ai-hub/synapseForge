@@ -28,6 +28,7 @@ export function BillingTab() {
   const [providerFilter, setProviderFilter] = useState<string>("");
   const [modelFilter, setModelFilter] = useState<string>("");
   const [spend, setSpend] = useState<SpendRecord[]>([]);
+  const [keyProviders, setKeyProviders] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +38,9 @@ export function BillingTab() {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  const providers = Array.from(new Set(spend.map((s) => s.provider))).sort();
+  const providers = Array.from(
+    new Set([...spend.map((s) => s.provider), ...keyProviders]),
+  ).sort();
   const models = Array.from(
     new Set(spend.filter((s) => s.provider === providerFilter).map((s) => s.model)),
   ).sort();
@@ -54,6 +57,14 @@ export function BillingTab() {
       if (json.status === "error") throw new Error(json.message);
       const records: SpendRecord[] = json.data?.spend || [];
       setSpend(records);
+      const keysRes = await fetch(`${API_BASE_URL}/api/config/providers/keys`);
+      if (keysRes.ok) {
+        const keysJson = await keysRes.json();
+        const keys: Array<{ provider: string; configured: boolean }> = keysJson.keys || [];
+        setKeyProviders(
+          keys.filter((k) => k.configured).map((k) => k.provider.toLowerCase()),
+        );
+      }
     } catch (err: any) {
       setError(err.message || "Error inesperado");
     } finally {

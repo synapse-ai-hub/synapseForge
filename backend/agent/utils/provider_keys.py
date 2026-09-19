@@ -122,7 +122,7 @@ PROVIDER_REGISTRY: dict[str, dict[str, str | None]] = {
         "key_url": "https://open.bigmodel.cn/usercenter/apikeys",
     },
     "alibaba": {
-        "label": "Alibaba (Qwen)",
+        "label": "Alibaba",
         "api_type": "openai-compatible",
         "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         "key_url": "https://bailian.console.alibabacloud.com/",

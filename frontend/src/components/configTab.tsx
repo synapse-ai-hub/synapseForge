@@ -77,16 +77,16 @@ export function ConfigTab({ verboseMode, onVerboseModeChange }: ConfigTabProps) 
     { provider: "OPENROUTER", label: "OpenRouter" },
     { provider: "OPENAI", label: "OpenAI" },
     { provider: "DEEPSEEK", label: "DeepSeek" },
-    { provider: "XAI", label: "xAI (Grok)" },
+    { provider: "XAI", label: "xAI" },
     { provider: "TOGETHER", label: "Together AI" },
     { provider: "FIREWORKS", label: "Fireworks AI" },
     { provider: "CEREBRAS", label: "Cerebras" },
     { provider: "MISTRAL", label: "Mistral AI" },
     { provider: "PERPLEXITY", label: "Perplexity" },
-    { provider: "META", label: "Meta (Llama API)" },
-    { provider: "MOONSHOTAI", label: "Moonshot AI (Kimi)" },
-    { provider: "ZHIPUAI", label: "ZhipuAI (GLM)" },
-    { provider: "ALIBABA", label: "Alibaba (Qwen)" },
+    { provider: "META", label: "Meta" },
+    { provider: "MOONSHOTAI", label: "Moonshot AI" },
+    { provider: "ZHIPUAI", label: "ZhipuAI" },
+    { provider: "ALIBABA", label: "Alibaba" },
   ];
   const [providerKeys, setProviderKeys] = useState<ProviderKeyStatus[]>([]);
   const [keyProvider, setKeyProvider] = useState<string>("");

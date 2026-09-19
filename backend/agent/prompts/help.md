@@ -135,7 +135,7 @@ El modelo se elige explícitamente: seleccioná proveedor + modelo y pulsá **Ap
 Debajo hay un bloque **Info del modelo** con las modalidades de entrada/salida, la ventana de contexto y los límites y costos por millón de tokens del modelo seleccionado, y una sección **Parámetros avanzados** (temperature, top_p, presupuesto de tokens, reasoning y formato de salida) que se aplican junto con el modelo; con **Default** se usan los valores de cada agente.
 
 Soportados:
-- **OpenAI-compatibles**: Groq, OpenRouter, OpenAI, DeepSeek, xAI (Grok), Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta (Llama API), Moonshot AI (Kimi), ZhipuAI (GLM), Alibaba (Qwen).
+- **OpenAI-compatibles**: Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, ZhipuAI, Alibaba.
 - **Google**: modelos Gemini de la API de Google (también provee los embeddings de RAG).
 - **Ollama**: modelos locales (opcional — solo aparece si Ollama está corriendo).
 

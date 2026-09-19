@@ -161,7 +161,7 @@ SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui. Multi-página: chat, crea
 |-----------|------|-------|
 | Ollama | Local | Opcional, requiere instalación local; figura solo mientras está corriendo |
 | Google | Cloud | Modelos Gemini + embeddings de RAG; free tier |
-| OpenAI-compatibles | Cloud | Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba (Qwen); free tiers |
+| OpenAI-compatibles | Cloud | Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba; free tiers |
 
 Los providers cloud están curados en la app: cada API key se valida en vivo contra su propia API y se guarda encriptada (Fernet) en SQLite, y un proveedor figura solo mientras su key está guardada. No se necesitan variables de entorno. Los modelos vienen del catálogo models.dev cacheado en SQLite — elegí proveedor + modelo explícitamente y presioná **Apply**.
 

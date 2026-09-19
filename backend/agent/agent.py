@@ -637,8 +637,11 @@ class Agent():
     def _record_spend(self, provider: str | None, model: str, usage: dict | None) -> None:
         """Record token usage and cost for a completed LLM call.
 
-        Cloud providers only (LOCAL/Ollama has no cost). Failures are logged
-        and swallowed so they never break the calling flow.
+        Cloud providers only: LOCAL/Ollama has no cost and is never
+        recorded. Every cloud call counts — chat, tools, creators, tasks,
+        agenda and skills — even when no usage report was captured (the
+        request is then counted with zero tokens). Failures are logged and
+        swallowed so they never break the calling flow.
 
         Args:
             provider: The provider name (e.g. ``"OPENAI"``, ``"GOOGLE"``).
@@ -646,15 +649,17 @@ class Agent():
             usage: The usage report dict (``prompt_tokens``, ``completion_tokens``).
         """
         try:
-            if not usage or (provider or "").upper() == "LOCAL":
+            if (provider or "").upper() == "LOCAL":
                 return
+            usage = usage or {}
+            provider_name = (provider or "unknown").lower()
             prompt_tokens = usage.get("prompt_tokens") or 0
             completion_tokens = usage.get("completion_tokens") or 0
             cost_input, cost_output, _ = calculate_cost(
-                provider.lower(), model, prompt_tokens, completion_tokens
+                provider_name, model, prompt_tokens, completion_tokens
             )
             record_spend(
-                provider.lower(), model, prompt_tokens, completion_tokens,
+                provider_name, model, prompt_tokens, completion_tokens,
                 cost_input, cost_output,
             )
         except Exception as exc:
@@ -950,11 +955,20 @@ class Agent():
                     'completion_tokens': completion_tokens,
                     'total_tokens': total_tokens,
                     'total_time': total_time,
+                    # Non-streaming: the first token arrives with the full
+                    # response, so latency to first token equals total time.
+                    'time_to_first_token': total_time,
                 },
             ))
         except Exception as e:
             print(f'Error al procesar con LLM.\n{str(e)}')
             log_error(str(e), source="agent.py:llm")
+            # Count the failed request in spend (zero tokens) so the
+            # requests counter stays consistent with the messages log.
+            try:
+                self._record_spend(effective_provider, model, None)
+            except Exception:
+                pass
             return validate_response(make_error_response(
                 message=str(e),
                 usage={
@@ -1096,11 +1110,17 @@ provider: Optional provider override (any curated provider id,
             in_think_tag = False  #  thinking tag state machine
             has_dedicated_thinking = False  # si vimos delta.reasoning, no parseamos  thinking
             usage_data: dict[str, Any] | None = None
+            # Time-to-first-token: wall-clock seconds from the request
+            # start to the first text chunk yielded below. Measured
+            # client-side, so it works for every provider.
+            _stream_t0 = time.time()
+            _ttft: float | None = None
 
             # print(f"[DEBUG-STREAM] Starting stream iteration, oa_kwargs keys: {list(oa_kwargs.keys())}")
             async for chunk in stream:
                 # print(f"[DEBUG-CHUNK] chunk type={type(chunk).__name__}, choices={len(chunk.choices) if hasattr(chunk, 'choices') and chunk.choices else 0}, usage={getattr(chunk, 'usage', None)}")
                 if stream_cancel_event and stream_cancel_event.is_set():
+                    self._record_spend(effective_provider, model, usage_data)
                     yield {'type': 'aborted'}
                     return
                 # Capturar usage del chunk final (standard OpenAI field).
@@ -1138,6 +1158,8 @@ provider: Optional provider override (any curated provider id,
 
                     # Stream text content
                     if delta and delta.content:
+                        if _ttft is None:
+                            _ttft = round(time.time() - _stream_t0, 3)
                         text = delta.content
                         if has_dedicated_thinking:
                             # Ya tenemos reasoning por campo separado, content es solo answer
@@ -1157,9 +1179,11 @@ provider: Optional provider override (any curated provider id,
                                 yield {'type': 'chunk', 'content': clean_text}
                                 await asyncio.sleep(0.01)
 
-            # After stream finishes, yield usage (if captured) and tool_calls_detected
+            # After stream finishes, record spend (every call counts, even
+            # without usage metadata) and yield usage (if captured).
+            self._record_spend(effective_provider, model, usage_data)
             if usage_data is not None:
-                self._record_spend(effective_provider, model, usage_data)
+                usage_data['time_to_first_token'] = _ttft
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
@@ -1222,10 +1246,14 @@ provider: Optional provider override (any curated provider id,
             has_dedicated_thinking = False  # si vimos thinking field, no parseamos <think> tags
             stream = None
             usage_data: dict[str, Any] | None = None
+            # Time-to-first-token (see OpenAI-compatible path above).
+            _stream_t0 = time.time()
+            _ttft: float | None = None
             try:
                 stream = await _try_stream(use_think=reasoning)
                 async for chunk in stream:
                     if stream_cancel_event and stream_cancel_event.is_set():
+                        self._record_spend(effective_provider, model, usage_data)
                         yield {'type': 'aborted'}
                         return
                     # Capturar usage del chunk final (done=True)
@@ -1242,6 +1270,8 @@ provider: Optional provider override (any curated provider id,
                         yield {'type': 'reasoning', 'content': chunk.message.thinking}
                     # Stream text content
                     if chunk.message and chunk.message.content:
+                        if _ttft is None:
+                            _ttft = round(time.time() - _stream_t0, 3)
                         text = chunk.message.content
                         if has_dedicated_thinking:
                             # Ya tenemos thinking por campo separado, el content es solo answer
@@ -1285,6 +1315,7 @@ provider: Optional provider override (any curated provider id,
                     stream = await self.ollama_client.chat(**chat_kwargs)
                     async for chunk in stream:
                         if stream_cancel_event and stream_cancel_event.is_set():
+                            self._record_spend(effective_provider, model, usage_data)
                             yield {'type': 'aborted'}
                             return
                         # Capturar usage del chunk final (done=True)
@@ -1299,6 +1330,8 @@ provider: Optional provider override (any curated provider id,
                             has_dedicated_thinking = True
                             yield {'type': 'reasoning', 'content': chunk.message.thinking}
                         if chunk.message and chunk.message.content:
+                            if _ttft is None:
+                                _ttft = round(time.time() - _stream_t0, 3)
                             text = chunk.message.content
                             if has_dedicated_thinking:
                                 if cleaned_output:
@@ -1330,9 +1363,11 @@ provider: Optional provider override (any curated provider id,
                 else:
                     raise
 
-            # After stream finishes, yield usage (if captured) and tool_calls_detected
+            # After stream finishes, record spend (every call counts, even
+            # without usage metadata) and yield usage (if captured).
+            self._record_spend(effective_provider, model, usage_data)
             if usage_data is not None:
-                self._record_spend(effective_provider, model, usage_data)
+                usage_data['time_to_first_token'] = _ttft
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 normalized: list[dict[str, Any]] = []
@@ -1386,9 +1421,13 @@ provider: Optional provider override (any curated provider id,
 
             accumulated_tool_calls: list[dict[str, Any]] = []
             usage_data: dict[str, Any] | None = None
+            # Time-to-first-token (see OpenAI-compatible path above).
+            _stream_t0 = time.time()
+            _ttft: float | None = None
 
             async for chunk in stream:
                 if stream_cancel_event and stream_cancel_event.is_set():
+                    self._record_spend(effective_provider, model, usage_data)
                     yield {'type': 'aborted'}
                     return
 
@@ -1421,14 +1460,18 @@ provider: Optional provider override (any curated provider id,
                     # Stream text content
                     text = getattr(part, "text", None)
                     if text:
+                        if _ttft is None:
+                            _ttft = round(time.time() - _stream_t0, 3)
                         if cleaned_output:
                             text = self.clean(text)
                         yield {'type': 'chunk', 'content': text}
                         await asyncio.sleep(0.01)
 
-            # After stream finishes, yield usage (if captured) and tool_calls_detected
+            # After stream finishes, record spend (every call counts, even
+            # without usage metadata) and yield usage (if captured).
+            self._record_spend(effective_provider, model, usage_data)
             if usage_data is not None:
-                self._record_spend(effective_provider, model, usage_data)
+                usage_data['time_to_first_token'] = _ttft
                 yield {'type': 'usage', 'content': usage_data}
             if accumulated_tool_calls:
                 yield {'type': 'tool_calls_detected', 'content': accumulated_tool_calls}

@@ -132,6 +132,8 @@ El modelo y proveedor se configuran desde el panel de Configuración en la inter
 
 El modelo se elige explícitamente: seleccioná proveedor + modelo y pulsá **Aplicar**.
 
+Debajo hay un bloque **Info del modelo** con las modalidades de entrada/salida, la ventana de contexto y los límites y costos por millón de tokens del modelo seleccionado, y una sección **Parámetros avanzados** (temperature, top_p, presupuesto de tokens, reasoning y formato de salida) que se aplican junto con el modelo; con **Default** se usan los valores de cada agente.
+
 Soportados:
 - **OpenAI-compatibles**: Groq, OpenRouter, OpenAI, DeepSeek, xAI (Grok), Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta (Llama API), Moonshot AI (Kimi), ZhipuAI (GLM), Alibaba (Qwen).
 - **Google**: modelos Gemini de la API de Google (también provee los embeddings de RAG).
@@ -154,6 +156,14 @@ Las interfaces de creación (skills, tools y agentes) permiten elegir, en su pan
 3. Pulsar **Aplicar**.
 
 La selección es efímera: vive mientras la pestaña está abierta y se usa para esa tarea de creación. Si no se aplica ninguna selección, el sistema usa automáticamente uno de los providers cloud disponibles.
+
+Las páginas de creación incluyen un botón **Descargar conversación** para guardar la entrevista en Markdown.
+
+---
+
+## Métricas
+
+El botón **Métricas** del header abre el dashboard con cinco pestañas: **Resumen** (sesiones, mensajes, tokens, costos y actividad por día), **Sesiones**, **Tools** (llamadas y sub-agentes), **Modelos** y **Errores**.
 
 ---
 
@@ -180,6 +190,18 @@ Se pueden subir archivos desde el panel de Configuración en la sección **Instr
 Formatos soportados: PDF, Word, TXT, MD, CSV, JSON, YAML, XML, PY.
 
 Son útiles para proveer información de referencia permanente: manuales de empresa, reglas de negocio, documentación técnica, etc.
+
+---
+
+## Uso y facturación
+
+En el header hay dos botones: **Uso** y **Facturación**, con los datos del mes.
+
+**Uso** muestra el consumo del mes: solicitudes, tokens totales, gasto en USD y el desglose de tokens de entrada y salida, más el detalle por proveedor y los límites configurados.
+
+**Facturación** muestra el gasto del mes por proveedor y modelo, con filtros por proveedor y modelo. Por cada modelo ves los tokens de entrada y salida con su tarifa y su costo, el costo total y la cantidad de solicitudes. También permite configurar límites de gasto por proveedor o por modelo: si se alcanza un límite, las solicitudes se bloquean hasta aumentarlo.
+
+Se registra toda la actividad con modelos cloud: chat, tools, creadores, agenda, embeddings y transcripciones. Los modelos locales (Ollama) no tienen costo y no se contabilizan.
 
 ---
 
@@ -262,12 +284,12 @@ El agente puede ejecutar tareas en horarios definidos por el usuario. La zona ho
 
 El header tiene un botón **Agenda** que abre el panel de tareas programadas, donde se puede:
 
-1. **Agregar una tarea**: nombre, descripción de lo que debe hacer el agente, hora (`HH:MM`) y días de la semana.
+1. **Agregar una tarea**: nombre, descripción de lo que debe hacer el agente, y uno o más horarios (hora `HH:MM` + días de la semana).
 2. **Equipar la tarea**: seleccionar las tools y skills que tendrá disponibles, y ajustar los parámetros del modelo.
 3. **Refinar el prompt**: el wizard del LLM puede refinar la descripción de la tarea.
 4. **Editar el horario** de una tarea existente (hora y días).
 5. **Eliminar** tareas.
-6. **Guardar**: valida todas las tareas antes de confirmar (nombre y descripción presentes, horario válido, al menos un día).
+6. **Guardar**: valida todas las tareas antes de confirmar (nombre y descripción presentes, al menos un horario válido con un día).
 
 Las tareas se persisten en la base de datos SQLite interna. Al activar una tarea se crea un sub-agente dedicado con los permisos seleccionados (tools, skills y parámetros), sin prompt de sistema: la descripción refinada se usa como instrucción del usuario en la ejecución.
 

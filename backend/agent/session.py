@@ -43,7 +43,7 @@ class SessionManager:
         _initialized: Whether the database tables have been created.
     """
 
-    VALID_ROLES = frozenset({"system", "user", "assistant", "tool"})
+    VALID_ROLES = frozenset({"system", "user", "assistant", "tool", "title"})
 
     def __init__(self, db_path: str = DB_PATH) -> None:
         """Initialise the session manager.
@@ -387,7 +387,7 @@ class SessionManager:
             message: Per-message human-readable message.
             usage: Optional dict with token usage, e.g.
                 ``{"prompt_tokens", "completion_tokens", "total_tokens",
-                "total_time"}``. Stored in dedicated columns.
+                "total_time", "time_to_first_token"}``. Stored in dedicated columns.
             tool_call_id: Tool call ID (OpenAI-compatible format, for ``role: "tool"``).
             tool_name: Tool name (Ollama format, for ``role: "tool"``).
             model: LLM model identifier that produced the message
@@ -405,6 +405,10 @@ class SessionManager:
                 message=f"Invalid role '{role}'. Must be one of {sorted(self.VALID_ROLES)}.",
                 usage=zero_usage(),
             )
+
+        # Canonical storage: provider always lowercase (models.dev convention).
+        if isinstance(provider, str):
+            provider = provider.strip().lower()
 
         # Calculate cost if provider, model, and usage are available
         cost_input = 0.0
@@ -427,9 +431,10 @@ class SessionManager:
                     "INSERT INTO messages "
                     "(session_id, role, content, reasoning, tool_calls, tool_results, "
                     "status, message, prompt_tokens, completion_tokens, total_tokens, total_time, "
+                    "time_to_first_token, "
                     "tool_call_id, tool_name, model, provider, cost_input, cost_output, cost_total, "
                     "turn_number, step, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         role,
@@ -443,6 +448,7 @@ class SessionManager:
                         (usage or {}).get("completion_tokens"),
                         (usage or {}).get("total_tokens"),
                         (usage or {}).get("total_time"),
+                        (usage or {}).get("time_to_first_token"),
                         tool_call_id,
                         tool_name,
                         model,

@@ -26,6 +26,7 @@ import os
 import re
 import socket
 import sys
+import time
 from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -462,7 +463,20 @@ def reindex_collection(db, name: str) -> dict:
         name,
         len(all_documents),
     )
+    _embed_t0 = time.time()
     vectors = _embed_with_retry(db.embed_func, all_documents)
+    _embed_duration = round(time.time() - _embed_t0, 2)
+    # Track the embedding-model call in SQLite (one row with the embedded
+    # chunk count). Never breaks the reindex flow.
+    try:
+        from backend.utils.spend_handler import record_external_usage
+
+        record_external_usage(
+            "embedding", "google", db.embed_func.model_name, len(all_documents),
+            duration=_embed_duration,
+        )
+    except Exception:
+        pass
 
     # 3. Recreate the collection with the current embedding model.
     db.delete_collection(name)
@@ -491,7 +505,19 @@ def reindex_collection(db, name: str) -> dict:
     sanity_ok = False
     try:
         sample = all_documents[0][:500]
+        _sanity_t0 = time.time()
         results = db.query(name, sample, n_results=1)
+        _sanity_duration = round(time.time() - _sanity_t0, 2)
+        # Track the query-embedding call in SQLite. Never breaks the flow.
+        try:
+            from backend.utils.spend_handler import record_external_usage
+
+            record_external_usage(
+                "embedding", "google", db.embed_func.model_name, 1,
+                duration=_sanity_duration,
+            )
+        except Exception:
+            pass
         sanity_ok = bool((results.get("ids") or [[]])[0])
     except Exception as exc:
         logger.warning("Query de sanidad falló para '%s': %s", name, exc)
@@ -600,13 +626,25 @@ def _index_turn_sync(
         db.get_or_create_collection(MEMORY_COLLECTION)
 
         if len(document) <= MAX_TURN_DOC_CHARS:
+            _mem_t0 = time.time()
             db.add_documents(
                 MEMORY_COLLECTION,
                 ids=[doc_id],
                 documents=[document],
                 metadatas=[metadata],
             )
+            _mem_duration = round(time.time() - _mem_t0, 2)
             indexed = 1
+            # Track the embedding-model call in SQLite. Never breaks the flow.
+            try:
+                from backend.utils.spend_handler import record_external_usage
+
+                record_external_usage(
+                    "embedding", "google", db.embed_func.model_name, 1,
+                    duration=_mem_duration,
+                )
+            except Exception:
+                pass
         else:
             from backend.agent.utils.chunking import chunk_file_content
 
@@ -618,13 +656,26 @@ def _index_turn_sync(
             ids = [f"{doc_id}_c{c['chunk_number']}" for c in chunks]
             documents = [c["chunk_text"] for c in chunks]
             metadatas = [dict(metadata, chunk=f"{i + 1}/{len(chunks)}") for i in range(len(chunks))]
+            _mem_t0 = time.time()
             db.add_documents(
                 MEMORY_COLLECTION,
                 ids=ids,
                 documents=documents,
                 metadatas=metadatas,
             )
+            _mem_duration = round(time.time() - _mem_t0, 2)
             indexed = len(chunks)
+            # Track the embedding-model call in SQLite (one row with the
+            # embedded chunk count). Never breaks the flow.
+            try:
+                from backend.utils.spend_handler import record_external_usage
+
+                record_external_usage(
+                    "embedding", "google", db.embed_func.model_name, len(documents),
+                    duration=_mem_duration,
+                )
+            except Exception:
+                pass
 
         return make_success_response(
             message=f"Turno {turn_number} indexado en '{MEMORY_COLLECTION}'.",

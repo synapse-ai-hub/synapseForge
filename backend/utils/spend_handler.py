@@ -32,6 +32,19 @@ from backend.agent.utils.error_logger import log_error
 logger = logging.getLogger(__name__)
 
 
+def current_month() -> str:
+    """Return the current month key (``YYYY-MM``).
+
+    Spend is accumulated in one row per provider, model and month, so
+    history is never reset and the tabs show the current month.
+
+    Returns:
+        The current month as ``"YYYY-MM"`` (UTC, like every timestamp
+        stored by this module).
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -60,6 +73,7 @@ def check_spend_limit(provider: str, model: str | None) -> tuple[bool, dict | No
     try:
         provider_lower = provider.strip().lower()
         model_value = model.strip() if model else None
+        month_value = current_month()
 
         with get_connection() as conn:
             spend_info: dict[str, Any] = {
@@ -81,8 +95,8 @@ def check_spend_limit(provider: str, model: str | None) -> tuple[bool, dict | No
                 if model_limit_row:
                     spend_info["model_limit"] = float(model_limit_row["limit_amount"])
                     model_spend_row = conn.execute(
-                        "SELECT cost_total FROM spend WHERE provider = ? AND model = ?",
-                        (provider_lower, model_value),
+                        "SELECT cost_total FROM spend WHERE provider = ? AND model = ? AND month = ?",
+                        (provider_lower, model_value, month_value),
                     ).fetchone()
                     spend_info["current_model_spend"] = (
                         float(model_spend_row["cost_total"])
@@ -104,8 +118,8 @@ def check_spend_limit(provider: str, model: str | None) -> tuple[bool, dict | No
             if provider_limit_row:
                 spend_info["provider_limit"] = float(provider_limit_row["limit_amount"])
                 provider_spend_row = conn.execute(
-                    "SELECT SUM(cost_total) as total_cost FROM spend WHERE provider = ?",
-                    (provider_lower,),
+                    "SELECT SUM(cost_total) as total_cost FROM spend WHERE provider = ? AND month = ?",
+                    (provider_lower, month_value),
                 ).fetchone()
                 spend_info["current_provider_spend"] = (
                     float(provider_spend_row["total_cost"])
@@ -142,11 +156,17 @@ def record_spend(
     completion_tokens: int,
     cost_input: float,
     cost_output: float,
+    requests: int = 1,
 ) -> bool:
     """Record a spend transaction to the spend table.
 
-    Uses UPSERT logic to update existing records or insert new ones.
-    Calculates total_tokens and cost_total automatically.
+    Uses UPSERT logic to update the current month's row or insert it.
+    One row per provider, model and month (``YYYY-MM``): history is never
+    reset. Calculates total_tokens and cost_total automatically. Every
+    call counts as ``requests`` (one LLM request per call), even when
+    tokens are zero (failures, embeddings, transcription): zero-token
+    calls add no tokens or cost but still count the request, creating
+    the row with ``requests=1`` when it does not exist yet.
 
     Args:
         provider: The provider name (e.g., "openrouter", "google").
@@ -155,6 +175,7 @@ def record_spend(
         completion_tokens: Number of completion tokens generated.
         cost_input: The cost for input tokens.
         cost_output: The cost for output tokens.
+        requests: Number of LLM requests this transaction counts (default 1).
 
     Returns:
         True if the spend was recorded successfully, False otherwise.
@@ -162,6 +183,7 @@ def record_spend(
     try:
         provider_lower = provider.strip().lower()
         model_value = model.strip()
+        month_value = current_month()
         cost_total = cost_input + cost_output
         total_tokens = prompt_tokens + completion_tokens
         now = datetime.now(timezone.utc).isoformat()
@@ -169,15 +191,17 @@ def record_spend(
         with db_transaction() as conn:
             cursor = conn.execute(
                 """UPDATE spend
-                   SET prompt_tokens = prompt_tokens + ?,
+                   SET requests = requests + ?,
+                       prompt_tokens = prompt_tokens + ?,
                        completion_tokens = completion_tokens + ?,
                        total_tokens = total_tokens + ?,
                        cost_input = cost_input + ?,
                        cost_output = cost_output + ?,
                        cost_total = cost_total + ?,
                        updated_at = ?
-                   WHERE provider = ? AND model = ?""",
+                   WHERE provider = ? AND model = ? AND month = ?""",
                 (
+                    requests,
                     prompt_tokens,
                     completion_tokens,
                     total_tokens,
@@ -187,18 +211,21 @@ def record_spend(
                     now,
                     provider_lower,
                     model_value,
+                    month_value,
                 ),
             )
 
             if cursor.rowcount == 0:
                 conn.execute(
                     """INSERT INTO spend
-                       (provider, model, prompt_tokens, completion_tokens, total_tokens,
+                       (provider, model, month, requests, prompt_tokens, completion_tokens, total_tokens,
                         cost_input, cost_output, cost_total, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         provider_lower,
                         model_value,
+                        month_value,
+                        requests,
                         prompt_tokens,
                         completion_tokens,
                         total_tokens,
@@ -235,10 +262,11 @@ def calculate_cost(
 
     Queries the model_catalog table to retrieve cost per token rates and computes
     the input cost, output cost, and total cost for the given token counts.
+    Catalog rates come from models.dev and are USD per million tokens.
 
     Cost components:
-        - cost_input: prompt_tokens * cost_input_rate
-        - cost_output: completion_tokens * cost_output_rate
+        - cost_input: prompt_tokens * cost_input_rate / 1_000_000
+        - cost_output: completion_tokens * cost_output_rate / 1_000_000
         - cost_total: cost_input + cost_output
 
     Args:
@@ -276,8 +304,8 @@ def calculate_cost(
             cost_input_rate = float(row["cost_input"] or 0.0)
             cost_output_rate = float(row["cost_output"] or 0.0)
 
-            calculated_cost_input = prompt_tokens * cost_input_rate
-            calculated_cost_output = completion_tokens * cost_output_rate
+            calculated_cost_input = prompt_tokens * cost_input_rate / 1_000_000
+            calculated_cost_output = completion_tokens * cost_output_rate / 1_000_000
             calculated_cost_total = calculated_cost_input + calculated_cost_output
 
             return (
@@ -423,12 +451,15 @@ def get_spend_by_provider(provider: str) -> list[dict]:
         A list of dictionaries containing spend data for each model:
         - provider: The provider name.
         - model: The model identifier.
+        - requests: Total LLM requests counted.
         - prompt_tokens: Total prompt tokens consumed.
         - completion_tokens: Total completion tokens generated.
         - total_tokens: Total tokens (prompt + completion).
         - cost_input: Accumulated cost for input tokens.
         - cost_output: Accumulated cost for output tokens.
         - cost_total: Total accumulated cost.
+        - cost_input_rate: Catalog input rate (USD per million tokens).
+        - cost_output_rate: Catalog output rate (USD per million tokens).
         - updated_at: Timestamp of the last update.
         Returns an empty list if no records are found or on error.
     """
@@ -437,24 +468,37 @@ def get_spend_by_provider(provider: str) -> list[dict]:
 
         with get_connection() as conn:
             rows = conn.execute(
-                """SELECT provider, model, prompt_tokens, completion_tokens,
-                          total_tokens, cost_input, cost_output, cost_total, updated_at
-                   FROM spend
-                   WHERE provider = ?
-                   ORDER BY updated_at DESC""",
-                (provider_lower,),
+                """SELECT s.provider, s.model, s.requests, s.prompt_tokens,
+                          s.completion_tokens, s.total_tokens, s.cost_input,
+                          s.cost_output, s.cost_total, s.updated_at,
+                          c.cost_input AS cost_input_rate,
+                          c.cost_output AS cost_output_rate
+                   FROM spend s LEFT JOIN model_catalog c
+                     ON c.provider = s.provider AND c.model_id = s.model
+                   WHERE s.provider = ? AND s.month = ?
+                   ORDER BY s.updated_at DESC""",
+                (provider_lower, current_month()),
             ).fetchall()
 
             return [
                 {
                     "provider": row["provider"],
                     "model": row["model"],
+                    "requests": row["requests"] or 0,
                     "prompt_tokens": row["prompt_tokens"] or 0,
                     "completion_tokens": row["completion_tokens"] or 0,
                     "total_tokens": row["total_tokens"] or 0,
                     "cost_input": float(row["cost_input"] or 0.0),
                     "cost_output": float(row["cost_output"] or 0.0),
                     "cost_total": float(row["cost_total"] or 0.0),
+                    "cost_input_rate": (
+                        float(row["cost_input_rate"])
+                        if row["cost_input_rate"] is not None else None
+                    ),
+                    "cost_output_rate": (
+                        float(row["cost_output_rate"])
+                        if row["cost_output_rate"] is not None else None
+                    ),
                     "updated_at": row["updated_at"],
                 }
                 for row in rows
@@ -476,34 +520,52 @@ def get_all_spend() -> list[dict]:
         A list of dictionaries containing spend data for each provider-model:
         - provider: The provider name.
         - model: The model identifier.
+        - requests: Total LLM requests counted.
         - prompt_tokens: Total prompt tokens consumed.
         - completion_tokens: Total completion tokens generated.
         - total_tokens: Total tokens (prompt + completion).
         - cost_input: Accumulated cost for input tokens.
         - cost_output: Accumulated cost for output tokens.
         - cost_total: Total accumulated cost.
+        - cost_input_rate: Catalog input rate (USD per million tokens).
+        - cost_output_rate: Catalog output rate (USD per million tokens).
         - updated_at: Timestamp of the last update.
         Returns an empty list if no records are found or on error.
     """
     try:
         with get_connection() as conn:
             rows = conn.execute(
-                """SELECT provider, model, prompt_tokens, completion_tokens,
-                          total_tokens, cost_input, cost_output, cost_total, updated_at
-                   FROM spend
-                   ORDER BY provider, model""",
+                """SELECT s.provider, s.model, s.requests, s.prompt_tokens,
+                          s.completion_tokens, s.total_tokens, s.cost_input,
+                          s.cost_output, s.cost_total, s.updated_at,
+                          c.cost_input AS cost_input_rate,
+                          c.cost_output AS cost_output_rate
+                   FROM spend s LEFT JOIN model_catalog c
+                     ON c.provider = s.provider AND c.model_id = s.model
+                   WHERE s.month = ?
+                   ORDER BY s.provider, s.model""",
+                (current_month(),),
             ).fetchall()
 
             return [
                 {
                     "provider": row["provider"],
                     "model": row["model"],
+                    "requests": row["requests"] or 0,
                     "prompt_tokens": row["prompt_tokens"] or 0,
                     "completion_tokens": row["completion_tokens"] or 0,
                     "total_tokens": row["total_tokens"] or 0,
                     "cost_input": float(row["cost_input"] or 0.0),
                     "cost_output": float(row["cost_output"] or 0.0),
                     "cost_total": float(row["cost_total"] or 0.0),
+                    "cost_input_rate": (
+                        float(row["cost_input_rate"])
+                        if row["cost_input_rate"] is not None else None
+                    ),
+                    "cost_output_rate": (
+                        float(row["cost_output_rate"])
+                        if row["cost_output_rate"] is not None else None
+                    ),
                     "updated_at": row["updated_at"],
                 }
                 for row in rows
@@ -534,14 +596,14 @@ def get_billing_stats(provider: str) -> dict | None:
 
         with get_connection() as conn:
             row = conn.execute(
-                """SELECT COUNT(*) as requests,
+                """SELECT SUM(requests) as requests,
                           SUM(prompt_tokens) as prompt_tokens,
                           SUM(completion_tokens) as completion_tokens,
                           SUM(total_tokens) as total_tokens,
                           SUM(cost_total) as cost
                    FROM spend
-                   WHERE provider = ?""",
-                (provider_lower,),
+                   WHERE provider = ? AND month = ?""",
+                (provider_lower, current_month()),
             ).fetchone()
 
             if row is None or (row["requests"] or 0) == 0:
@@ -576,8 +638,8 @@ def get_current_spend(provider: str) -> float:
 
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT SUM(cost_total) as total FROM spend WHERE provider = ?",
-                (provider_lower,),
+                "SELECT SUM(cost_total) as total FROM spend WHERE provider = ? AND month = ?",
+                (provider_lower, current_month()),
             ).fetchone()
             return float(row["total"] or 0.0) if row else 0.0
 
@@ -585,3 +647,129 @@ def get_current_spend(provider: str) -> float:
         log_error(str(e), source="spend_handler.py:get_current_spend")
         logger.error("Failed to get current spend: %s", e)
         return 0.0
+
+
+def record_external_usage(
+    kind: str,
+    provider: str,
+    model: str,
+    units: int = 1,
+    duration: float | None = None,
+) -> bool:
+    """Record a non-LLM usage call (embeddings, transcription).
+
+    The embedding and transcription APIs report no token counts (verified
+    against the Google GenAI SDK: ``EmbedContentResponse`` carries only
+    vectors; the OpenAI-compatible transcription response carries only
+    text), so token columns stay at zero and the measured wall-clock
+    ``duration`` (seconds) is what makes each call accountable.
+
+    Every call is contemplated twice: one detail row in ``external_usage``
+    and one aggregated counter in ``spend`` (requests), so the billing
+    tabs include absolutely all model traffic.
+
+    Args:
+        kind: Usage kind (``"embedding"`` or ``"transcription"``).
+        provider: The provider name (e.g., "google", "groq").
+        model: The model identifier (e.g., "gemini-embedding-001").
+        units: Processed units this call counts (default 1).
+        duration: Measured wall-clock seconds for the call, if known.
+
+    Returns:
+        True if the usage was recorded successfully, False otherwise.
+    """
+    try:
+        kind_value = (kind or "").strip().lower()
+        provider_lower = (provider or "").strip().lower()
+        model_value = (model or "").strip()
+        units_value = units or 0
+        now = datetime.now(timezone.utc).isoformat()
+
+        with db_transaction() as conn:
+            conn.execute(
+                """INSERT INTO external_usage
+                   (kind, provider, model, units, prompt_tokens,
+                    completion_tokens, duration, created_at)
+                   VALUES (?, ?, ?, ?, 0, 0, ?, ?)""",
+                (kind_value, provider_lower, model_value, units_value, duration, now),
+            )
+        # Contemplate the call in spend too (one request; zero tokens
+        # and zero cost since these APIs report no token usage). The
+        # processed units stay in the external_usage detail row only.
+        # LOCAL providers are never contemplated in spend (no cost).
+        try:
+            if provider_lower != "local":
+                record_spend(provider_lower, model_value, 0, 0, 0.0, 0.0, requests=1)
+        except Exception:
+            pass
+        return True
+
+    except sqlite3.Error as e:
+        log_error(str(e), source="spend_handler.py:record_external_usage")
+        logger.error("Failed to record external usage: %s", e)
+        return False
+
+
+def record_creator_call(
+    caller: str,
+    provider: str | None,
+    model: str | None,
+    usage: dict | None,
+) -> bool:
+    """Record a direct LLM call made outside the chat loop.
+
+    Creator flows (skill/tool/agent creators), the skills and tools
+    evaluators and the agenda prompt crafter call ``llm_process`` /
+    ``llm_streaming`` directly, so they never produce ``messages`` rows.
+    Their usage is contemplated here instead, one row per call in the
+    ``creator_calls`` table with the same token and cost breakdown as
+    ``messages``. Failures are recorded with zero tokens so every call
+    counts. Never raises.
+
+    Args:
+        caller: Caller identifier (e.g., ``"creator:skill:generate"``).
+        provider: The provider name (e.g., ``"openai"``, ``"google"``).
+        model: The model identifier.
+        usage: The usage report dict (``prompt_tokens``,
+            ``completion_tokens``, ``total_tokens``, ``total_time``).
+
+    Returns:
+        True if the call was recorded successfully, False otherwise.
+    """
+    try:
+        caller_value = (caller or "unknown").strip()
+        provider_lower = (provider or "unknown").strip().lower()
+        model_value = (model or "unknown").strip()
+        usage = usage or {}
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        total_tokens = int(usage.get("total_tokens") or 0) or (prompt_tokens + completion_tokens)
+        total_time = usage.get("total_time")
+        cost_input, cost_output, cost_total = calculate_cost(
+            provider_lower, model_value, prompt_tokens, completion_tokens
+        )
+        now = datetime.now(timezone.utc).isoformat()
+
+        with db_transaction() as conn:
+            conn.execute(
+                """INSERT INTO creator_calls
+                   (caller, provider, model, prompt_tokens, completion_tokens,
+                    total_tokens, total_time, cost_input, cost_output,
+                    cost_total, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    caller_value, provider_lower, model_value, prompt_tokens,
+                    completion_tokens, total_tokens, total_time, cost_input,
+                    cost_output, cost_total, now,
+                ),
+            )
+        # NOTE: spend is NOT touched here. Every creator/agenda call goes
+        # through llm_process/llm_streaming, which already contemplate it
+        # in spend via _record_spend (success and failure). Recording it
+        # here too would double-count every request.
+        return True
+
+    except Exception as e:
+        log_error(str(e), source="spend_handler.py:record_creator_call")
+        logger.error("Failed to record creator call: %s", e)
+        return False

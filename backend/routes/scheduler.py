@@ -151,7 +151,18 @@ async def craft_scheduled_prompt(data: dict[str, Any]) -> JSONResponse:
             top_p=0.7,
             seed=2603,
         )
-        refined = str(response.data or "").strip()
+        # Contemplate this crafter LLM call (tracked in creator_calls
+        # since it never produces messages rows).
+        try:
+            from backend.utils.spend_handler import record_creator_call
+
+            record_creator_call(
+                "agenda:craft-prompt", agent.provider, agent.default_model,
+                response.get("usage") if isinstance(response, dict) else None,
+            )
+        except Exception:
+            pass
+        refined = str(response.get("data") or "").strip()
         if not refined:
             return validate_response(
                 make_error_response(message="El modelo no devolvió un prompt.")

@@ -535,7 +535,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
             <li><strong>Gestionar RAG</strong>: página para crear colecciones RAG, subir archivos y agregar URLs, procesada con ChromaDB.</li>
           </ul>
           <p>En las pantallas iniciales de creación (skill, tool y agente) podés elegir con qué modelo cloud se genera el elemento: seleccionás proveedor y modelo y pulsás <strong>Aplicar</strong>. La selección es efímera (solo vale para esa tarea mientras la pestaña está abierta); si no aplicás ninguna, se usa el modelo por defecto.</p>
-          <p>Cada página muestra un indicador de trabajo mientras el backend procesa. Al finalizar, muestra un mensaje de éxito.</p>
+          <p>Cada página muestra un indicador de trabajo mientras el backend procesa. Al finalizar, muestra un mensaje de éxito. Las páginas de creación incluyen un botón <strong>Descargar conversación</strong> para guardar la entrevista en Markdown.</p>
           <h3>Panel de agentes (modo desarrollador)</h3>
           <p>La pestaña <strong>Agente</strong> (modo dev) muestra el estado de los elementos del agente, con opción de eliminarlos:</p>
           <ul>
@@ -553,6 +553,8 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <p>En la sección <strong>Providers</strong> podés cargar la API key de cualquiera de los 15 providers cloud curados: Google más 14 OpenAI-compatibles (Groq, OpenRouter, OpenAI, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Mistral AI, Perplexity, Meta, Moonshot AI, Zhipu AI, Alibaba). Cada key es opcional: si no cargás una key para un proveedor, ese proveedor no está disponible. La pantalla inicial solo pide las dos keys auxiliares (Groq para transcripción de voz, Google para la fuente de conocimiento); el resto de los providers se configura acá. Las keys se guardan cifradas en la base de datos SQLite interna y no se vuelven a mostrar después de guardarlas. Al guardar una key se valida en vivo contra la API del proveedor: si es inválida se rechaza; si es válida, el proveedor queda disponible de inmediato en los selectores.</p>
           <h4>Contexto (turnos)</h4>
           <p>Controla cuántos turnos de conversación se mantienen en el contexto del modelo. <code>-1</code> significa todo el historial. Reducir este número ayuda a controlar el uso de tokens y el costo.</p>
+          <h4>Parámetros avanzados</h4>
+          <p>Temperature, Top P, presupuesto de tokens, reasoning y formato de salida. Se aplican junto con el modelo al presionar <strong>Aplicar</strong>; con <strong>Default</strong> se usan los valores de cada agente. Debajo, un bloque <strong>Info del modelo</strong> muestra las modalidades de entrada/salida, la ventana de contexto y los límites y costos por millón de tokens del modelo seleccionado.</p>
           <h4>Modo verbose</h4>
           <p>Activando el modo verbose, la interfaz muestra tarjetas visuales para las llamadas a tools y las delegaciones a sub-agentes, lo que facilita entender qué está haciendo el agente en cada momento.</p>
           <h4>Instrucciones y documentos</h4>
@@ -570,18 +572,25 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h3>Agenda (tareas programadas)</h3>
           <p>En el header, el botón <strong>Agenda</strong> abre el panel de tareas programadas, donde podés indicarle al agente qué hacer y cuándo, sin estar presente:</p>
           <ul>
-            <li><strong>Agregar una tarea</strong>: nombre, descripción de lo que tiene que hacer el agente, hora (<code>HH:MM</code>) y días de la semana.</li>
+            <li><strong>Agregar una tarea</strong>: nombre, descripción de lo que tiene que hacer el agente, y uno o más horarios (hora <code>HH:MM</code> + días de la semana).</li>
             <li><strong>Equipar la tarea</strong>: seleccionar las tools y skills que tendrá disponibles, y ajustar los parámetros del modelo.</li>
             <li><strong>Refinar el prompt</strong>: el wizard del LLM puede refinar la descripción de la tarea.</li>
             <li><strong>Editar el horario</strong> de una tarea existente (hora y días).</li>
             <li><strong>Eliminar</strong> tareas.</li>
-            <li><strong>Guardar</strong>: valida todas las tareas antes de confirmar (nombre y descripción presentes, horario válido, al menos un día).</li>
+            <li><strong>Guardar</strong>: valida todas las tareas antes de confirmar (nombre y descripción presentes, al menos un horario válido con un día).</li>
           </ul>
           <p>La zona horaria se toma directamente del sistema. Al activar una tarea se crea un sub-agente dedicado con los permisos seleccionados, y se ejecuta con el modelo y proveedor seleccionados, como si la hubieras pedido desde el chat.</p>
           <h3>Notificaciones</h3>
           <p>Junto al botón de Agenda hay una <strong>campanita</strong> que acumula una notificación por cada ejecución de tarea programada: indica si terminó con éxito o falló, con fecha y hora. Cada ejecución también se notifica por Telegram (ver la sección Telegram).</p>
           <h3>Historial</h3>
           <p>En el panel lateral, bajo la pestaña <strong>Conversaciones</strong>, se listan todas las sesiones de chat. Podés crear nuevas conversaciones, seleccionar sesiones anteriores y eliminar conversaciones existentes.</p>
+          <h3>Métricas</h3>
+          <p>El botón <strong>Métricas</strong> del header abre el dashboard con cinco pestañas: <strong>Resumen</strong> (sesiones, mensajes, tokens, costos y actividad por día), <strong>Sesiones</strong>, <strong>Tools</strong> (llamadas y sub-agentes), <strong>Modelos</strong> y <strong>Errores</strong>.</p>
+          <h3>Uso y Facturación</h3>
+          <p>En el header hay dos botones: <strong>Uso</strong> y <strong>Facturación</strong>, con los datos del mes.</p>
+          <p><strong>Uso</strong> muestra el consumo del mes: solicitudes, tokens totales, gasto en USD y el desglose de tokens de entrada y salida, más el detalle por proveedor y los límites configurados.</p>
+          <p><strong>Facturación</strong> muestra el gasto del mes por proveedor y modelo, con filtros por proveedor y modelo. Por cada modelo ves los tokens de entrada y salida con su tarifa y su costo, el costo total y la cantidad de solicitudes. También permite configurar límites de gasto por proveedor o por modelo: si se alcanza un límite, las solicitudes se bloquean hasta aumentarlo.</p>
+          <p>Se registra toda la actividad con modelos cloud: chat, tools, creadores, agenda, embeddings y transcripciones. Los modelos locales (Ollama) no tienen costo y no se contabilizan.</p>
         </section>
 
         <section id="telegram">
@@ -696,11 +705,19 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td>GET</td><td><code>/api/metrics/sessions</code></td><td>Métricas por sesión.</td></tr>
               <tr><td>GET</td><td><code>/api/metrics/tools</code></td><td>Uso de tools.</td></tr>
               <tr><td>GET</td><td><code>/api/metrics/errors</code></td><td>Métricas de errores.</td></tr>
+              <tr><td>GET</td><td><code>/api/metrics/models</code></td><td>Uso por modelo.</td></tr>
+              <tr><td>POST</td><td><code>/api/conversation/export</code></td><td>Exportar una conversación a Markdown.</td></tr>
+              <tr><td>GET</td><td><code>/api/usage-metrics</code></td><td>Uso del mes por proveedor (solicitudes, tokens, costo) y totales.</td></tr>
+              <tr><td>GET</td><td><code>/api/billing-config</code></td><td>Listar límites de gasto configurados.</td></tr>
+              <tr><td>POST</td><td><code>/api/billing-config</code></td><td>Configurar un límite de gasto por proveedor o modelo.</td></tr>
+              <tr><td>GET</td><td><code>/api/billing-stats</code></td><td>Estadísticas de facturación del mes por proveedor.</td></tr>
+              <tr><td>GET</td><td><code>/api/spend</code></td><td>Gasto del mes por proveedor y modelo, con tarifas del catálogo.</td></tr>
               <tr><td>GET</td><td><code>/api/rag/collections</code></td><td>Listar colecciones RAG.</td></tr>
               <tr><td>POST</td><td><code>/api/rag/collections</code></td><td>Crear una colección RAG.</td></tr>
               <tr><td>DELETE</td><td><code>/api/rag/collections/{name}</code></td><td>Eliminar una colección RAG.</td></tr>
               <tr><td>POST</td><td><code>/api/rag/collections/{name}/files</code></td><td>Subir archivos a una colección (extracción + chunking).</td></tr>
               <tr><td>POST</td><td><code>/api/rag/collections/{name}/urls</code></td><td>Agregar una página web a una colección.</td></tr>
+              <tr><td>POST</td><td><code>/api/rag/collections/{name}/reindex</code></td><td>Reindexar una colección con el modelo de embeddings actual.</td></tr>
               <tr><td>GET</td><td><code>/api/agent/knowledge</code></td><td>Listar colecciones de la base de conocimiento.</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/skills/{name}</code></td><td>Eliminar una skill.</td></tr>
               <tr><td>DELETE</td><td><code>/api/agent/tools/{name}</code></td><td>Eliminar una tool externa.</td></tr>
@@ -711,6 +728,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
               <tr><td>DELETE</td><td><code>/api/agent/knowledge/{collection}</code></td><td>Eliminar una colección RAG.</td></tr>
               <tr><td>GET</td><td><code>/api/events</code></td><td>Streaming SSE del event bus (Telegram → Frontend).</td></tr>
               <tr><td>GET</td><td><code>/api/scheduler/tasks</code></td><td>Listar las tareas programadas.</td></tr>
+              <tr><td>POST</td><td><code>/api/scheduler/craft-prompt</code></td><td>Refinar la descripción de una tarea con el LLM (wizard).</td></tr>
               <tr><td>POST</td><td><code>/api/scheduler/tasks</code></td><td>Crear una tarea programada (descripción, hora y días).</td></tr>
               <tr><td>PUT</td><td><code>/api/scheduler/tasks/{id}</code></td><td>Actualizar una tarea programada (hora, días o descripción).</td></tr>
               <tr><td>DELETE</td><td><code>/api/scheduler/tasks/{id}</code></td><td>Eliminar una tarea programada.</td></tr>

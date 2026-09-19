@@ -84,21 +84,28 @@ def _get_all_spend_configs() -> list[dict[str, Any]]:
 def _get_all_provider_stats() -> list[dict[str, Any]]:
     """Get billing statistics for all providers aggregated from spend table.
 
+    Current month only (spend keeps one row per provider, model and
+    month; history is never reset).
+
     Returns:
         List of billing stats dicts per provider.
     """
     try:
+        from backend.utils.spend_handler import current_month
+
         with db_transaction() as conn:
             rows = conn.execute(
                 """SELECT provider,
-                          COUNT(*) as requests,
+                          SUM(requests) as requests,
                           SUM(prompt_tokens) as prompt_tokens,
                           SUM(completion_tokens) as completion_tokens,
                           SUM(total_tokens) as total_tokens,
                           SUM(cost_total) as cost
                    FROM spend
+                   WHERE month = ?
                    GROUP BY provider
-                   ORDER BY provider"""
+                   ORDER BY provider""",
+                (current_month(),),
             ).fetchall()
             return [dict(row) for row in rows]
     except Exception as e:

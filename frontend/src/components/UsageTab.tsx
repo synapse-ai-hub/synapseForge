@@ -103,23 +103,23 @@ export function UsageTab() {
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary">Solicitudes</div>
+              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Solicitudes</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.requests}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary">Tokens totales</div>
+              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Tokens totales</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.total_tokens}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary">Gasto (USD)</div>
-              <div className="text-xl font-bold text-app-text">{usage.totals.cost.toFixed(4)}</div>
+              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Gasto (USD)</div>
+              <div className="text-xl font-bold text-app-text">{(usage.totals.cost ?? 0).toFixed(4)}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary">Prompt tokens</div>
+              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Prompt tokens</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.prompt_tokens}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
-              <div className="mb-1 text-xs text-app-text-secondary">Completion tokens</div>
+              <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Completion tokens</div>
               <div className="text-xl font-bold text-app-text">{usage.totals.completion_tokens}</div>
             </div>
           </div>
@@ -136,7 +136,7 @@ export function UsageTab() {
                   <div className="flex gap-4 text-xs text-app-text-secondary">
                     <span>Req: {p.requests}</span>
                     <span>Tokens: {p.total_tokens}</span>
-                    <span>USD: {p.cost.toFixed(4)}</span>
+                    <span>USD: {(p.cost ?? 0).toFixed(4)}</span>
                   </div>
                 </div>
               ))}
@@ -161,7 +161,7 @@ export function UsageTab() {
                     {l.model ? ` / ${l.model}` : ""}
                   </span>
                 </div>
-                <span className="text-xs font-semibold text-app-text">${l.limit_amount.toFixed(2)}</span>
+                <span className="text-xs font-semibold text-app-text">${(l.limit_amount ?? 0).toFixed(2)}</span>
               </div>
             ))}
             {billing.limits.length === 0 && (

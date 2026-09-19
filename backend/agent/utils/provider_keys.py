@@ -261,8 +261,8 @@ def save_key(provider: str, api_key: str) -> dict:
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
-    provider_u = (provider or "").upper()
-    if provider_u.lower() not in PROVIDER_REGISTRY:
+    provider_l = (provider or "").strip().lower()
+    if provider_l not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     if not api_key or not api_key.strip():
         return {"status": "error", "message": "La API key no puede estar vacía."}
@@ -288,7 +288,7 @@ def save_key(provider: str, api_key: str) -> dict:
                         api_key_encrypted = excluded.api_key_encrypted,
                         updated_at = excluded.updated_at
                     """,
-                    (provider_u, encrypted, now),
+                    (provider_l, encrypted, now),
                 )
         finally:
             conn.close()
@@ -296,12 +296,12 @@ def save_key(provider: str, api_key: str) -> dict:
         try:
             from backend.agent.utils.model_catalog import sync_catalog
 
-            sync_catalog(provider_u.lower())
+            sync_catalog(provider_l)
         except Exception as sync_err:
             # Sync failure is non-blocking: the key is already saved.
             log_error(str(sync_err), source="provider_keys.py:save_key:sync_catalog")
-            logger.warning("Catalog sync failed for %s: %s", provider_u, sync_err)
-        return {"status": "success", "message": f"API key de {provider_u} guardada."}
+            logger.warning("Catalog sync failed for %s: %s", provider_l, sync_err)
+        return {"status": "success", "message": f"API key de {provider_l} guardada."}
     except Exception as e:
         log_error(str(e), source="provider_keys.py:save_key")
         return {"status": "error", "message": f"Error guardando la API key: {e}"}
@@ -319,8 +319,8 @@ def get_key(provider: str) -> str | None:
     Returns:
         The plain-text API key, or ``None`` if not stored / undecryptable.
     """
-    provider_u = (provider or "").upper()
-    if provider_u.lower() not in PROVIDER_REGISTRY:
+    provider_l = (provider or "").strip().lower()
+    if provider_l not in PROVIDER_REGISTRY:
         return None
     fernet = _load_fernet()
     if fernet is None:
@@ -332,7 +332,7 @@ def get_key(provider: str) -> str | None:
         try:
             row = conn.execute(
                 "SELECT api_key_encrypted FROM provider_api_keys WHERE provider = ?",
-                (provider_u,),
+                (provider_l,),
             ).fetchone()
         finally:
             conn.close()
@@ -355,8 +355,8 @@ def delete_key(provider: str) -> dict:
     Returns:
         Contract response ``{"status": "success"|"error", "message": ...}``.
     """
-    provider_u = (provider or "").upper()
-    if provider_u.lower() not in PROVIDER_REGISTRY:
+    provider_l = (provider or "").strip().lower()
+    if provider_l not in PROVIDER_REGISTRY:
         return {"status": "error", "message": f"Provider inválido: '{provider}'."}
     try:
         conn = _connect()
@@ -365,22 +365,22 @@ def delete_key(provider: str) -> dict:
         try:
             with conn:
                 cursor = conn.execute(
-                    "DELETE FROM provider_api_keys WHERE provider = ?", (provider_u,)
+                    "DELETE FROM provider_api_keys WHERE provider = ?", (provider_l,)
                 )
             deleted = cursor.rowcount > 0
             # Also delete the model catalog for this provider.
             if deleted:
                 conn.execute(
                     "DELETE FROM model_catalog WHERE provider = ?",
-                    (provider_u.lower(),),
+                    (provider_l,),
                 )
                 conn.commit()
         finally:
             conn.close()
         message = (
-            f"API key de {provider_u} eliminada."
+            f"API key de {provider_l} eliminada."
             if deleted
-            else f"No había API key guardada para {provider_u}."
+            else f"No había API key guardada para {provider_l}."
         )
         return {"status": "success", "message": message}
     except Exception as e:

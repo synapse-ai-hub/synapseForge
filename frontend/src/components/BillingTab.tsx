@@ -6,13 +6,22 @@ const API_BASE_URL = import.meta.env.VITE_URL_BASE || "http://localhost:8000";
 interface SpendRecord {
   provider: string;
   model: string;
+  requests: number;
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
   cost_input: number;
   cost_output: number;
   cost_total: number;
+  cost_input_rate: number | null;
+  cost_output_rate: number | null;
   updated_at: string;
+}
+
+/** Format a catalog rate (USD per million tokens) for display. */
+function formatRate(rate: number | null): string {
+  if (rate == null) return "s/tarifa";
+  return `$${rate.toFixed(3)}/1M`;
 }
 
 export function BillingTab() {
@@ -83,6 +92,18 @@ export function BillingTab() {
     return matchProvider && matchModel;
   });
 
+  const totals = filteredSpend.reduce(
+    (acc, s) => ({
+      requests: acc.requests + (s.requests || 0),
+      prompt_tokens: acc.prompt_tokens + (s.prompt_tokens || 0),
+      completion_tokens: acc.completion_tokens + (s.completion_tokens || 0),
+      cost_input: acc.cost_input + (s.cost_input || 0),
+      cost_output: acc.cost_output + (s.cost_output || 0),
+      cost_total: acc.cost_total + (s.cost_total || 0),
+    }),
+    { requests: 0, prompt_tokens: 0, completion_tokens: 0, cost_input: 0, cost_output: 0, cost_total: 0 },
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
@@ -145,21 +166,44 @@ export function BillingTab() {
         </div>
         <div className="divide-y divide-app-border">
           {filteredSpend.map((s) => (
-            <div key={`${s.provider}-${s.model}`} className="flex items-center justify-between py-2.5 text-sm">
-              <div className="flex items-center gap-2">
-                <DollarSign size={14} className="text-app-primary" />
-                <span className="font-medium text-app-text">
-                  {s.provider} / {s.model}
-                </span>
+            <div key={`${s.provider}-${s.model}`} className="py-2.5 text-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <DollarSign size={14} className="text-app-primary" />
+                  <span className="font-medium text-app-text">
+                    {s.provider} / {s.model}
+                  </span>
+                </div>
+                <span className="text-xs text-app-text-secondary">Req: {s.requests || 0}</span>
               </div>
-              <div className="flex gap-4 text-xs text-app-text-secondary">
-                <span>Tokens: {s.total_tokens}</span>
-                <span>USD: {s.cost_total.toFixed(4)}</span>
+              <div className="mt-1 grid grid-cols-3 gap-2 text-xs text-app-text-secondary">
+                <span>
+                  Entrada: {(s.prompt_tokens || 0).toLocaleString()} tok @ {formatRate(s.cost_input_rate)} = $
+                  {(s.cost_input || 0).toFixed(4)}
+                </span>
+                <span>
+                  Salida: {(s.completion_tokens || 0).toLocaleString()} tok @ {formatRate(s.cost_output_rate)} = $
+                  {(s.cost_output || 0).toFixed(4)}
+                </span>
+                <span className="text-right font-medium text-app-text">
+                  Total: ${(s.cost_total || 0).toFixed(4)}
+                </span>
               </div>
             </div>
           ))}
           {filteredSpend.length === 0 && (
             <div className="py-3 text-xs text-app-text-secondary">Sin registros de gasto (solo se muestran valores &gt; 0)</div>
+          )}
+          {filteredSpend.length > 0 && (
+            <div className="flex items-center justify-between py-2.5 text-sm font-medium text-app-text">
+              <span>Total{providerFilter ? ` (${providerFilter})` : ""}</span>
+              <div className="flex gap-4 text-xs text-app-text-secondary">
+                <span>Req: {totals.requests}</span>
+                <span>In: {totals.prompt_tokens.toLocaleString()} (${totals.cost_input.toFixed(4)})</span>
+                <span>Out: {totals.completion_tokens.toLocaleString()} (${totals.cost_output.toFixed(4)})</span>
+                <span className="font-medium text-app-text">USD: {totals.cost_total.toFixed(4)}</span>
+              </div>
+            </div>
           )}
         </div>
       </div>

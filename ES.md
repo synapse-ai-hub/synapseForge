@@ -153,7 +153,7 @@ Aplicación FastAPI con routers REST/SSE. El framework de agentes vive en `backe
 
 ### Frontend
 
-SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui. Multi-página: chat, creación de skills, gestión de RAG, documentación. Streaming SSE, visualización de tool calls, indicador de contexto, tareas programadas, dashboard de métricas, toggle de Telegram.
+SPA React/Vite/TypeScript con Tailwind v4 y shadcn/ui. Multi-página: chat, creación de skills, gestión de RAG, documentación. Streaming SSE, visualización de tool calls, indicador de contexto, tareas programadas, uso y facturación, dashboard de métricas, toggle de Telegram.
 
 ### Proveedores
 
@@ -175,7 +175,17 @@ Control remoto del agente. Mandá mensajes, cambiá modelos, creá skills/tools,
 
 ### Tareas programadas
 
-Definí tareas (nombre + prompt + hora + días) desde la UI o Telegram. Cada tarea se puede equipar con tools, skills y parámetros del modelo, y su prompt se puede refinar con el wizard del LLM. Al activar una tarea, el backend crea un sub-agente dedicado con esos permisos y lo ejecuta en el horario definido, notificando vía la UI y Telegram.
+Definí tareas (nombre + prompt + uno o más horarios) desde la UI o Telegram. Cada tarea se puede equipar con tools, skills y parámetros del modelo, y su prompt se puede refinar con el wizard del LLM. Al activar una tarea, el backend crea un sub-agente dedicado con esos permisos y lo ejecuta en el horario definido, notificando vía la UI y Telegram.
+
+### Uso y facturación
+
+En el header hay dos botones: **Uso** y **Facturación**, con los datos del mes.
+
+**Uso** muestra el consumo del mes: solicitudes, tokens totales, gasto en USD y el desglose de tokens de entrada y salida, más el detalle por proveedor y los límites configurados.
+
+**Facturación** muestra el gasto del mes por proveedor y modelo, con filtros por proveedor y modelo. Por cada modelo ves los tokens de entrada y salida con su tarifa y su costo, el costo total y la cantidad de solicitudes. También permite configurar límites de gasto por proveedor o por modelo: si se alcanza un límite, las solicitudes se bloquean hasta aumentarlo.
+
+Se registra toda la actividad con modelos cloud: chat, tools, creadores, agenda, embeddings y transcripciones. Los modelos locales (Ollama) no tienen costo y no se contabilizan.
 
 ---
 

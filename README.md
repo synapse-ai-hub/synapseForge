@@ -153,7 +153,7 @@ FastAPI application with REST/SSE routers. The agent framework lives in `backend
 
 ### Frontend
 
-React/Vite/TypeScript SPA with Tailwind v4 and shadcn/ui. Multi-page: chat, skill creation, RAG management, docs. SSE streaming, tool call visualization, context window gauge, scheduled tasks, metrics dashboard, Telegram toggle.
+React/Vite/TypeScript SPA with Tailwind v4 and shadcn/ui. Multi-page: chat, skill creation, RAG management, docs. SSE streaming, tool call visualization, context window gauge, scheduled tasks, usage and billing, metrics dashboard, Telegram toggle.
 
 ### Providers
 
@@ -175,7 +175,17 @@ Remote control for the agent. Send messages, switch models, create skills/tools,
 
 ### Scheduled tasks
 
-Define tasks (name + prompt + time + days) from the UI or Telegram. Each task can be equipped with tools, skills and model parameters, and its prompt can be refined with the LLM wizard. Activating a task creates a dedicated sub-agent with those permissions; the backend runs it on schedule and notifies via the UI and Telegram.
+Define tasks (name + prompt + one or more schedules) from the UI or Telegram. Each task can be equipped with tools, skills and model parameters, and its prompt can be refined with the LLM wizard. Activating a task creates a dedicated sub-agent with those permissions; the backend runs it on schedule and notifies via the UI and Telegram.
+
+### Usage and billing
+
+The header has two buttons: **Usage** and **Billing**, with the current month's data.
+
+**Usage** shows the month's consumption: requests, total tokens, spend in USD and the input/output token breakdown, plus per-provider detail and configured limits.
+
+**Billing** shows the month's spend per provider and model, with provider and model filters. Each model shows input and output tokens with their rate and cost, total cost and request count. It also configures spend limits per provider or model: when a limit is reached, requests are blocked until it is raised.
+
+All cloud model activity is tracked: chat, tools, creators, agenda, embeddings and transcriptions. Local models (Ollama) have no cost and are not counted.
 
 ---
 

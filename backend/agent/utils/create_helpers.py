@@ -194,6 +194,7 @@ async def stream_interview_loop(
     for _iteration in range(max_iter):
         collected_content = ""
         tool_calls = None
+        iter_usage: dict[str, Any] | None = None
 
         try:
             async for event in agent.llm_streaming(
@@ -213,6 +214,9 @@ async def stream_interview_loop(
                 elif event["type"] == "reasoning":
                     yield {"type": "reasoning", "content": event.get("content", "")}
 
+                elif event["type"] == "usage":
+                    iter_usage = event.get("content") or {}
+
                 elif event["type"] == "tool_calls_detected":
                     tool_calls = event["content"]
                     break
@@ -223,8 +227,29 @@ async def stream_interview_loop(
 
         except Exception as e:
             logger.exception("Error en streaming interview: %s", e)
+            try:
+                from backend.utils.spend_handler import record_creator_call
+
+                record_creator_call("creator:interview", provider, model, iter_usage)
+            except Exception:
+                pass
+            # The failed attempt never reached the agent's spend record:
+            # count it here (zero tokens when no usage was captured).
+            try:
+                agent._record_spend(provider, model, iter_usage)
+            except Exception:
+                pass
             yield {"type": "error", "content": friendly_error}
             return
+
+        # Contemplate this interview LLM call (tracked in creator_calls
+        # since it never produces messages rows).
+        try:
+            from backend.utils.spend_handler import record_creator_call
+
+            record_creator_call("creator:interview", provider, model, iter_usage)
+        except Exception:
+            pass
 
         if not tool_calls:
             break
@@ -326,6 +351,7 @@ async def stream_tool_calling_loop(
 
         collected_content = ""
         tool_calls = None
+        iter_usage: dict[str, Any] | None = None
 
         try:
             async for event in agent.llm_streaming(
@@ -345,6 +371,9 @@ async def stream_tool_calling_loop(
                 elif event["type"] == "reasoning":
                     yield {"type": "reasoning", "content": event.get("content", "")}
 
+                elif event["type"] == "usage":
+                    iter_usage = event.get("content") or {}
+
                 elif event["type"] == "tool_calls_detected":
                     tool_calls = event["content"]
                     break
@@ -355,8 +384,29 @@ async def stream_tool_calling_loop(
 
         except Exception as e:
             logger.exception("Error en streaming create agent: %s", e)
+            try:
+                from backend.utils.spend_handler import record_creator_call
+
+                record_creator_call("creator:generate", provider, model, iter_usage)
+            except Exception:
+                pass
+            # The failed attempt never reached the agent's spend record:
+            # count it here (zero tokens when no usage was captured).
+            try:
+                agent._record_spend(provider, model, iter_usage)
+            except Exception:
+                pass
             yield {"type": "error", "content": friendly_error}
             return
+
+        # Contemplate this generation LLM call (tracked in creator_calls
+        # since it never produces messages rows).
+        try:
+            from backend.utils.spend_handler import record_creator_call
+
+            record_creator_call("creator:generate", provider, model, iter_usage)
+        except Exception:
+            pass
 
         # ── Process tool calls ──────────────────────────────────────────
         if tool_calls:

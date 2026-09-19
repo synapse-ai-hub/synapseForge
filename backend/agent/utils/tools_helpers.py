@@ -129,6 +129,18 @@ async def _evaluar_si_existe(
         cleaned_output=True,
     )
 
+    # Contemplate this evaluator LLM call (tracked in creator_calls
+    # since it never produces messages rows).
+    try:
+        from backend.utils.spend_handler import record_creator_call
+
+        record_creator_call(
+            "creator:tool:evaluate", eval_provider, eval_model,
+            result.get("usage") if isinstance(result, dict) else None,
+        )
+    except Exception:
+        pass
+
     if result.get("status") != "success" or not result.get("data"):
         logger.warning("Error del LLM: %s", result.get("message"))
         return None

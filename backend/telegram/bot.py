@@ -23,6 +23,7 @@ import io
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1918,6 +1919,7 @@ class TelegramBot:
         else:
             media_type = "audio/ogg"
 
+        _whisper_t0 = time.time()
         resp = await self._client.post(
             "https://api.groq.com/openai/v1/audio/transcriptions",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -1925,6 +1927,19 @@ class TelegramBot:
             data={"model": "whisper-large-v3-turbo", "language": "es"},
             timeout=30.0,
         )
+        _whisper_duration = round(time.time() - _whisper_t0, 2)
         if resp.status_code != 200:
             raise RuntimeError(f"Groq Whisper API error: {resp.status_code} — {resp.text[:200]}")
-        return resp.json().get("text", "").strip()
+        text = resp.json().get("text", "").strip()
+        # Contemplate the transcription call. Failures are never recorded
+        # and never break the transcription flow.
+        try:
+            from backend.utils.spend_handler import record_external_usage
+
+            record_external_usage(
+                "transcription", "groq", "whisper-large-v3-turbo", 1,
+                duration=_whisper_duration,
+            )
+        except Exception:
+            pass
+        return text

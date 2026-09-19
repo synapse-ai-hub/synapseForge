@@ -978,7 +978,19 @@ class Tools:
                     usage=zero_usage(),
                 )
 
+            _rag_t0 = time.time()
             results = db.query(collection, query, n_results=5)
+            _rag_duration = round(time.time() - _rag_t0, 2)
+            # Track the query-embedding call in SQLite. Never breaks the flow.
+            try:
+                from backend.utils.spend_handler import record_external_usage
+
+                record_external_usage(
+                    "embedding", "google", db.embed_func.model_name, 1,
+                    duration=_rag_duration,
+                )
+            except Exception:
+                pass
             return make_success_response(
                 message=f"Resultados de '{collection}'.",
                 data=results,
@@ -1045,12 +1057,24 @@ class Tools:
                 else None
             )
 
+            _mem_t0 = time.time()
             results = db.query(
                 MEMORY_COLLECTION,
                 query,
                 n_results=max(1, int(limit)),
                 where=where,
             )
+            _mem_duration = round(time.time() - _mem_t0, 2)
+            # Track the query-embedding call in SQLite. Never breaks the flow.
+            try:
+                from backend.utils.spend_handler import record_external_usage
+
+                record_external_usage(
+                    "embedding", "google", db.embed_func.model_name, 1,
+                    duration=_mem_duration,
+                )
+            except Exception:
+                pass
 
             documents = (results.get("documents") or [[]])[0]
             metadatas = (results.get("metadatas") or [[]])[0]

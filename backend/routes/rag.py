@@ -18,6 +18,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from typing import Any
 
 import httpx
@@ -338,7 +339,20 @@ async def upload_files(name: str, files: list[UploadFile] = File(...)):
                 for c in chunks
             ]
 
+            _upload_t0 = time.time()
             db.add_documents(name, ids=ids, documents=documents, metadatas=metadatas)
+            _upload_duration = round(time.time() - _upload_t0, 2)
+            # Track the embedding-model call in SQLite (one row with the
+            # embedded chunk count). Never breaks the upload flow.
+            try:
+                from backend.utils.spend_handler import record_external_usage
+
+                record_external_usage(
+                    "embedding", "google", db.embed_func.model_name, len(documents),
+                    duration=_upload_duration,
+                )
+            except Exception:
+                pass
             resultados.append(
                 {"filename": filename, "chunks": len(chunks)}
             )
@@ -423,7 +437,20 @@ async def add_url(name: str, req: AddUrlRequest):
                 meta["html"] = html
             metadatas.append(meta)
 
+        _url_t0 = time.time()
         db.add_documents(name, ids=ids, documents=documents, metadatas=metadatas)
+        _url_duration = round(time.time() - _url_t0, 2)
+        # Track the embedding-model call in SQLite (one row with the
+        # embedded chunk count). Never breaks the flow.
+        try:
+            from backend.utils.spend_handler import record_external_usage
+
+            record_external_usage(
+                "embedding", "google", db.embed_func.model_name, len(documents),
+                duration=_url_duration,
+            )
+        except Exception:
+            pass
 
         return validate_response(
             make_success_response(

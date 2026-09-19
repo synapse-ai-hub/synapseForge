@@ -682,6 +682,24 @@ class AgentLoop:
                                 except Exception as exc:
                                     logger.warning("No se pudo guardar el título: %s", exc)
                                     log_error(str(exc), source="loop.py:run")
+                                # Track the title call in messages (role="title"
+                                # rows are skipped by the history builder, the
+                                # history UI and the LLM context) so
+                                # SUM(messages) == SUM(spend).
+                                try:
+                                    t_usage = title_result.get("usage") if isinstance(title_result, dict) else None
+                                    session_manager.save_message(
+                                        session_id, "title",
+                                        content=f"Título generado: {title}",
+                                        model=model,
+                                        provider=effective_provider,
+                                        turn_number=turn_number,
+                                        step=0,
+                                        status="success", message="title",
+                                        usage=t_usage,
+                                    )
+                                except Exception:
+                                    pass
                                 await title_queue.put(title)
                         except Exception as exc:
                             logger.warning("No se pudo generar el título: %s", exc)
@@ -702,6 +720,13 @@ class AgentLoop:
             while iteration < self.max_iterations:
                 iteration += 1
                 step += 1
+                # Accumulate usage across the inner retry loop so the single
+                # messages row saved for this step carries the sum of every
+                # LLM attempt (SUM(messages) == SUM(spend) per provider/model).
+                step_prompt = 0
+                step_completion = 0
+                step_total = 0
+                step_time = 0.0
                 # Drain non-blocking title generation result (if ready)
                 if title_queue is not None and not title_queue.empty():
                     try:
@@ -737,9 +762,9 @@ class AgentLoop:
                     # limit is exceeded (cloud providers only; LOCAL/Ollama has
                     # no cost). Both the model-specific and the provider-level
                     # limits are checked by ``check_spend_limit``.
-                    if effective_provider.upper() != "LOCAL":
+                    if (effective_provider or "").upper() != "LOCAL":
                         can_proceed, _spend_info = check_spend_limit(
-                            effective_provider.lower(), model
+                            (effective_provider or "").lower(), model
                         )
                         if not can_proceed:
                             budget_msg = (
@@ -785,13 +810,25 @@ class AgentLoop:
                                 )
                             elif event["type"] == "aborted":
                                 # Guardar respuesta parcial antes de terminar (patrón ProspectingAgent/opencode)
-                                if collected_content:
-                                    session_manager.save_message(
-                                        session_id, "assistant", content=collected_content,
-                                        reasoning=collected_reasoning or None,
-                                        model=model,
-                                        turn_number=turn_number, step=step
-                                    )
+                                # NOTE: se guarda siempre (aunque esté vacía) con
+                                # status "aborted" para que SUM(messages) ==
+                                # SUM(spend) también en cancelaciones.
+                                _eff_usage = {
+                                    "prompt_tokens": step_prompt + int((usage_data or {}).get("prompt_tokens") or 0),
+                                    "completion_tokens": step_completion + int((usage_data or {}).get("completion_tokens") or 0),
+                                    "total_tokens": step_total + int((usage_data or {}).get("total_tokens") or 0),
+                                    "total_time": round(step_time + float((usage_data or {}).get("total_time") or 0), 2),
+                                    "time_to_first_token": (usage_data or {}).get("time_to_first_token"),
+                                }
+                                session_manager.save_message(
+                                    session_id, "assistant", content=collected_content,
+                                    reasoning=collected_reasoning or None,
+                                    model=model,
+                                    provider=effective_provider,
+                                    turn_number=turn_number, step=step,
+                                    status="aborted", message="",
+                                    usage=_eff_usage,
+                                )
                                 yield "data: [DONE]\n\n"
                                 return
                     except Exception as e:
@@ -801,28 +838,72 @@ class AgentLoop:
 
                         # User cancellation always wins: never retry.
                         if stream_cancel_event is not None and stream_cancel_event.is_set():
+                            # The failed attempt never reached the agent's
+                            # spend record: count it here (zero tokens when
+                            # no usage was captured) so SUM(spend) == SUM(messages).
+                            try:
+                                agent._record_spend(effective_provider, model, usage_data)
+                            except Exception:
+                                pass
+                            # Step accumulators hold completed attempts; usage_data
+                            # holds the current attempt: combine both so the
+                            # row carries every LLM call of this step exactly
+                            # once (SUM(messages) == SUM(spend)).
+                            _eff_usage = {
+                                "prompt_tokens": step_prompt + int((usage_data or {}).get("prompt_tokens") or 0),
+                                "completion_tokens": step_completion + int((usage_data or {}).get("completion_tokens") or 0),
+                                "total_tokens": step_total + int((usage_data or {}).get("total_tokens") or 0),
+                                "total_time": round(step_time + float((usage_data or {}).get("total_time") or 0), 2),
+                                "time_to_first_token": (usage_data or {}).get("time_to_first_token"),
+                            }
                             if collected_content:
                                 session_manager.save_message(
                                     session_id, "assistant", content=collected_content,
                                     reasoning=collected_reasoning or None,
                                     model=model,
-                                    turn_number=turn_number, step=step
+                                    provider=effective_provider,
+                                    turn_number=turn_number, step=step,
+                                    status="success", message="",
+                                    usage=_eff_usage,
                                 )
                             yield "data: [DONE]\n\n"
                             return
                         # Fatal and budget errors keep the current behavior: no retry.
                         if error_category in ("fatal", "budget"):
                             # Guardar respuesta parcial antes de terminar con error
+                            # The failed attempt never reached the agent's
+                            # spend record: count it here (zero tokens when
+                            # no usage was captured) so SUM(spend) == SUM(messages).
+                            try:
+                                agent._record_spend(effective_provider, model, usage_data)
+                            except Exception:
+                                pass
+                            # Step accumulators hold completed attempts; usage_data
+                            # holds the current attempt: combine both so the
+                            # row carries every LLM call of this step exactly
+                            # once (SUM(messages) == SUM(spend)).
+                            _eff_usage = {
+                                "prompt_tokens": step_prompt + int((usage_data or {}).get("prompt_tokens") or 0),
+                                "completion_tokens": step_completion + int((usage_data or {}).get("completion_tokens") or 0),
+                                "total_tokens": step_total + int((usage_data or {}).get("total_tokens") or 0),
+                                "total_time": round(step_time + float((usage_data or {}).get("total_time") or 0), 2),
+                                "time_to_first_token": (usage_data or {}).get("time_to_first_token"),
+                            }
                             if collected_content:
                                 session_manager.save_message(
                                     session_id, "assistant", content=collected_content,
                                     reasoning=collected_reasoning or None,
                                     model=model,
-                                    turn_number=turn_number, step=step
+                                    provider=effective_provider,
+                                    turn_number=turn_number, step=step,
+                                    status="error", message=str(e)[:500],
+                                    usage=_eff_usage,
                                 )
                             else:
                                 session_manager.save_message(
-                                    session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", model=model, turn_number=turn_number, step=step
+                                    session_id, "assistant", content="Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.", model=model, provider=effective_provider, turn_number=turn_number, step=step,
+                                    status="error", message=str(e)[:500],
+                                    usage=_eff_usage,
                                 )
                             yield f"data: {json.dumps({'type': 'chunk', 'content': 'Ocurrió un error al procesar la solicitud. Por favor, intentá de nuevo.'}, ensure_ascii=False)}\n\n"
                             yield "data: [DONE]\n\n"
@@ -849,6 +930,23 @@ class AgentLoop:
                             else:
                                 retry_msg = "\n\n*Error transitorio, reintentando...*"
                             yield f"data: {json.dumps({'type': 'chunk', 'content': retry_msg}, ensure_ascii=False)}\n\n"
+                            # Fold the failed attempt into the step accumulators
+                            # exactly once (mirrors the spend record for this
+                            # attempt) before retrying.
+                            try:
+                                step_prompt += int((usage_data or {}).get("prompt_tokens") or 0)
+                                step_completion += int((usage_data or {}).get("completion_tokens") or 0)
+                                step_total += int((usage_data or {}).get("total_tokens") or 0)
+                                step_time += float((usage_data or {}).get("total_time") or 0)
+                            except (TypeError, ValueError):
+                                pass
+                            # The failed attempt never reached the agent's
+                            # spend record: count it here so every retry is
+                            # tracked in spend (SUM(spend) == SUM(messages)).
+                            try:
+                                agent._record_spend(effective_provider, model, usage_data)
+                            except Exception:
+                                pass
                             llm_attempt += 1
                             continue
 
@@ -858,24 +956,51 @@ class AgentLoop:
                         else:
                             final_msg = "*El proveedor no respondió después de varios reintentos. Probá de nuevo en unos momentos.*"
                         log_error(str(e), source="loop.py:run(llm_retry)")
+                        # The final failed attempt never reached the agent's
+                        # spend record: count it here (zero tokens when no
+                        # usage was captured) so SUM(spend) == SUM(messages).
+                        try:
+                            agent._record_spend(effective_provider, model, usage_data)
+                        except Exception:
+                            pass
+                        _eff_usage = {
+                            "prompt_tokens": step_prompt + int((usage_data or {}).get("prompt_tokens") or 0),
+                            "completion_tokens": step_completion + int((usage_data or {}).get("completion_tokens") or 0),
+                            "total_tokens": step_total + int((usage_data or {}).get("total_tokens") or 0),
+                            "total_time": round(step_time + float((usage_data or {}).get("total_time") or 0), 2),
+                            "time_to_first_token": (usage_data or {}).get("time_to_first_token"),
+                        }
                         if collected_content:
                             session_manager.save_message(
                                 session_id, "assistant", content=collected_content,
                                 reasoning=collected_reasoning or None,
                                 model=model,
                                 provider=effective_provider,
-                                turn_number=turn_number, step=step
+                                turn_number=turn_number, step=step,
+                                status="error", message=str(e)[:500],
+                                usage=_eff_usage,
                             )
                         else:
                             session_manager.save_message(
                                 session_id, "assistant", content=final_msg, model=model,
                                 provider=effective_provider,
-                                turn_number=turn_number, step=step
+                                turn_number=turn_number, step=step,
+                                status="error", message=str(e)[:500],
+                                usage=_eff_usage,
                             )
                         yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
                         yield "data: [DONE]\n\n"
                         return
                     break  # Stream consumed successfully
+                # Fold this attempt into the step accumulators exactly once
+                # (mirrors the single spend record for this attempt).
+                try:
+                    step_prompt += int((usage_data or {}).get("prompt_tokens") or 0)
+                    step_completion += int((usage_data or {}).get("completion_tokens") or 0)
+                    step_total += int((usage_data or {}).get("total_tokens") or 0)
+                    step_time += float((usage_data or {}).get("total_time") or 0)
+                except (TypeError, ValueError):
+                    pass
 
                 # Emit token counter after each LLM call (prompt_tokens is cumulative)
                 if usage_data:
@@ -921,7 +1046,13 @@ class AgentLoop:
                         step=step,
                         status="success",
                         message="",
-                        usage=usage_data,
+                    usage={
+                        "prompt_tokens": step_prompt + int((usage_data or {}).get("prompt_tokens") or 0),
+                        "completion_tokens": step_completion + int((usage_data or {}).get("completion_tokens") or 0),
+                        "total_tokens": step_total + int((usage_data or {}).get("total_tokens") or 0),
+                        "total_time": round(step_time + float((usage_data or {}).get("total_time") or 0), 2),
+                        "time_to_first_token": (usage_data or {}).get("time_to_first_token"),
+                    },
                     )
 
                     # Collect tool results to update assistant message after all tools execute
@@ -1194,6 +1325,14 @@ class AgentLoop:
                         model=model,
                         provider=effective_provider,
                         turn_number=turn_number, step=step,
+                        status="error", message="empty_response",
+                        usage={
+                            "prompt_tokens": step_prompt + int((usage_data or {}).get("prompt_tokens") or 0),
+                            "completion_tokens": step_completion + int((usage_data or {}).get("completion_tokens") or 0),
+                            "total_tokens": step_total + int((usage_data or {}).get("total_tokens") or 0),
+                            "total_time": round(step_time + float((usage_data or {}).get("total_time") or 0), 2),
+                            "time_to_first_token": (usage_data or {}).get("time_to_first_token"),
+                        },
                     )
                     yield f"data: {json.dumps({'type': 'chunk', 'content': final_msg}, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
@@ -1216,7 +1355,13 @@ class AgentLoop:
                     turn_number=turn_number, step=step,
                     status="success",
                     message="",
-                    usage=usage_data,
+                        usage={
+                            "prompt_tokens": step_prompt + int((usage_data or {}).get("prompt_tokens") or 0),
+                            "completion_tokens": step_completion + int((usage_data or {}).get("completion_tokens") or 0),
+                            "total_tokens": step_total + int((usage_data or {}).get("total_tokens") or 0),
+                            "total_time": round(step_time + float((usage_data or {}).get("total_time") or 0), 2),
+                            "time_to_first_token": (usage_data or {}).get("time_to_first_token"),
+                        },
                 )
 
                 # Emit the session title before [DONE] so the sidebar refreshes

@@ -246,6 +246,8 @@ def build_initial_messages(
         role = msg.get("role", "")
         if role == "system":
             continue  # Use our system prompt, not the saved one
+        if role == "title":
+            continue  # Title-tracking row: never sent to the LLM
 
         entry: dict[str, Any] = {"role": role}
 

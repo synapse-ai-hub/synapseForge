@@ -38,7 +38,7 @@ The generated project includes:
 - **LLM-assisted creation**: standalone interfaces to generate skills, tools and agents through an iterative interview (with real tools enabled), with ephemeral cloud model selection per task
 - **Scheduled tasks**: user-defined tasks (name + description + time + weekdays) managed from the header Agenda or via Telegram; each task can be equipped with tools, skills and model parameters, and its prompt refined with the LLM wizard. Activating a task creates a dedicated sub-agent with those permissions; the backend runs it on schedule and notifies the result in the UI bell and on Telegram
 - **Telegram bot**: remote control that bridges messages to the agent through the web UI (commands, voice transcription, attachments)
-- **Frontend**: chat with SSE streaming, config panel, sessions sidebar, context-window gauge, metrics dashboard
+- **Frontend**: chat with SSE streaming, config panel, sessions sidebar, context-window gauge, usage and billing dialogs, metrics dashboard
 - **Docker** support and **desktop app mode** (heartbeat watchdog + shutdown endpoint)
 
 ---

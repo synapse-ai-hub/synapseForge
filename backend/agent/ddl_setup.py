@@ -56,6 +56,7 @@ def setup_database(conn: sqlite3.Connection) -> None:
             completion_tokens INTEGER,
             total_tokens INTEGER,
             total_time REAL,
+            time_to_first_token REAL,
             tool_call_id TEXT,
             tool_name TEXT,
             model TEXT,
@@ -209,6 +210,8 @@ def setup_database(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             provider TEXT NOT NULL,
             model TEXT NOT NULL,
+            month TEXT NOT NULL,
+            requests INTEGER DEFAULT 0,
             prompt_tokens INTEGER DEFAULT 0,
             completion_tokens INTEGER DEFAULT 0,
             total_tokens INTEGER DEFAULT 0,
@@ -216,10 +219,10 @@ def setup_database(conn: sqlite3.Connection) -> None:
             cost_output REAL DEFAULT 0.0,
             cost_total REAL DEFAULT 0.0,
             updated_at TEXT NOT NULL,
-            UNIQUE(provider, model)
+            UNIQUE(provider, model, month)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_spend_provider_model ON spend(provider, model);
+        CREATE INDEX IF NOT EXISTS idx_spend_provider_model ON spend(provider, model, month);
 
         CREATE TABLE IF NOT EXISTS spend_limits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,5 +235,36 @@ def setup_database(conn: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_spend_limits_provider_model ON spend_limits(provider, model);
+
+        CREATE TABLE IF NOT EXISTS external_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            units INTEGER DEFAULT 0,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            duration REAL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_external_usage_kind ON external_usage(kind);
+
+        CREATE TABLE IF NOT EXISTS creator_calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caller TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            total_time REAL,
+            cost_input REAL DEFAULT 0.0,
+            cost_output REAL DEFAULT 0.0,
+            cost_total REAL DEFAULT 0.0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_creator_calls_caller ON creator_calls(caller);
         """
     )

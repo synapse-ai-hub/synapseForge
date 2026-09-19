@@ -10,7 +10,7 @@ ProspectingAgent. The logic is:
 
 The defaults (500/60) produce chunks of roughly 125-150 tokens, well within
 the 512-token document window of the current embedding model
-(``gemini-embedding-exp-02-05``, served via Gemini Embedding 2 SDK) while
+(``gemini-embedding-2``, served via Gemini Embedding 2 SDK) while
 keeping retrieval granularity fine-grained.
 
 Typical usage::

@@ -167,7 +167,7 @@ Cloud providers are curated in-app: each API key is validated live against its o
 
 ### Knowledge base (RAG)
 
-ChromaDB with Gemini embeddings (`gemini-embedding-exp-02-05`) via the Google provider. Upload files and web pages — content is extracted, chunked and indexed for semantic retrieval. Requires a Google API key: without it, the knowledge base stays disabled and everything else runs normally. Long-term memory: every conversation turn is automatically indexed and searchable across sessions via `search_memory`.
+ChromaDB with Gemini embeddings (`gemini-embedding-2`) via the Google provider. Upload files and web pages — content is extracted, chunked and indexed for semantic retrieval. Requires a Google API key: without it, the knowledge base stays disabled and everything else runs normally. Long-term memory: every conversation turn is automatically indexed and searchable across sessions via `search_memory`.
 
 ### Telegram
 

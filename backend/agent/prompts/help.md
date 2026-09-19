@@ -306,7 +306,7 @@ Las tareas se persisten en la base de datos SQLite interna. Al activar una tarea
 
 El sistema soporta **colecciones RAG** (bases de conocimiento vectoriales con ChromaDB) que se crean desde la interfaz de creación (pestaña **RAG**). Cada colección vive en `~/.config/synapseForge/knowledge/` y se construye subiendo archivos y URLs, que se procesan y almacenan como documentos vectoriales.
 
-- Los embeddings se calculan con Gemini Embedding (`gemini-embedding-exp-02-05`) vía el proveedor Google.
+- Los embeddings se calculan con Gemini Embedding (`gemini-embedding-2`) vía el proveedor Google.
 - **Requiere una API key de Google** cargada en **Providers**: sin ella, la sección de fuente de conocimiento queda deshabilitada (el resto de la app funciona normalmente).
 - Las colecciones se listan y consultan desde la interfaz.
 - Sirven para darle al agente acceso a conocimiento específico del dominio (documentos, manuales, bases de datos de texto) mediante búsqueda semántica.

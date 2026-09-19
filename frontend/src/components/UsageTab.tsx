@@ -112,7 +112,7 @@ export function UsageTab() {
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
               <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Gasto (USD)</div>
-              <div className="text-xl font-bold text-app-text">{(usage.totals.cost ?? 0).toFixed(4)}</div>
+              <div className="text-xl font-bold text-app-text">{(usage.totals.cost ?? 0).toFixed(2)}</div>
             </div>
             <div className="rounded-lg border border-app-border bg-white p-4">
               <div className="mb-1 text-xs text-app-text-secondary whitespace-nowrap">Prompt tokens</div>

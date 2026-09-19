@@ -293,7 +293,7 @@ synapseForge init d:/proyectos/nuevo    # también acepta rutas absolutas</code>
           <h2>Base de conocimiento (RAG)</h2>
           <h3>¿Qué es?</h3>
           <p>El sistema de <strong>RAG</strong> (Retrieval-Augmented Generation) te permite armar una <strong>base de conocimiento</strong> que el agente consulta para responder con información específica de tu dominio. El contenido se guarda en <strong>colecciones vectoriales</strong> (ChromaDB) y se busca por <strong>similitud coseno</strong>.</p>
-          <blockquote><p><strong>Requisito:</strong> la base de conocimiento necesita una <strong>API key de Google</strong> (tiene capa gratis) cargada en Configuración → Providers. Los embeddings se calculan con Gemini Embedding (<code>gemini-embedding-exp-02-05</code>). Sin esa key, esta sección queda deshabilitada — el resto de la app funciona normalmente.</p></blockquote>
+          <blockquote><p><strong>Requisito:</strong> la base de conocimiento necesita una <strong>API key de Google</strong> (tiene capa gratis) cargada en Configuración → Providers. Los embeddings se calculan con Gemini Embedding (<code>gemini-embedding-2</code>). Sin esa key, esta sección queda deshabilitada — el resto de la app funciona normalmente.</p></blockquote>
           <h3>¿Cómo se organiza?</h3>
           <p>El contenido se agrupa en <strong>colecciones</strong>. Cada colección es un tema o fuente de información independiente (similar a NotebookLM). Podés tener tantas colecciones como necesites, y cada agente accede solo a las que tiene permitidas.</p>
           <h3>¿Qué podés cargar?</h3>
@@ -784,7 +784,7 @@ synapseForge run .</code></pre>
           </ol>
           <h3>Configurar las claves de tu proveedor</h3>
           <p>Para usar la app necesitás al menos una API key de un proveedor cloud curado. Al primer arranque aparece una pantalla de configuración donde podés cargarlas directamente (también desde Configuración → <strong>Providers</strong>). La pantalla inicial pide solo las dos keys auxiliares: Groq (transcripción de voz) y Google (fuente de conocimiento); los providers de LLM se configuran desde el panel lateral. Ollama es opcional: solo si querés correr modelos locales.</p>
-          <blockquote><p><strong>Importante:</strong> la base de conocimiento necesita específicamente una API key de Google (capa gratis). Los embeddings se calculan con Gemini Embedding (<code>gemini-embedding-exp-02-05</code>). Sin ella esa sección queda deshabilitada; el resto funciona con cualquier proveedor.</p></blockquote>
+          <blockquote><p><strong>Importante:</strong> la base de conocimiento necesita específicamente una API key de Google (capa gratis). Los embeddings se calculan con Gemini Embedding (<code>gemini-embedding-2</code>). Sin ella esa sección queda deshabilitada; el resto funciona con cualquier proveedor.</p></blockquote>
           <p>Las keys se guardan cifradas en la base de datos SQLite interna, se validan contra la API del proveedor al guardarlas y no se vuelven a mostrar.</p>
           <h3>Probar en otra máquina de la red</h3>
           <p>Si querés acceder desde otra computadora o dispositivo:</p>

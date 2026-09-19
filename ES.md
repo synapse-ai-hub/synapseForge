@@ -167,7 +167,7 @@ Los providers cloud están curados en la app: cada API key se valida en vivo con
 
 ### Base de conocimiento (RAG)
 
-ChromaDB con embeddings de Gemini (`gemini-embedding-exp-02-05`) vía el proveedor Google. Subí archivos y páginas web — el contenido se extrae, chunking y se indexa para recuperación semántica. Requiere una API key de Google: sin ella, la base de conocimiento queda deshabilitada y el resto de la app funciona normalmente. Memoria de largo plazo: cada turno de conversación se indexa automáticamente y se puede buscar cross-sesión vía `search_memory`.
+ChromaDB con embeddings de Gemini (`gemini-embedding-2`) vía el proveedor Google. Subí archivos y páginas web — el contenido se extrae, chunking y se indexa para recuperación semántica. Requiere una API key de Google: sin ella, la base de conocimiento queda deshabilitada y el resto de la app funciona normalmente. Memoria de largo plazo: cada turno de conversación se indexa automáticamente y se puede buscar cross-sesión vía `search_memory`.
 
 ### Telegram
 

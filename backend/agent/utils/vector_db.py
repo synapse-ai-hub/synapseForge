@@ -3,7 +3,7 @@
 Abstracts ChromaDB operations behind a simple interface. If the engine is
 switched later (e.g. pgvector), only this file needs to change.
 
-The embedding model runs on Gemini Embedding 2 (``gemini-embedding-exp-02-05``)
+The embedding model runs on Gemini Embedding 2 (``gemini-embedding-2``)
 through the ``google-genai`` SDK, so no local model is downloaded or kept
 in memory. The same function is used to index documents and to embed queries
 (Chroma calls it in both paths). The Gemini API key is resolved from the
@@ -34,7 +34,7 @@ from backend.agent.utils.error_logger import log_error
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "gemini-embedding-exp-02-05"
+_DEFAULT_MODEL = "gemini-embedding-2"
 _BATCH_SIZE = 32  # texts per embeddings request
 
 

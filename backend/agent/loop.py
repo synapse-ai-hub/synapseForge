@@ -61,6 +61,7 @@ if _project_root not in sys.path:
 from datetime import datetime
 from backend.agent.utils.error_logger import log_error, set_error_context, reset_error_context, get_error_context
 from backend.agent.utils.skill_loader import format_skills_section
+from backend.agent.utils.contract import zero_usage
 from backend.agent.permissions import (
     list_agents,
     get_tool_permissions,
@@ -707,6 +708,20 @@ class AgentLoop:
                         except Exception as exc:
                             logger.warning("No se pudo generar el título: %s", exc)
                             log_error(str(exc), source="loop.py:run")
+                            # Registro del error en la tabla messages
+                            try:
+                                session_manager.save_message(
+                                    session_id, "title",
+                                    content="Error al generar título",
+                                    model=model,
+                                    provider=effective_provider,
+                                    turn_number=turn_number,
+                                    step=0,
+                                    status="error", message=str(exc)[:500],
+                                    usage=zero_usage(),
+                                )
+                            except Exception:
+                                pass
 
                     title_task = asyncio.create_task(_generate_title())
                 except Exception as exc:

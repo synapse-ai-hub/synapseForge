@@ -1234,6 +1234,21 @@ class AgentLoop:
                             if isinstance(llm_payload, (dict, list))
                             else str(llm_payload)
                         )
+                        # Mark tool output as data, never instructions.
+                        # The frontend keeps receiving the original contract
+                        # via tool_result SSE, so rendering is unchanged.
+                        # The DB and the LLM history carry this wrapped form
+                        # so the model can distinguish data from orders.
+                        # Hierarchy: system > user > tool_output.
+                        try:
+                            safe_name = str(tc.get("name", "tool"))
+                        except Exception:
+                            safe_name = "tool"
+                        tool_content = (
+                            f'<tool_output name="{safe_name}">\n'
+                            f"{tool_content}\n"
+                            f"</tool_output>"
+                        )
                         # Tool result message format depends on the provider API
                         # family: OpenAI-style (tool_call_id) for LOCAL and all
                         # OpenAI-compatible providers, Gemini-style (tool_name)

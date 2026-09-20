@@ -583,6 +583,16 @@ class Agent():
             if role == "tool":
                 fn_name = m.get("tool_name") or id_to_name.get(m.get("tool_call_id", ""), "")
                 raw = m.get("content")
+                # Strip <tool_output> wrapper if present so JSON payloads
+                # wrapped in loop.py keep parsing exactly as before.
+                # Unwrapped content (creators, old history) is unchanged.
+                if isinstance(raw, str) and "<tool_output" in raw and "</tool_output>" in raw:
+                    try:
+                        start = raw.index(">") + 1
+                        end = raw.rindex("</tool_output>")
+                        raw = raw[start:end].strip()
+                    except (ValueError, AttributeError):
+                        pass
                 try:
                     payload = json.loads(raw) if isinstance(raw, str) else raw
                 except (json.JSONDecodeError, TypeError):

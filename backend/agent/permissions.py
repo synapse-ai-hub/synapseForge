@@ -83,7 +83,19 @@ def _read_markdown(agent_name: str) -> tuple[str | None, str | None]:
     agents_dir = _locate_agents_dir()
     if not agents_dir:
         return None, None
+    # Containment: only resolve inside agents_dir. Normal names keep
+    # working unchanged. Parent references or absolute paths outside
+    # are rejected by returning not found.
+    if "/" in agent_name or "\\" in agent_name or ".." in agent_name:
+        return None, None
     md_path = os.path.join(agents_dir, f"{agent_name}.md")
+    try:
+        base_real = os.path.realpath(agents_dir)
+        target_real = os.path.realpath(md_path)
+        if target_real != base_real and not target_real.startswith(base_real + os.sep):
+            return None, None
+    except (OSError, ValueError):
+        return None, None
     if not os.path.isfile(md_path):
         return None, None
     try:

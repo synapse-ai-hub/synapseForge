@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _NODE_TYPES = ("agent", "tool", "rag")
 _ON_FAILURE = ("continue", "abort")
 
@@ -59,12 +60,12 @@ def validate_workflow(data: dict[str, Any]) -> dict[str, Any]:
         nretries = node.get("retries", retries_default)
         if not isinstance(nretries, int) or nretries < 0 or nretries > 10:
             return {"status": "error", "message": f"Nodo '{nid}' con 'retries' inválido.", "data": None, "usage": usage}
-        if ntype == "agent" and not str(node.get("agent_name", "")).strip():
-            return {"status": "error", "message": f"Nodo '{nid}' tipo agent requiere 'agent_name'.", "data": None, "usage": usage}
-        if ntype == "tool" and not str(node.get("tool", "")).strip():
-            return {"status": "error", "message": f"Nodo '{nid}' tipo tool requiere 'tool'.", "data": None, "usage": usage}
-        if ntype == "rag" and not str(node.get("collection", "")).strip():
-            return {"status": "error", "message": f"Nodo '{nid}' tipo rag requiere 'collection'.", "data": None, "usage": usage}
+        if ntype == "agent" and not _REF_RE.match(str(node.get("agent_name", "")).strip()):
+            return {"status": "error", "message": f"Nodo '{nid}' tipo agent requiere 'agent_name' válido.", "data": None, "usage": usage}
+        if ntype == "tool" and not _REF_RE.match(str(node.get("tool", "")).strip()):
+            return {"status": "error", "message": f"Nodo '{nid}' tipo tool requiere 'tool' válido.", "data": None, "usage": usage}
+        if ntype == "rag" and not _REF_RE.match(str(node.get("collection", "")).strip()):
+            return {"status": "error", "message": f"Nodo '{nid}' tipo rag requiere 'collection' válida.", "data": None, "usage": usage}
         normalized.append({
             "id": nid,
             "type": ntype,
@@ -80,6 +81,12 @@ def validate_workflow(data: dict[str, Any]) -> dict[str, Any]:
         })
 
     normalized.sort(key=lambda n: (n["step"], n["id"]))
+    steps = sorted({n["step"] for n in normalized})
+    if steps != list(range(1, len(steps) + 1)):
+        return {"status": "error", "message": "Los 'step' deben ser contiguos desde 1 sin huecos.", "data": None, "usage": usage}
+    finals = [n for n in normalized if n["final"]]
+    if len(finals) != 1:
+        return {"status": "error", "message": "El workflow debe tener exactamente un nodo con 'final: true'.", "data": None, "usage": usage}
     return {
         "status": "success",
         "message": "Workflow válido.",

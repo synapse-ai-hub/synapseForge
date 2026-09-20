@@ -142,7 +142,7 @@ function RankingBars({
         const pct = Math.max((item.count / maxCount) * 100, 2);
         return (
           <div key={item.label} className="flex items-center gap-3 text-xs">
-            <div className="w-40 truncate text-app-text" title={item.label}>
+            <div className="w-40 break-all text-app-text" title={item.label}>
               {item.label}
             </div>
             <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-app-bg-tertiary">

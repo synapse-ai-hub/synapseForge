@@ -251,7 +251,15 @@ class Agent():
             self.ollama_client = None
             
         try:
-            self.google_client = genai.Client(api_key=self.__google_api_key)
+            # Sin key no se construye el cliente: genai.Client(api_key=None)
+            # levanta a mitad de __init__ y el objeto a medio construir
+            # dispara "Task exception was never retrieved" en aclose()
+            # cuando el GC lo reclama (BaseApiClient.__del__).
+            self.google_client = (
+                genai.Client(api_key=self.__google_api_key)
+                if self.__google_api_key
+                else None
+            )
         except Exception as e:
             log_error(str(e), source="agent.py:__init__(google)")
             self.google_client = None

@@ -56,7 +56,7 @@ template/
 ideas.md
 
 # DB
-backend/agent/agent_db/agent.db
+backend/agent/agent_db/*
 
 # Test Whisper
 tests/whisper/data/

@@ -596,7 +596,15 @@ def _catalog_reasoning_shapes(model: dict[str, Any] | None) -> dict[str, Any] | 
         raw = model.get("reasoning_options")
         if not raw:
             return None
-        opts = json.loads(raw) if isinstance(raw, str) else raw
+        opts = raw
+        if isinstance(raw, str):
+            try:
+                opts = json.loads(raw)
+            except json.JSONDecodeError:
+                # Filas legacy guardadas con repr de Python en vez de JSON.
+                import ast
+
+                opts = ast.literal_eval(raw)
         if not isinstance(opts, list):
             return None
         effort_values: list[str] = []

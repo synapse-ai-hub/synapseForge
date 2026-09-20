@@ -39,6 +39,60 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["metrics"])
 
 
+def _avg_agent_latency(conn) -> float:
+    """Return the average per-turn agent latency in seconds (2 decimals).
+
+    Per-turn latency (tf - t0) is reconstructed as: the summed
+    ``total_time`` of the turn's non-final assistant steps (sequential LLM
+    calls) + per step the MAX ``total_time`` of its tool rows (tools in the
+    same step run concurrently, so the slowest one sets the step wall time)
+    + the final assistant row's ``time_to_first_token`` (the clock stops at
+    the final answer's first chunk, so the final step's full total is NOT
+    added). The average is taken over all (session, turn) groups.
+    """
+    try:
+        rows = conn.execute(
+            """
+            SELECT AVG(lat) AS avg FROM (
+                SELECT
+                    COALESCE((
+                        SELECT SUM(a.total_time) FROM messages a
+                        WHERE a.role = 'assistant'
+                            AND a.session_id = b.sid
+                            AND a.turn_number = b.t
+                            AND a.step < b.max_step
+                    ), 0)
+                    + COALESCE((
+                        SELECT SUM(mx) FROM (
+                            SELECT MAX(t2.total_time) AS mx FROM messages t2
+                            WHERE t2.role = 'tool'
+                                AND t2.session_id = b.sid
+                                AND t2.turn_number = b.t
+                            GROUP BY t2.step
+                        )
+                    ), 0)
+                    + COALESCE((
+                        SELECT m2.time_to_first_token FROM messages m2
+                        WHERE m2.role = 'assistant'
+                            AND m2.session_id = b.sid
+                            AND m2.turn_number = b.t
+                        ORDER BY m2.step DESC LIMIT 1
+                    ), 0) AS lat
+                FROM (
+                    SELECT session_id AS sid, turn_number AS t, MAX(step) AS max_step
+                    FROM messages
+                    WHERE role = 'assistant'
+                    GROUP BY session_id, turn_number
+                ) AS b
+            )
+            """
+        ).fetchall()
+        return round(float(rows[0]["avg"] or 0.0), 2)
+    except Exception as e:
+        log_error(str(e), source="backend/routes/metrics.py:_avg_agent_latency")
+        return 0.0
+
+
 @router.get("/metrics/sessions")
 async def get_session_metrics():
     """Return session-level metrics aggregated from agent.db.
@@ -90,19 +144,20 @@ async def get_session_metrics():
             if total_tool_calls_for_avg > 0:
                 avg_tokens_per_tool = round(total_tool_tokens / total_tool_calls_for_avg, 1)
 
-            # Cost metrics (from messages table — per call cost)
+            # Cost metrics (from messages table — per call cost).
+            # All money values use 2 decimals (USD).
             cost_rows = conn.execute(
                 "SELECT SUM(cost_total) AS total FROM messages WHERE cost_total IS NOT NULL"
             ).fetchall()
-            total_cost = cost_rows[0]["total"] or 0.0
+            total_cost = round(float(cost_rows[0]["total"] or 0.0), 2)
 
             avg_cost_per_session = 0.0
             if total_sessions > 0:
-                avg_cost_per_session = round(total_cost / total_sessions, 4)
+                avg_cost_per_session = round(total_cost / total_sessions, 2)
 
             avg_cost_per_message = 0.0
             if total_messages > 0:
-                avg_cost_per_message = round(total_cost / total_messages, 4)
+                avg_cost_per_message = round(total_cost / total_messages, 2)
 
             # Average cost per tool call
             tool_cost_rows = conn.execute(
@@ -111,7 +166,7 @@ async def get_session_metrics():
             total_tool_cost = tool_cost_rows[0]["total"] or 0.0
             avg_cost_per_tool = 0.0
             if total_tool_calls_for_avg > 0:
-                avg_cost_per_tool = round(total_tool_cost / total_tool_calls_for_avg, 4)
+                avg_cost_per_tool = round(total_tool_cost / total_tool_calls_for_avg, 2)
 
             # Average cost per provider-model (from spend table — aggregated)
             spend_avg_rows = conn.execute(
@@ -119,7 +174,37 @@ async def get_session_metrics():
             ).fetchall()
             avg_cost_per_provider_model = spend_avg_rows[0]["avg"] or 0.0
             if avg_cost_per_provider_model is not None:
-                avg_cost_per_provider_model = round(float(avg_cost_per_provider_model), 4)
+                avg_cost_per_provider_model = round(float(avg_cost_per_provider_model), 2)
+
+            # Time metrics (seconds, 2 decimals). total_time is recorded on
+            # assistant rows (LLM latency) and tool rows (execution time).
+            time_rows = conn.execute(
+                "SELECT SUM(total_time) AS total FROM messages WHERE total_time IS NOT NULL"
+            ).fetchall()
+            total_time = round(float(time_rows[0]["total"] or 0.0), 2)
+
+            # Average time per turn: mean of per-(session, turn) sums.
+            turn_time_rows = conn.execute(
+                """
+                SELECT AVG(turn_total) AS avg FROM (
+                    SELECT SUM(total_time) AS turn_total
+                    FROM messages
+                    WHERE total_time IS NOT NULL AND turn_number IS NOT NULL
+                    GROUP BY session_id, turn_number
+                )
+                """
+            ).fetchall()
+            avg_time_per_turn = turn_time_rows[0]["avg"] or 0.0
+            avg_time_per_turn = round(float(avg_time_per_turn), 2)
+
+            # Average time per session: total time over root sessions
+            # (same methodology as avg_tokens_per_session).
+            avg_time_per_session = 0.0
+            if total_sessions > 0:
+                avg_time_per_session = round(total_time / total_sessions, 2)
+
+            # Average agent latency per turn (tf - t0 reconstruction).
+            avg_agent_latency = _avg_agent_latency(conn)
 
             # Sessions by day (last 30 days)
             day_rows = conn.execute(
@@ -154,6 +239,10 @@ async def get_session_metrics():
                     "avg_cost_per_message": avg_cost_per_message,
                     "avg_cost_per_tool": avg_cost_per_tool,
                     "avg_cost_per_provider_model": avg_cost_per_provider_model,
+                    "total_time": total_time,
+                    "avg_time_per_turn": avg_time_per_turn,
+                    "avg_time_per_session": avg_time_per_session,
+                    "avg_agent_latency": avg_agent_latency,
                     "sessions_by_day": sessions_by_day,
                 },
                 usage=zero_usage(),
@@ -176,7 +265,7 @@ async def get_tool_metrics():
             # Tool usage (from tool_calls JSON in messages)
             tool_rows = conn.execute(
                 """
-                SELECT tool_name, COUNT(*) AS cnt
+                SELECT tool_name, COUNT(*) AS cnt, AVG(total_time) AS avg_time
                 FROM messages
                 WHERE tool_name IS NOT NULL AND tool_name != ''
                 GROUP BY tool_name
@@ -184,10 +273,26 @@ async def get_tool_metrics():
                 """
             ).fetchall()
             tool_usage = [
-                {"name": row["tool_name"], "count": row["cnt"]} for row in tool_rows
+                {
+                    "name": row["tool_name"],
+                    "count": row["cnt"],
+                    "avg_time": round(float(row["avg_time"] or 0.0), 2),
+                }
+                for row in tool_rows
             ]
 
             total_tool_calls = sum(t["count"] for t in tool_usage)
+
+            # Average execution time per tool call (seconds, 2 decimals).
+            tool_time_rows = conn.execute(
+                """
+                SELECT AVG(total_time) AS avg FROM messages
+                WHERE tool_name IS NOT NULL AND tool_name != ''
+                    AND total_time IS NOT NULL
+                """
+            ).fetchall()
+            avg_time_per_tool_call = tool_time_rows[0]["avg"] or 0.0
+            avg_time_per_tool_call = round(float(avg_time_per_tool_call), 2)
 
             # Sub-agent delegations (tool_calls where name = "task")
             subagent_rows = conn.execute(
@@ -208,6 +313,7 @@ async def get_tool_metrics():
                 data={
                     "tool_usage": tool_usage,
                     "total_tool_calls": total_tool_calls,
+                    "avg_time_per_tool_call": avg_time_per_tool_call,
                     "top_subagents": top_subagents,
                 },
                 usage=zero_usage(),
@@ -373,13 +479,13 @@ async def get_metrics_overview():
             avg_tokens_per_session = round(total_tokens / total_sessions, 1) if total_sessions > 0 else 0.0
             avg_tokens_per_message = round(total_tokens / total_messages, 1) if total_messages > 0 else 0.0
 
-            # Cost metrics
+            # Cost metrics (2 decimals, USD).
             cost_rows = conn.execute(
                 "SELECT SUM(cost_total) AS total FROM messages WHERE cost_total IS NOT NULL"
             ).fetchall()
-            total_cost = cost_rows[0]["total"] or 0.0
-            avg_cost_per_session = round(total_cost / total_sessions, 4) if total_sessions > 0 else 0.0
-            avg_cost_per_message = round(total_cost / total_messages, 4) if total_messages > 0 else 0.0
+            total_cost = round(float(cost_rows[0]["total"] or 0.0), 2)
+            avg_cost_per_session = round(total_cost / total_sessions, 2) if total_sessions > 0 else 0.0
+            avg_cost_per_message = round(total_cost / total_messages, 2) if total_messages > 0 else 0.0
 
             # Average cost per provider-model (from spend table)
             spend_avg_rows = conn.execute(
@@ -387,7 +493,28 @@ async def get_metrics_overview():
             ).fetchall()
             avg_cost_per_provider_model = spend_avg_rows[0]["avg"] or 0.0
             if avg_cost_per_provider_model is not None:
-                avg_cost_per_provider_model = round(float(avg_cost_per_provider_model), 4)
+                avg_cost_per_provider_model = round(float(avg_cost_per_provider_model), 2)
+
+            # Time metrics (seconds, 2 decimals).
+            time_rows = conn.execute(
+                "SELECT SUM(total_time) AS total FROM messages WHERE total_time IS NOT NULL"
+            ).fetchall()
+            total_time = round(float(time_rows[0]["total"] or 0.0), 2)
+            turn_time_rows = conn.execute(
+                """
+                SELECT AVG(turn_total) AS avg FROM (
+                    SELECT SUM(total_time) AS turn_total
+                    FROM messages
+                    WHERE total_time IS NOT NULL AND turn_number IS NOT NULL
+                    GROUP BY session_id, turn_number
+                )
+                """
+            ).fetchall()
+            avg_time_per_turn = round(float(turn_time_rows[0]["avg"] or 0.0), 2)
+            avg_time_per_session = round(total_time / total_sessions, 2) if total_sessions > 0 else 0.0
+
+            # Average agent latency per turn (tf - t0 reconstruction).
+            avg_agent_latency = _avg_agent_latency(conn)
 
             # Errors (excluding provider key errors)
             err_rows = conn.execute(
@@ -429,6 +556,10 @@ async def get_metrics_overview():
                     "avg_cost_per_session": avg_cost_per_session,
                     "avg_cost_per_message": avg_cost_per_message,
                     "avg_cost_per_provider_model": avg_cost_per_provider_model,
+                    "total_time": total_time,
+                    "avg_time_per_turn": avg_time_per_turn,
+                    "avg_time_per_session": avg_time_per_session,
+                    "avg_agent_latency": avg_agent_latency,
                 },
                 usage=zero_usage(),
             )

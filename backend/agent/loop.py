@@ -72,6 +72,7 @@ from backend.agent.utils import provider_keys
 from backend.agent.utils.model_catalog import get_provider_api_type
 from backend.instances import agent, session_manager
 from backend.agent.utils.loop_helpers import (
+    _tool_call_ctx,
     build_initial_messages,
     build_system_prompt,
     execute_tool,
@@ -1060,22 +1061,56 @@ class AgentLoop:
                     # Collect tool results to update assistant message after all tools execute
                     tool_results: list[dict[str, Any]] = []
 
-                    # Fase 2: ejecución por lotes en orden original.
-                    # Tareas task secuenciales con streaming existente para
-                    # preservar aislamiento de sesiones hijas. Herramientas
-                    # no-task consecutivas en paralelo con asyncio.gather
-                    # preservando orden por índice. Cancelación, spend y
-                    # reintentos LLM intactos.
-                    async def _run_non_task(tc_item: dict[str, Any]) -> Any:
+                    # Unified parallel block: every tool call in this response
+                    # (sub-agent delegations and plain tools alike) runs
+                    # concurrently. Each call gets its own ContextVar
+                    # snapshot (parent session, depth, permissions, resolved
+                    # task config, dedicated sub-agent event queue) so
+                    # parallel calls can never overwrite each other's
+                    # context. Results commit in original order by index:
+                    # persistence, spend, steps and SSE stay exactly as in
+                    # sequential execution. Cancellation, spend and LLM
+                    # retries intact.
+                    pending: list[tuple[int, dict[str, Any], dict | None, Any]] = []
+                    # Wall-clock duration (seconds) of each block call, keyed
+                    # by original call index. Used only for metrics
+                    # (per-tool-call timing); never affects execution.
+                    block_durations: dict[int, float] = {}
+
+                    async def _run_one(
+                        btc_idx: int,
+                        btc: dict[str, Any],
+                        btc_cfg: dict | None,
+                        btc_queue: Any,
+                    ) -> Any:
+                        """Run one block call under its own ContextVar snapshot."""
+                        snap = {
+                            "parent_session_id": session_id,
+                            "depth": depth,
+                            "stream_cancel_event": stream_cancel_event,
+                            "tool_permissions": tool_permissions or {},
+                            "task_config": btc_cfg,
+                            "subagent_event_queue": btc_queue,
+                        }
+                        token = _tool_call_ctx.set(snap)
+                        started = _time.perf_counter()
                         try:
                             if stream_cancel_event is not None and stream_cancel_event.is_set():
                                 return {"status": "error", "message": "Ejecución cancelada por el usuario.", "data": ""}
-                            return await execute_tool(agent, tc_item)
+                            return await execute_tool(agent, btc)
                         except asyncio.CancelledError:
                             return {"status": "error", "message": "Ejecución cancelada por el usuario.", "data": ""}
                         except Exception as exc:
-                            log_error(str(exc), source="loop.py:run(gather_non_task)")
-                            return {"status": "error", "message": f"Tool '{tc_item.get('name', '?')}' failed: {exc}", "data": ""}
+                            if btc.get("name") == "task":
+                                return {"status": "error", "message": "Sub-agent cancelled", "data": ""}
+                            log_error(str(exc), source="loop.py:run(parallel_block)")
+                            return {"status": "error", "message": f"Tool '{btc.get('name', '?')}' failed: {exc}", "data": ""}
+                        finally:
+                            try:
+                                block_durations[btc_idx] = round(_time.perf_counter() - started, 2)
+                            except Exception:
+                                pass
+                            _tool_call_ctx.reset(token)
 
                     tc_index = 0
                     while tc_index < len(tool_calls):
@@ -1112,7 +1147,11 @@ class AgentLoop:
                                 except (json.JSONDecodeError, TypeError):
                                     parameters_sub = {}
 
-                            agent.tools._task_config = {
+                            # Resolved config for THIS task call. It travels in the
+                            # call's ContextVar snapshot (never on the shared
+                            # Tools instance) so parallel task() calls cannot
+                            # read each other's cache.
+                            task_cfg = {
                                 "agent_name": agent_name_sub,
                                 "tool_permissions": tool_perms_sub,
                                 "skill_permissions": skill_perms_sub,
@@ -1144,62 +1183,19 @@ class AgentLoop:
                             
                             yield f"data: {json.dumps({'type': 'tool_call', 'content': {'name': 'task', 'args': {'agent_name': agent_name_sub, 'prompt': prompt_sub}}}, ensure_ascii=False)}\n\n"
 
-                            # Create queue for real-time sub-agent event forwarding
+                            # Queue for real-time sub-agent event forwarding.
+                            # Dedicated per call: the multiplex loop below
+                            # forwards every pending task queue while the
+                            # whole block runs concurrently.
                             subagent_queue: asyncio.Queue = asyncio.Queue()
-                            agent.tools._subagent_event_queue = subagent_queue
-
-                            # Start tool execution in background task
-                            tool_task = asyncio.create_task(execute_tool(agent, tc))
-
-                            try:
-                                # Forward sub-agent events to SSE while tool runs
-                                while not tool_task.done():
-                                    # Check for cancel signal
-                                    if stream_cancel_event and stream_cancel_event.is_set():
-                                        logger.info("Cancel signal received, stopping sub-agent forwarding")
-                                        tool_task.cancel()
-                                        break
-                                    try:
-                                        event_data = await asyncio.wait_for(
-                                            subagent_queue.get(), timeout=0.05
-                                        )
-                                        forwarded_type = event_data.get("content", {}).get("event", {}).get("type", "?")
-                                        if forwarded_type in ("tool_call", "tool_result"):
-                                            logger.subagent(
-                                                ">> forwarding event type=%s child=%s",
-                                                forwarded_type,
-                                                event_data.get("content", {}).get("child_session_id", "?")[:8],
-                                            )
-                                        # Register sub-agent temp files for cleanup
-                                        if forwarded_type == "tool_call":
-                                            inner_event = event_data.get("content", {}).get("event", {})
-                                            inner_content = inner_event.get("content", {})
-                                            if inner_content.get("name") == "write":
-                                                fp = inner_content.get("args", {}).get("file_path", "")
-                                                if "TEMP_" in fp:
-                                                    agent.tools._temp_files.add(fp)
-                                        yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
-                                    except asyncio.TimeoutError:
-                                        continue
-
-                                # Drain any remaining events after tool finishes
-                                while not subagent_queue.empty():
-                                    try:
-                                        yield f"data: {json.dumps(subagent_queue.get_nowait(), ensure_ascii=False)}\n\n"
-                                    except asyncio.QueueEmpty:
-                                        break
-
-                                try:
-                                    result_data = tool_task.result()
-                                except (asyncio.CancelledError, Exception):
-                                    result_data = {"status": "error", "message": "Sub-agent cancelled", "data": ""}
-                            finally:
-                                agent.tools._subagent_event_queue = None
-                                if not tool_task.done():
-                                    tool_task.cancel()
+                            pending.append((tc_index, tc, task_cfg, subagent_queue))
+                            tc_index += 1
+                            continue
                         else:
-                            # Lote de no-task consecutivas en paralelo con
-                            # gather preservando orden original por índice.
+                            # Plain tools join the same parallel block: they
+                            # are only queued here (tool_call SSE in original
+                            # order); execution happens once the whole block
+                            # is collected, concurrently with everything else.
                             batch: list[dict[str, Any]] = []
                             _j = tc_index
                             while _j < len(tool_calls) and tool_calls[_j].get("name") != "task":
@@ -1209,108 +1205,117 @@ class AgentLoop:
                                 yield f"data: {json.dumps({'type': 'tool_call', 'content': {'name': btc['name'], 'args': btc['args']}}, ensure_ascii=False)}\n\n"
                                 if btc['name'] == 'write' and 'TEMP_' in btc.get('args', {}).get('file_path', ''):
                                     agent.tools._temp_files.add(btc['args']['file_path'])
-                            if stream_cancel_event is not None and stream_cancel_event.is_set():
-                                batch_results: list[Any] = [
-                                    {"status": "error", "message": "Ejecución cancelada por el usuario.", "data": ""}
-                                    for _ in batch
-                                ]
-                            elif len(batch) == 1:
-                                batch_results = [await _run_non_task(batch[0])]
-                            else:
-                                batch_results = list(await asyncio.gather(
-                                    *(_run_non_task(btc) for btc in batch),
-                                    return_exceptions=False,
-                                ))
-                            for tc, result_data in zip(batch, batch_results):
-                                agent.tools._current_session_id = session_id
-                                agent.tools._current_depth = depth
-                                agent.tools._stream_cancel_event = stream_cancel_event
-                                agent.tools._current_tool_permissions = tool_permissions or {}
-                                yield f"data: {json.dumps({'type': 'tool_result', 'content': {'name': tc['name'], 'result': result_data}}, ensure_ascii=False)}\n\n"
-                                if isinstance(result_data, dict) and result_data.get("status") == "error":
-                                    llm_payload = {"error": result_data.get("message", "Tool failed")}
-                                elif isinstance(result_data, dict) and "data" in result_data:
-                                    llm_payload = result_data["data"]
-                                else:
-                                    llm_payload = result_data
-                                tool_content = (
-                                    json.dumps(llm_payload, ensure_ascii=False)
-                                    if isinstance(llm_payload, (dict, list))
-                                    else str(llm_payload)
-                                )
-                                try:
-                                    safe_name = str(tc.get("name", "tool"))
-                                except Exception:
-                                    safe_name = "tool"
-                                tool_content = (
-                                    f'<tool_output name="{safe_name}">\n'
-                                    f"{tool_content}\n"
-                                    f"</tool_output>"
-                                )
-                                uses_openai_tool_format = (
-                                    _resolve_tool_api_type(effective_provider) != "google"
-                                )
-                                if uses_openai_tool_format:
-                                    tool_msg = {
-                                        "role": "tool",
-                                        "tool_call_id": tc.get("id", ""),
-                                        "content": tool_content,
-                                    }
-                                else:
-                                    tool_msg = {
-                                        "role": "tool",
-                                        "tool_name": tc["name"],
-                                        "content": tool_content,
-                                    }
-                                messages.append(tool_msg)
-                                session_manager.save_message(
-                                    session_id, "tool",
-                                    content=tool_msg.get("content", ""),
-                                    tool_call_id=tool_msg.get("tool_call_id"),
-                                    tool_name=tool_msg.get("tool_name"),
-                                    turn_number=turn_number,
-                                    step=step,
-                                )
-                                tool_results.append({
-                                    "tool_call_id": tc.get("id", ""),
-                                    "tool_name": tc["name"],
-                                    "result": result_data,
-                                })
+                            for _k, btc in enumerate(batch):
+                                pending.append((tc_index + _k, btc, None, None))
                             tc_index += len(batch)
                             continue
 
-                        # Restore parent session/depth state: a nested run (sub-agent)
-                        # may have overwritten these on the shared Tools instance.
-                        agent.tools._current_session_id = session_id
-                        agent.tools._current_depth = depth
-                        agent.tools._stream_cancel_event = stream_cancel_event
-                        agent.tools._current_tool_permissions = tool_permissions or {}
-
-                        # --- Re-resolve model after subagent (task tool) ---
-                        # The subagent may have used a different model and liberated it.
-                        # Parent needs to reload its model from persisted config.
-                        if is_subagent:
+                    # ---- Execute the whole block concurrently ----
+                    # Every queued call runs under its own ContextVar
+                    # snapshot. Sub-agent event queues are multiplexed to
+                    # SSE while the block runs; results commit afterwards
+                    # in original order by index.
+                    block_results: dict[int, Any] = {}
+                    block_tasks: dict[int, asyncio.Task] = {}
+                    block_queues: dict[int, asyncio.Queue] = {
+                        idx: queue for idx, _tc, _cfg, queue in pending
+                        if queue is not None
+                    }
+                    try:
+                        for idx, btc, btc_cfg, btc_queue in pending:
+                            block_tasks[idx] = asyncio.create_task(
+                                _run_one(idx, btc, btc_cfg, btc_queue)
+                            )
+                        while any(not t.done() for t in block_tasks.values()):
+                            if stream_cancel_event and stream_cancel_event.is_set():
+                                logger.info("Cancel signal received, stopping parallel block")
+                                for t in block_tasks.values():
+                                    if not t.done():
+                                        t.cancel()
+                                break
+                            for idx, queue in block_queues.items():
+                                while not queue.empty():
+                                    try:
+                                        event_data = queue.get_nowait()
+                                    except asyncio.QueueEmpty:
+                                        break
+                                    forwarded_type = event_data.get("content", {}).get("event", {}).get("type", "?")
+                                    if forwarded_type in ("tool_call", "tool_result"):
+                                        logger.subagent(
+                                            ">> forwarding event type=%s child=%s",
+                                            forwarded_type,
+                                            event_data.get("content", {}).get("child_session_id", "?")[:8],
+                                        )
+                                    # Register sub-agent temp files for cleanup
+                                    if forwarded_type == "tool_call":
+                                        inner_event = event_data.get("content", {}).get("event", {})
+                                        inner_content = inner_event.get("content", {})
+                                        if inner_content.get("name") == "write":
+                                            fp = inner_content.get("args", {}).get("file_path", "")
+                                            if "TEMP_" in fp:
+                                                agent.tools._temp_files.add(fp)
+                                    yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+                            await asyncio.sleep(0.05)
+                        # Drain any remaining events after the block finishes
+                        for idx, queue in block_queues.items():
+                            while not queue.empty():
+                                try:
+                                    yield f"data: {json.dumps(queue.get_nowait(), ensure_ascii=False)}\n\n"
+                                except asyncio.QueueEmpty:
+                                    break
+                        for idx, t in block_tasks.items():
                             try:
-                                # Read resolved model from agent singleton (persisted in SQLite via config endpoint)
-                                nuevo_modelo = agent._resolved_model
-                                if nuevo_modelo and nuevo_modelo != model:
-                                    logger.info("Re-resolviendo modelo tras subagente: %s -> %s", model, nuevo_modelo)
-                                    ctx = get_error_context()
-                                    await asyncio.to_thread(
-                                        liberar_modelo, model,
-                                        ctx.get("session_id") if ctx else None,
-                                        ctx.get("turn_number") if ctx else None,
-                                        ctx.get("parent_id") if ctx else None,
-                                    )
-                                    model = nuevo_modelo
+                                block_results[idx] = t.result()
+                            except asyncio.CancelledError:
+                                block_results[idx] = {"status": "error", "message": "Ejecución cancelada por el usuario.", "data": ""}
                             except Exception as exc:
-                                logger.warning("Error re-resolviendo modelo tras subagente: %s", exc)
-                                log_error(str(exc), source="loop.py:run(post_task_resolve)")
+                                btc_name = next(
+                                    (btc.get("name", "?") for i, btc, _c, _q in pending if i == idx),
+                                    "?",
+                                )
+                                if btc_name == "task":
+                                    block_results[idx] = {"status": "error", "message": "Sub-agent cancelled", "data": ""}
+                                else:
+                                    raise
+                    finally:
+                        for t in block_tasks.values():
+                            if not t.done():
+                                t.cancel()
 
-                        if is_subagent:
-                            yield f"data: {json.dumps({'type': 'tool_result', 'content': {'name': 'task', 'result': result_data}}, ensure_ascii=False)}\n\n"
-                        else:
-                            yield f"data: {json.dumps({'type': 'tool_result', 'content': {'name': tc['name'], 'result': result_data}}, ensure_ascii=False)}\n\n"
+                    # Restore parent session/depth state: a nested run (sub-agent)
+                    # may have overwritten these on the shared Tools instance.
+                    agent.tools._current_session_id = session_id
+                    agent.tools._current_depth = depth
+                    agent.tools._stream_cancel_event = stream_cancel_event
+                    agent.tools._current_tool_permissions = tool_permissions or {}
+
+                    # --- Re-resolve model after subagents (task tool) ---
+                    # A subagent may have used a different model and liberated it.
+                    # Parent needs to reload its model from persisted config.
+                    # Once per block (not per call): same outcome, one reload.
+                    if any(btc.get("name") == "task" for _, btc, _c, _q in pending):
+                        try:
+                            # Read resolved model from agent singleton (persisted in SQLite via config endpoint)
+                            nuevo_modelo = agent._resolved_model
+                            if nuevo_modelo and nuevo_modelo != model:
+                                logger.info("Re-resolviendo modelo tras subagente: %s -> %s", model, nuevo_modelo)
+                                ctx = get_error_context()
+                                await asyncio.to_thread(
+                                    liberar_modelo, model,
+                                    ctx.get("session_id") if ctx else None,
+                                    ctx.get("turn_number") if ctx else None,
+                                    ctx.get("parent_id") if ctx else None,
+                                )
+                                model = nuevo_modelo
+                        except Exception as exc:
+                            logger.warning("Error re-resolviendo modelo tras subagente: %s", exc)
+                            log_error(str(exc), source="loop.py:run(post_task_resolve)")
+
+                    # ---- Ordered commit: same persistence/SSE/spend shape ----
+                    # as sequential execution, in original call order.
+                    for idx, tc, _cfg, _queue in sorted(pending, key=lambda item: item[0]):
+                        result_data = block_results[idx]
+                        yield f"data: {json.dumps({'type': 'tool_result', 'content': {'name': tc['name'], 'result': result_data}}, ensure_ascii=False)}\n\n"
 
                         # Build tool result message (provider-dependent format).
                         # The frontend receives the full contract (status/message/data)
@@ -1369,9 +1374,15 @@ class AgentLoop:
                             session_id, "tool",
                             content=tool_msg.get("content", ""),
                             tool_call_id=tool_msg.get("tool_call_id"),
-                            tool_name=tool_msg.get("tool_name"),
+                            # The provider wire format only carries tool_name
+                            # for Google; every other provider uses
+                            # tool_call_id, so the name must come from the
+                            # original call — otherwise tool_name is NULL and
+                            # metrics (WHERE tool_name IS NOT NULL) lose the row.
+                            tool_name=tc.get("name") or tool_msg.get("tool_name"),
                             turn_number=turn_number,
                             step=step,
+                            usage={"total_time": block_durations.get(idx, 0.0)},
                         )
 
                         # Collect result for assistant message's tool_results field
@@ -1380,8 +1391,6 @@ class AgentLoop:
                             "tool_name": tc["name"],
                             "result": result_data,
                         })
-
-                        tc_index += 1
 
                     # Update assistant message with tool_results so frontend can display them on history load
                     session_manager.update_message_tool_results(session_id, turn_number, tool_results)

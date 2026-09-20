@@ -1137,7 +1137,20 @@ class Tools:
 
         # 1. Resolve sub-agent data from its markdown definition
         # Check if loop.py already resolved permissions (cached on tools instance)
-        cached = getattr(self, "_task_config", None)
+        # A parallel-loop snapshot (ContextVar) carries this call's resolved
+        # config, so concurrent task() calls never read each other's cache.
+        # The shared ``_task_config`` attribute is only used as a legacy
+        # fallback for callers outside the agent loop. Lazy import: top-level
+        # would be circular (loop_helpers -> instances -> agent -> tools).
+        from backend.agent.utils.loop_helpers import _tool_call_ctx
+
+        snapshot_cfg = _tool_call_ctx.get()
+        resolved_cfg = (
+            snapshot_cfg.get("task_config")
+            if snapshot_cfg is not None and "task_config" in snapshot_cfg
+            else None
+        )
+        cached = resolved_cfg if resolved_cfg is not None else getattr(self, "_task_config", None)
         if cached and cached.get("agent_name") == agent_name:
             # Reuse cached values — avoids re-reading agent .md
             tool_perms = cached["tool_permissions"]
@@ -1213,8 +1226,26 @@ class Tools:
 
         # print(f'\n\n\n{"#"*80}\nSystem prompt:\n\n{system_prompt}\n{"#"*80}\n\n\n')
 
-        parent_id = getattr(self, "_current_session_id", None)
-        depth = getattr(self, "_current_depth", 0)
+        # A parallel-loop snapshot (ContextVar) takes precedence over the
+        # shared attributes, so concurrent task() calls cannot overwrite
+        # each other's parent session, depth, cancel event or event queue.
+        # Callers outside the agent loop leave it unset and the legacy
+        # shared attributes are used, exactly as before.
+        snapshot = _tool_call_ctx.get()
+        if snapshot is not None:
+            parent_id = snapshot.get("parent_session_id", getattr(self, "_current_session_id", None))
+            depth = snapshot.get("depth", getattr(self, "_current_depth", 0))
+            stream_cancel_event = snapshot.get(
+                "stream_cancel_event", getattr(self, "_stream_cancel_event", None)
+            )
+            event_queue = snapshot.get(
+                "subagent_event_queue", getattr(self, "_subagent_event_queue", None)
+            )
+        else:
+            parent_id = getattr(self, "_current_session_id", None)
+            depth = getattr(self, "_current_depth", 0)
+            stream_cancel_event = getattr(self, "_stream_cancel_event", None)
+            event_queue = getattr(self, "_subagent_event_queue", None)
 
         child_id = (
             f"{parent_id}:{agent_name}:{uuid.uuid4().hex[:8]}"
@@ -1232,14 +1263,12 @@ class Tools:
         from backend.agent.loop import AgentLoop
 
 
-        stream_cancel_event = getattr(self, "_stream_cancel_event", None)
         loop = AgentLoop(
             agent=agent,
             session_manager=session_manager,
         )
         final_text = ""
         state = "completed"
-        event_queue = getattr(self, "_subagent_event_queue", None)
         if event_queue is not None:
             logger.info("task() has event_queue for child=%s", child_id[:8])
         else:

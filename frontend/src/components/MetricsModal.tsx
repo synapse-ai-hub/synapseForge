@@ -52,6 +52,11 @@ function formatNumber(value: number): string {
   return value.toLocaleString("es-AR");
 }
 
+/** Format seconds with 2 decimals. */
+function formatSeconds(value: number): string {
+  return `${value.toFixed(2)} s`;
+}
+
 /** KPI summary card. */
 function KpiCard({
   title,
@@ -319,13 +324,23 @@ export function MetricsModal({ open, onClose }: MetricsModalProps) {
                     />
                     <KpiCard
                       title="Gasto total (USD)"
-                      value={metrics.overview.total_cost.toFixed(4)}
+                      value={metrics.overview.total_cost.toFixed(2)}
                       icon={<Activity size={14} />}
                     />
                     <KpiCard
                       title="Prom. gasto/prov-modelo"
-                      value={metrics.overview.avg_cost_per_provider_model.toFixed(4)}
+                      value={metrics.overview.avg_cost_per_provider_model.toFixed(2)}
                       icon={<BarChart3 size={14} />}
+                    />
+                    <KpiCard
+                      title="Tiempo prom./sesión"
+                      value={formatSeconds(metrics.overview.avg_time_per_session)}
+                      icon={<BarChart3 size={14} />}
+                    />
+                    <KpiCard
+                      title="Latencia prom./turno"
+                      value={formatSeconds(metrics.overview.avg_agent_latency)}
+                      icon={<Activity size={14} />}
                     />
                   </div>
 
@@ -380,13 +395,28 @@ export function MetricsModal({ open, onClose }: MetricsModalProps) {
                     />
                     <KpiCard
                       title="Gasto total (USD)"
-                      value={metrics.sessions.total_cost.toFixed(4)}
+                      value={metrics.sessions.total_cost.toFixed(2)}
                       icon={<Activity size={14} />}
                     />
                     <KpiCard
                       title="Prom. gasto/prov-modelo"
-                      value={metrics.sessions.avg_cost_per_provider_model.toFixed(4)}
+                      value={metrics.sessions.avg_cost_per_provider_model.toFixed(2)}
                       icon={<BarChart3 size={14} />}
+                    />
+                    <KpiCard
+                      title="Tiempo prom./turno"
+                      value={formatSeconds(metrics.sessions.avg_time_per_turn)}
+                      icon={<Activity size={14} />}
+                    />
+                    <KpiCard
+                      title="Tiempo prom./sesión"
+                      value={formatSeconds(metrics.sessions.avg_time_per_session)}
+                      icon={<BarChart3 size={14} />}
+                    />
+                    <KpiCard
+                      title="Latencia prom./turno"
+                      value={formatSeconds(metrics.sessions.avg_agent_latency)}
+                      icon={<Activity size={14} />}
                     />
                   </div>
 
@@ -415,6 +445,11 @@ export function MetricsModal({ open, onClose }: MetricsModalProps) {
                       title="Delegaciones (task)"
                       value={formatNumber(metrics.tools.top_subagents?.[0]?.count ?? 0)}
                       icon={<MessageSquare size={14} />}
+                    />
+                    <KpiCard
+                      title="Tiempo prom./llamada"
+                      value={formatSeconds(metrics.tools.avg_time_per_tool_call)}
+                      icon={<Activity size={14} />}
                     />
                   </div>
 

@@ -13,12 +13,17 @@ export interface SessionMetrics {
   avg_cost_per_message: number;
   avg_cost_per_tool: number;
   avg_cost_per_provider_model: number;
+  total_time: number;
+  avg_time_per_turn: number;
+  avg_time_per_session: number;
+  avg_agent_latency: number;
   sessions_by_day: { date: string; count: number }[];
 }
 
 export interface ToolMetrics {
-  tool_usage: { name: string; count: number }[];
+  tool_usage: { name: string; count: number; avg_time: number }[];
   total_tool_calls: number;
+  avg_time_per_tool_call: number;
   top_subagents: { name: string; count: number }[];
 }
 
@@ -47,6 +52,10 @@ export interface MetricsOverview {
   avg_cost_per_session: number;
   avg_cost_per_message: number;
   avg_cost_per_provider_model: number;
+  total_time: number;
+  avg_time_per_turn: number;
+  avg_time_per_session: number;
+  avg_agent_latency: number;
 }
 
 /**

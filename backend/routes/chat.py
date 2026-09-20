@@ -178,9 +178,9 @@ async def chat_endpoint(
         # Set error context for this request (inside event_stream so set/reset share same async context)
         error_ctx_token = set_error_context(session_id=session_id, turn_number=turn_number)
         try:
-            # Fase 1: leer selección global. smart o vacío usa flujo estándar
-            # idéntico al actual. Workflow válido sin runner aún hace fallback
-            # a smart con aviso en chunk, sin romper eventos ni Telegram.
+            # Fase 3: si hay workflow seleccionado y válido, corre el
+            # WorkflowRunner determinista. Si falla la carga, fallback a
+            # smart con aviso. Mismos eventos SSE y Telegram.
             selected_workflow = "smart"
             try:
                 raw_selection = session_manager.get_config("selected_workflow")
@@ -189,9 +189,37 @@ async def chat_endpoint(
             except Exception as exc:
                 log_error(str(exc), source="backend/routes/chat.py:selected_workflow")
                 selected_workflow = "smart"
+            workflow_data = None
             if selected_workflow != "smart":
-                logger.info("Workflow seleccionado '%s': runner aún no implementado, fallback a smart", selected_workflow)
-                yield f"data: {json.dumps({'type': 'chunk', 'content': f'_Workflow {selected_workflow} aún no disponible, usando flujo smart._'}, ensure_ascii=False)}\n\n"
+                try:
+                    from backend.agent.utils.workflow_loader import load_workflow
+
+                    loaded = load_workflow(selected_workflow)
+                    if isinstance(loaded, dict) and loaded.get("status") == "success":
+                        workflow_data = loaded.get("data")
+                    else:
+                        logger.warning("Workflow '%s' inválido, fallback a smart", selected_workflow)
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': f'_Workflow {selected_workflow} inválido, usando flujo smart._'}, ensure_ascii=False)}\n\n"
+                        workflow_data = None
+                except Exception as exc:
+                    log_error(str(exc), source="backend/routes/chat.py:load_workflow")
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': f'_Workflow {selected_workflow} no disponible, usando flujo smart._'}, ensure_ascii=False)}\n\n"
+                    workflow_data = None
+            if workflow_data is not None:
+                from backend.agent.utils.workflow_runner import WorkflowRunner
+
+                runner = WorkflowRunner(agent=agent, session_manager=session_manager)
+                async for sse_event in runner.run(
+                    session_id=session_id,
+                    user_message=message,
+                    workflow=workflow_data,
+                    turn_number=turn_number,
+                    stream_cancel_event=stream_cancel_event,
+                ):
+                    if await request.is_disconnected():
+                        stream_cancel_event.set()
+                    yield sse_event
+                return
             agent_loop = AgentLoop(
                 agent=agent,
                 session_manager=session_manager,

@@ -1060,9 +1060,28 @@ class AgentLoop:
                     # Collect tool results to update assistant message after all tools execute
                     tool_results: list[dict[str, Any]] = []
 
-                    for tc in tool_calls:
+                    # Fase 2: ejecución por lotes en orden original.
+                    # Tareas task secuenciales con streaming existente para
+                    # preservar aislamiento de sesiones hijas. Herramientas
+                    # no-task consecutivas en paralelo con asyncio.gather
+                    # preservando orden por índice. Cancelación, spend y
+                    # reintentos LLM intactos.
+                    async def _run_non_task(tc_item: dict[str, Any]) -> Any:
+                        try:
+                            if stream_cancel_event is not None and stream_cancel_event.is_set():
+                                return {"status": "error", "message": "Ejecución cancelada por el usuario.", "data": ""}
+                            return await execute_tool(agent, tc_item)
+                        except asyncio.CancelledError:
+                            return {"status": "error", "message": "Ejecución cancelada por el usuario.", "data": ""}
+                        except Exception as exc:
+                            log_error(str(exc), source="loop.py:run(gather_non_task)")
+                            return {"status": "error", "message": f"Tool '{tc_item.get('name', '?')}' failed: {exc}", "data": ""}
+
+                    tc_index = 0
+                    while tc_index < len(tool_calls):
+                        tc = tool_calls[tc_index]
                         is_subagent = tc.get("name") == "task"
-                        
+
                         if is_subagent:
                             agent_name_sub = tc.get("args", {}).get("agent_name", "")
                             prompt_sub = tc.get("args", {}).get("prompt", "")
@@ -1179,11 +1198,86 @@ class AgentLoop:
                                 if not tool_task.done():
                                     tool_task.cancel()
                         else:
-                            yield f"data: {json.dumps({'type': 'tool_call', 'content': {'name': tc['name'], 'args': tc['args']}}, ensure_ascii=False)}\n\n"
-                            # Register temp files for cleanup
-                            if tc['name'] == 'write' and 'TEMP_' in tc.get('args', {}).get('file_path', ''):
-                                agent.tools._temp_files.add(tc['args']['file_path'])
-                            result_data = await execute_tool(agent, tc)
+                            # Lote de no-task consecutivas en paralelo con
+                            # gather preservando orden original por índice.
+                            batch: list[dict[str, Any]] = []
+                            _j = tc_index
+                            while _j < len(tool_calls) and tool_calls[_j].get("name") != "task":
+                                batch.append(tool_calls[_j])
+                                _j += 1
+                            for btc in batch:
+                                yield f"data: {json.dumps({'type': 'tool_call', 'content': {'name': btc['name'], 'args': btc['args']}}, ensure_ascii=False)}\n\n"
+                                if btc['name'] == 'write' and 'TEMP_' in btc.get('args', {}).get('file_path', ''):
+                                    agent.tools._temp_files.add(btc['args']['file_path'])
+                            if stream_cancel_event is not None and stream_cancel_event.is_set():
+                                batch_results: list[Any] = [
+                                    {"status": "error", "message": "Ejecución cancelada por el usuario.", "data": ""}
+                                    for _ in batch
+                                ]
+                            elif len(batch) == 1:
+                                batch_results = [await _run_non_task(batch[0])]
+                            else:
+                                batch_results = list(await asyncio.gather(
+                                    *(_run_non_task(btc) for btc in batch),
+                                    return_exceptions=False,
+                                ))
+                            for tc, result_data in zip(batch, batch_results):
+                                agent.tools._current_session_id = session_id
+                                agent.tools._current_depth = depth
+                                agent.tools._stream_cancel_event = stream_cancel_event
+                                agent.tools._current_tool_permissions = tool_permissions or {}
+                                yield f"data: {json.dumps({'type': 'tool_result', 'content': {'name': tc['name'], 'result': result_data}}, ensure_ascii=False)}\n\n"
+                                if isinstance(result_data, dict) and result_data.get("status") == "error":
+                                    llm_payload = {"error": result_data.get("message", "Tool failed")}
+                                elif isinstance(result_data, dict) and "data" in result_data:
+                                    llm_payload = result_data["data"]
+                                else:
+                                    llm_payload = result_data
+                                tool_content = (
+                                    json.dumps(llm_payload, ensure_ascii=False)
+                                    if isinstance(llm_payload, (dict, list))
+                                    else str(llm_payload)
+                                )
+                                try:
+                                    safe_name = str(tc.get("name", "tool"))
+                                except Exception:
+                                    safe_name = "tool"
+                                tool_content = (
+                                    f'<tool_output name="{safe_name}">\n'
+                                    f"{tool_content}\n"
+                                    f"</tool_output>"
+                                )
+                                uses_openai_tool_format = (
+                                    _resolve_tool_api_type(effective_provider) != "google"
+                                )
+                                if uses_openai_tool_format:
+                                    tool_msg = {
+                                        "role": "tool",
+                                        "tool_call_id": tc.get("id", ""),
+                                        "content": tool_content,
+                                    }
+                                else:
+                                    tool_msg = {
+                                        "role": "tool",
+                                        "tool_name": tc["name"],
+                                        "content": tool_content,
+                                    }
+                                messages.append(tool_msg)
+                                session_manager.save_message(
+                                    session_id, "tool",
+                                    content=tool_msg.get("content", ""),
+                                    tool_call_id=tool_msg.get("tool_call_id"),
+                                    tool_name=tool_msg.get("tool_name"),
+                                    turn_number=turn_number,
+                                    step=step,
+                                )
+                                tool_results.append({
+                                    "tool_call_id": tc.get("id", ""),
+                                    "tool_name": tc["name"],
+                                    "result": result_data,
+                                })
+                            tc_index += len(batch)
+                            continue
 
                         # Restore parent session/depth state: a nested run (sub-agent)
                         # may have overwritten these on the shared Tools instance.
@@ -1286,6 +1380,8 @@ class AgentLoop:
                             "tool_name": tc["name"],
                             "result": result_data,
                         })
+
+                        tc_index += 1
 
                     # Update assistant message with tool_results so frontend can display them on history load
                     session_manager.update_message_tool_results(session_id, turn_number, tool_results)

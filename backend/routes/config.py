@@ -1162,3 +1162,125 @@ async def list_mcp_servers() -> JSONResponse:
             status_code=500,
             content={"status": "error", "message": "Error checking MCP servers", "servers": []},
         )
+
+
+# ---------------------------------------------------------------------------
+# Workflow selection (Fase 1 - persistencia como modelo en config_kv)
+# ---------------------------------------------------------------------------
+
+_SELECTED_WORKFLOW_KEY = "selected_workflow"
+_SELECTED_WORKFLOW_DEFAULT = "smart"
+
+
+def _list_workflow_names() -> list[str]:
+    """List available workflow names from disk.
+
+    Scans ``~/.config/synapseForge/workflows/*/workflow.yaml`` with
+    containment checks. Returns sorted names. Never raises.
+    """
+    try:
+        from backend.agent.utils.config_dir import get_workflows_dir
+
+        workflows_dir = get_workflows_dir()
+        names: list[str] = []
+        if not workflows_dir.is_dir():
+            return names
+        for entry in sorted(workflows_dir.iterdir()):
+            try:
+                if not entry.is_dir():
+                    continue
+                if entry.name.startswith("."):
+                    continue
+                yaml_path = entry / "workflow.yaml"
+                if yaml_path.is_file():
+                    names.append(entry.name)
+            except (OSError, ValueError):
+                continue
+        return names
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:_list_workflow_names")
+        return []
+
+
+def _get_selected_workflow() -> str:
+    """Read selected workflow, defaulting to smart."""
+    try:
+        if session_manager is not None:
+            raw = session_manager.get_config(_SELECTED_WORKFLOW_KEY)
+            if raw and raw.strip():
+                return raw.strip()
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:_get_selected_workflow")
+    return _SELECTED_WORKFLOW_DEFAULT
+
+
+@router.get("/workflows/selection")
+async def get_workflow_selection() -> JSONResponse:
+    """Return current workflow selection and available workflows."""
+    try:
+        selected = _get_selected_workflow()
+        available = ["smart"] + _list_workflow_names()
+        if selected not in available:
+            selected = _SELECTED_WORKFLOW_DEFAULT
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": "Workflow selection.",
+                "data": {"selected": selected, "available": available},
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "total_time": 0},
+            },
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:get_workflow_selection")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error leyendo selección de workflow."},
+        )
+
+
+@router.post("/workflows/select")
+async def select_workflow(payload: dict[str, Any]) -> JSONResponse:
+    """Persist workflow selection. Only one active value."""
+    try:
+        workflow = str((payload or {}).get("workflow", "")).strip()
+        if not workflow:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "Campo 'workflow' requerido."},
+            )
+        available = ["smart"] + _list_workflow_names()
+        if workflow not in available:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "message": f"Workflow '{workflow}' no existe.",
+                },
+            )
+        if session_manager is not None:
+            session_manager.set_config(_SELECTED_WORKFLOW_KEY, workflow)
+        try:
+            from backend.event_bus import event_bus
+
+            await event_bus.emit({
+                "type": "workflow_changed",
+                "content": {"workflow": workflow},
+            })
+        except Exception as exc:
+            logger.warning("No se pudo emitir workflow_changed: %s", exc)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": f"Workflow '{workflow}' seleccionado.",
+                "data": {"selected": workflow},
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "total_time": 0},
+            },
+        )
+    except Exception as exc:
+        log_error(str(exc), source="backend/routes/config.py:select_workflow")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Error guardando selección de workflow."},
+        )

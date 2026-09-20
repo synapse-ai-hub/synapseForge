@@ -178,6 +178,20 @@ async def chat_endpoint(
         # Set error context for this request (inside event_stream so set/reset share same async context)
         error_ctx_token = set_error_context(session_id=session_id, turn_number=turn_number)
         try:
+            # Fase 1: leer selección global. smart o vacío usa flujo estándar
+            # idéntico al actual. Workflow válido sin runner aún hace fallback
+            # a smart con aviso en chunk, sin romper eventos ni Telegram.
+            selected_workflow = "smart"
+            try:
+                raw_selection = session_manager.get_config("selected_workflow")
+                if raw_selection and raw_selection.strip():
+                    selected_workflow = raw_selection.strip()
+            except Exception as exc:
+                log_error(str(exc), source="backend/routes/chat.py:selected_workflow")
+                selected_workflow = "smart"
+            if selected_workflow != "smart":
+                logger.info("Workflow seleccionado '%s': runner aún no implementado, fallback a smart", selected_workflow)
+                yield f"data: {json.dumps({'type': 'chunk', 'content': f'_Workflow {selected_workflow} aún no disponible, usando flujo smart._'}, ensure_ascii=False)}\n\n"
             agent_loop = AgentLoop(
                 agent=agent,
                 session_manager=session_manager,

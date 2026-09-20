@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Wrench, Puzzle, Brain, Server, Cpu, Globe, Database, Trash2, RefreshCw } from "lucide-react";
+import { Wrench, Puzzle, Brain, Server, Cpu, Globe, Database, Trash2, RefreshCw, Workflow } from "lucide-react";
 import configService, { type SkillInfo, type ToolInfo, type AgentInfo, type McpServerStatus } from "../services/configService";
 
-type AgentTab = "tools" | "skills" | "agents" | "mcp" | "rag";
+type AgentTab = "tools" | "skills" | "agents" | "mcp" | "rag" | "workflows";
 
 export function AgentInfoTab() {
   const [tab, setTab] = useState<AgentTab>("tools");
@@ -50,6 +50,7 @@ export function AgentInfoTab() {
           { key: "agents" as AgentTab, label: "Agentes", icon: <Brain size={14} /> },
           { key: "mcp" as AgentTab, label: "MCP", icon: <Server size={14} /> },
           { key: "rag" as AgentTab, label: "RAG", icon: <Database size={14} /> },
+          { key: "workflows" as AgentTab, label: "Workflows", icon: <Workflow size={14} /> },
         ]).map((item) => (
           <button
             key={item.key}
@@ -85,6 +86,7 @@ export function AgentInfoTab() {
         {tab === "agents" && <AgentsPanel onRefresh={refreshAll} />}
         {tab === "mcp" && <McpPanel servers={mcpServers} loading={mcpLoading} onRefresh={loadMcp} />}
         {tab === "rag" && <RagPanel onRefresh={refreshAll} />}
+        {tab === "workflows" && <WorkflowsPanel onRefresh={refreshAll} />}
       </div>
     </div>
   );
@@ -443,3 +445,92 @@ function RagPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
 }
 
 export default AgentInfoTab;
+
+// ─── Workflows ──────────────────────────────────────────────────
+
+function WorkflowsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
+  const [available, setAvailable] = useState<string[]>(["smart"]);
+  const [selected, setSelected] = useState("smart");
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await configService.getWorkflowSelection();
+      setAvailable(data.available?.length ? data.available : ["smart"]);
+      setSelected(data.selected || "smart");
+    } catch (err) {
+      console.error("Error cargando workflows:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const onFocus = () => { load(); };
+    const onChanged = (e: Event) => {
+      const w = (e as CustomEvent).detail?.workflow;
+      if (w) setSelected(w);
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("workflow-changed", onChanged);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("workflow-changed", onChanged);
+    };
+  }, [load]);
+
+  const choose = async (workflow: string) => {
+    setSaving(true);
+    try {
+      const sel = await configService.selectWorkflow(workflow);
+      setSelected(sel);
+      setMsg(workflow === "smart" ? "Flujo smart activado." : `Workflow «${workflow}» activado.`);
+      setTimeout(() => setMsg(""), 3000);
+    } catch (err) {
+      console.error("Error seleccionando workflow:", err);
+      setMsg("No se pudo activar el workflow.");
+      setTimeout(() => setMsg(""), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <p className="text-sm text-app-text-secondary">Cargando...</p>;
+
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] text-app-text-secondary leading-snug mb-2">
+        Elegí un solo modo activo: smart (flujo estándar con paralelización) o un workflow
+        determinista. La selección persiste y el chat la usa en el próximo mensaje.
+      </p>
+      {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
+      {available.map((w) => (
+        <div key={w} className="flex items-start justify-between rounded-lg border border-app-primary-light bg-white px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <span className="text-sm font-medium text-app-text break-words">
+              {w === "smart" ? "Smart (estándar)" : w}
+            </span>
+            {selected === w && (
+              <p className="text-xs text-green-600 mt-0.5">Activo</p>
+            )}
+          </div>
+          {selected !== w && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => choose(w)}
+              className="text-xs bg-app-primary hover:opacity-90 text-white px-2 py-0.5 rounded disabled:opacity-50"
+            >
+              Activar
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -507,6 +507,7 @@ function WorkflowsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
       <p className="text-[11px] text-app-text-secondary leading-snug mb-2">
         Elegí un solo modo activo: smart (flujo estándar con paralelización) o un workflow
         determinista. La selección persiste y el chat la usa en el próximo mensaje.
+        Mismo step corre en paralelo, distinto step es secuencial.
       </p>
       {msg && <p className="text-xs text-green-600 mb-1">{msg}</p>}
       {available.map((w) => (
@@ -531,6 +532,239 @@ function WorkflowsPanel({ onRefresh }: { onRefresh: () => Promise<void> }) {
           )}
         </div>
       ))}
+      <WorkflowCreator onCreated={load} />
+    </div>
+  );
+}
+
+// ─── Workflow creator: visual node editor + agent generation ────
+
+type DraftNode = {
+  id: string;
+  type: "agent" | "tool" | "rag";
+  step: number;
+  ref: string;
+  prompt: string;
+};
+
+function WorkflowCreator({ onCreated }: { onCreated: () => Promise<void> | void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [nodes, setNodes] = useState<DraftNode[]>([]);
+  const [yaml, setYaml] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const syncYaml = (list: DraftNode[], wname: string) => {
+    const lines = [
+      `name: ${wname || "mi-workflow"}`,
+      `description: ${description || "Workflow creado en el editor"}`,
+      `version: "1"`,
+      `retries: 2`,
+      `on_failure: continue`,
+      `nodes:`,
+    ];
+    list.forEach((n, i) => {
+      lines.push(`  - id: ${n.id || `nodo${i + 1}`}`);
+      lines.push(`    type: ${n.type}`);
+      lines.push(`    step: ${n.step}`);
+      if (n.type === "agent") lines.push(`    agent_name: ${n.ref || "agente"}`);
+      if (n.type === "tool") lines.push(`    tool: ${n.ref || "read"}`);
+      if (n.type === "rag") lines.push(`    collection: ${n.ref || "coleccion"}`);
+      if (n.prompt) lines.push(`    prompt: "${n.prompt.replace(/"/g, "'")}"`);
+      if (i === list.length - 1) lines.push(`    final: true`);
+    });
+    setYaml(lines.join("\n"));
+  };
+
+  const addNode = () => {
+    const next = [...nodes, { id: `nodo${nodes.length + 1}`, type: "agent" as const, step: 1, ref: "", prompt: "" }];
+    setNodes(next);
+    syncYaml(next, name);
+  };
+
+  const updateNode = (idx: number, patch: Partial<DraftNode>) => {
+    const next = nodes.map((n, i) => (i === idx ? { ...n, ...patch } : n));
+    setNodes(next);
+    syncYaml(next, name);
+  };
+
+  const removeNode = (idx: number) => {
+    const next = nodes.filter((_, i) => i !== idx);
+    setNodes(next);
+    syncYaml(next, name);
+  };
+
+  const generate = async () => {
+    if (!description.trim()) {
+      setMsg("Describí el workflow primero.");
+      return;
+    }
+    setBusy(true);
+    setMsg("Generando con el agente...");
+    try {
+      const res = await configService.generateWorkflow(description.trim());
+      setYaml(res.yaml);
+      if (res.name) setName(res.name);
+      setMsg("YAML generado. Revisalo y guardalo.");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "No se pudo generar.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const validate = async () => {
+    if (!yaml.trim()) {
+      setMsg("No hay YAML para validar.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await configService.validateWorkflow(yaml);
+      setMsg(res.message);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "Error validando.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (!name.trim() || !yaml.trim()) {
+      setMsg("Nombre y YAML requeridos.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await configService.saveWorkflow(name.trim(), yaml);
+      setMsg(`Workflow «${name.trim()}» guardado.`);
+      await onCreated();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "No se pudo guardar.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-2 text-xs bg-app-primary hover:opacity-90 text-white px-3 py-1.5 rounded"
+      >
+        Crear workflow
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-app-border bg-app-bg-secondary p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-app-text">Nuevo workflow</span>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-app-text-secondary hover:text-app-text">
+          Cerrar
+        </button>
+      </div>
+      <input
+        value={name}
+        onChange={(e) => { setName(e.target.value); syncYaml(nodes, e.target.value); }}
+        placeholder="nombre-del-workflow"
+        className="w-full text-xs px-2 py-1.5 rounded border border-app-border bg-white text-app-text"
+      />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Describí qué debe hacer el workflow..."
+        rows={2}
+        className="w-full text-xs px-2 py-1.5 rounded border border-app-border bg-white text-app-text"
+      />
+      <button
+        type="button"
+        disabled={busy}
+        onClick={generate}
+        className="text-xs bg-app-primary hover:opacity-90 text-white px-3 py-1.5 rounded disabled:opacity-50"
+      >
+        {busy ? "Generando..." : "Generar con agente"}
+      </button>
+      <div className="space-y-1">
+        {nodes.map((n, i) => (
+          <div key={i} className="rounded border border-app-border bg-white p-2 space-y-1">
+            <div className="flex gap-1">
+              <input
+                value={n.id}
+                onChange={(e) => updateNode(i, { id: e.target.value })}
+                placeholder="id"
+                className="w-1/3 text-xs px-1.5 py-1 rounded border border-app-border"
+              />
+              <select
+                value={n.type}
+                onChange={(e) => updateNode(i, { type: e.target.value as DraftNode["type"] })}
+                className="w-1/3 text-xs px-1.5 py-1 rounded border border-app-border"
+              >
+                <option value="agent">agent</option>
+                <option value="tool">tool</option>
+                <option value="rag">rag</option>
+              </select>
+              <input
+                type="number"
+                min={1}
+                value={n.step}
+                onChange={(e) => updateNode(i, { step: Math.max(1, Number(e.target.value) || 1) })}
+                title="Step: mismo step en paralelo, distinto secuencial"
+                className="w-1/4 text-xs px-1.5 py-1 rounded border border-app-border"
+              />
+              <button type="button" onClick={() => removeNode(i)} className="text-xs text-red-500 px-1">
+                ✕
+              </button>
+            </div>
+            <input
+              value={n.ref}
+              onChange={(e) => updateNode(i, { ref: e.target.value })}
+              placeholder={n.type === "agent" ? "agent_name" : n.type === "tool" ? "tool" : "collection"}
+              className="w-full text-xs px-1.5 py-1 rounded border border-app-border"
+            />
+            <input
+              value={n.prompt}
+              onChange={(e) => updateNode(i, { prompt: e.target.value })}
+              placeholder="prompt (opcional)"
+              className="w-full text-xs px-1.5 py-1 rounded border border-app-border"
+            />
+          </div>
+        ))}
+        <button type="button" onClick={addNode} className="text-xs text-app-primary hover:underline">
+          + Agregar nodo
+        </button>
+      </div>
+      <textarea
+        value={yaml}
+        onChange={(e) => setYaml(e.target.value)}
+        placeholder="YAML del workflow..."
+        rows={8}
+        spellCheck={false}
+        className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-app-border bg-white text-app-text"
+      />
+      {msg && <p className="text-xs text-app-text-secondary">{msg}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={validate}
+          className="text-xs px-3 py-1.5 rounded border border-app-border hover:bg-app-bg-tertiary disabled:opacity-50"
+        >
+          Validar
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={save}
+          className="text-xs bg-app-primary hover:opacity-90 text-white px-3 py-1.5 rounded disabled:opacity-50"
+        >
+          Guardar
+        </button>
+      </div>
     </div>
   );
 }

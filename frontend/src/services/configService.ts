@@ -461,6 +461,44 @@ export const configService = {
     window.dispatchEvent(new CustomEvent("workflow-changed", { detail: { workflow } }));
     return data.data?.selected || workflow;
   },
+
+  /** Validate workflow YAML without saving (dry-run). */
+  async validateWorkflow(yaml: string): Promise<{ ok: boolean; message: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/config/workflows/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ yaml }),
+    });
+    const data = await response.json();
+    return { ok: data.status === "success", message: data.message || "" };
+  },
+
+  /** Save workflow YAML (validated server-side). */
+  async saveWorkflow(name: string, yaml: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/config/workflows/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, yaml }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.status === "error") {
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+  },
+
+  /** Generate workflow YAML with the agent from a description. */
+  async generateWorkflow(description: string): Promise<{ yaml: string; name: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/config/workflows/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.status === "error") {
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+    return { yaml: data.data?.yaml || "", name: data.data?.name || "" };
+  },
 };
 
 export default configService;

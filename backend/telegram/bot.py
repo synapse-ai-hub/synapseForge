@@ -1137,9 +1137,13 @@ class TelegramBot:
             await self.send_message(chat_id, f"¿Qué proveedor? ({', '.join(valid)}, o 'cancelar')")
             return
         provider = provider.strip()
-        if provider not in valid:
+        exact = next((v for v in valid if v == provider), None)
+        if exact is None:
+            exact = next((v for v in valid if v.lower() == provider.lower()), None)
+        if exact is None:
             await self.send_message(chat_id, f"Proveedor inválido. Usá {', '.join(valid)}.")
             return
+        provider = exact
         try:
             from backend.instances import agent
             agent.provider = provider
@@ -1397,6 +1401,21 @@ class TelegramBot:
                     idx = int(provider) - 1
                     provider = providers[idx] if 0 <= idx < len(providers) else ""
                 except (ValueError, IndexError):
+                    pass
+            if not provider:
+                await self.send_message(chat_id, "Proveedor inválido.")
+                return
+            if not provider.isdigit():
+                try:
+                    from backend.agent.utils.provider_keys import list_configured
+                    configured = list_configured()
+                    names = [p["provider"] for p in configured if p.get("configured")]
+                    match = next((n for n in names if n == provider), None)
+                    if match is None:
+                        match = next((n for n in names if n.lower() == provider.lower()), None)
+                    if match is not None:
+                        provider = match
+                except Exception:
                     pass
             if not provider:
                 await self.send_message(chat_id, "Proveedor inválido.")

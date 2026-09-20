@@ -205,31 +205,32 @@ async def chat_endpoint(
                     log_error(str(exc), source="backend/routes/chat.py:load_workflow")
                     yield f"data: {json.dumps({'type': 'chunk', 'content': f'_Workflow {selected_workflow} no disponible, usando flujo smart._'}, ensure_ascii=False)}\n\n"
                     workflow_data = None
+            # Fase 6: fuente única de eventos. Workflow válido usa el runner
+            # determinista, si no el flujo smart. Ambos pasan por el mismo
+            # consumo y el mismo envío a Telegram.
             if workflow_data is not None:
                 from backend.agent.utils.workflow_runner import WorkflowRunner
 
                 runner = WorkflowRunner(agent=agent, session_manager=session_manager)
-                async for sse_event in runner.run(
+                event_source = runner.run(
                     session_id=session_id,
                     user_message=message,
                     workflow=workflow_data,
                     turn_number=turn_number,
                     stream_cancel_event=stream_cancel_event,
-                ):
-                    if await request.is_disconnected():
-                        stream_cancel_event.set()
-                    yield sse_event
-                return
-            agent_loop = AgentLoop(
-                agent=agent,
-                session_manager=session_manager,
-            )
-            async for sse_event in agent_loop.run(
-                session_id=session_id,
-                user_message=message,
-                file_contents=file_contents,
-                stream_cancel_event=stream_cancel_event,
-            ):
+                )
+            else:
+                agent_loop = AgentLoop(
+                    agent=agent,
+                    session_manager=session_manager,
+                )
+                event_source = agent_loop.run(
+                    session_id=session_id,
+                    user_message=message,
+                    file_contents=file_contents,
+                    stream_cancel_event=stream_cancel_event,
+                )
+            async for sse_event in event_source:
                 # If client disconnected, signal cancellation but let generator finish naturally
                 # (loop.py will handle aborted event, save partial response, and yield [DONE])
                 if await request.is_disconnected():

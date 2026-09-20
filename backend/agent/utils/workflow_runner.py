@@ -108,8 +108,9 @@ class WorkflowRunner:
                 return {"node_id": node["id"], "status": "error", "message": last_error or "Nodo fallido.", "data": ""}
 
             if len(group) == 1:
-                outcomes = [_run_node(group[0])]
-                results = [await outcomes[0]]
+                node = group[0]
+                yield f"data: {json.dumps({'type': 'tool_call', 'content': {'name': node.get('tool') or node.get('agent_name') or node['id'], 'args': {'node_id': node['id'], 'step': step}}}, ensure_ascii=False)}\n\n"
+                results = [await _run_node(node)]
             else:
                 for node in group:
                     yield f"data: {json.dumps({'type': 'tool_call', 'content': {'name': node.get('tool') or node.get('agent_name') or node['id'], 'args': {'node_id': node['id'], 'step': step}}}, ensure_ascii=False)}\n\n"

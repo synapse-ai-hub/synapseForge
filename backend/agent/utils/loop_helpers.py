@@ -182,6 +182,16 @@ def build_system_prompt(agent_name: str | None = None) -> str:
     if agents_str:
         parts.append(f"## Agentes\n{agents_str}")
 
+    # Fase 6: el router decide cuándo paralelizar. Llamadas independientes
+    # en el mismo bloque corren en paralelo con gather y barrera.
+    parts.append(
+        "## Paralelización\n"
+        "Cuando el pedido requiera varias llamadas independientes a tools o "
+        "subagentes, emitilas todas juntas en el mismo bloque: se ejecutan en "
+        "paralelo y sus resultados llegan juntos. Solo las llamadas que "
+        "dependen del resultado de otra van en un bloque posterior."
+    )
+
     # Append context files content 
     context_text = load_context_text()
     if context_text:
